@@ -165,6 +165,23 @@ without a special case.
 **Suggested transfers.** Greedy: largest creditor against largest debtor, repeat. At most `n − 1`
 transfers; typically 3–4 instead of 13.
 
+### Patterns, and why each one is here
+
+Chosen because this product's shape demands them, not for their own sake.
+
+| Pattern | Where | Why this product needs it |
+|---|---|---|
+| **Ports & adapters** | `engine` is the domain core; `server` holds the REST adapter in and the JPA adapter out | The rules are the risky part. Keeping them free of Spring and SQL is what lets 2,000 random trips be verified in under a second. |
+| **Read model / projection** | `TripView`, `OverviewView`, `ActivityView`, `SettlementView` | Every screen is a different projection of the same ledger. No number is ever stored — `owed`, `net` and `ALL_SQUARE` are all derived, so a corrected people list can never leave a stale total behind. This is the single most important consequence of the design. |
+| **Command objects** | `CreateItem`, `PatchItemPeople`, `ApprovePayback` … | The write side is small and each command has exactly one authorisation rule. Keeps permission checks in one obvious place per operation rather than scattered through controllers. |
+| **Strategy** | `IdentityProvider` → `Google` \| `Mock` | Dev must run with no Google credentials, and the WeChat-to-Google switch showed the auth choice is not settled. One interface, swapped by Spring profile. |
+| **Repository** | One per aggregate: trips, items, paybacks | Standard, and it keeps Testcontainers tests honest — they exercise real SQL, not a mock. |
+| **Assembler** | Entity → DTO, at the edge | The API contract is the demo's shape (`splits`, `yourShare`, `hue`). The database shape is normalised. Letting entities leak into JSON would weld them together. |
+
+Explicitly **not** used: no event sourcing, no CQRS write/read split at the storage layer, no
+generic "service layer" that just forwards to repositories. This is a small app; each of those
+would add indirection without removing any real problem.
+
 ### `server`
 
 Auth sits behind one seam so dev never needs real Google credentials:
@@ -187,7 +204,10 @@ sign in still work; the payer just ticks them off directly.
 users(id, provider, subject, email, display_name, photo_url, created_at)
     unique(provider, subject)
 
-trips(id, name, currency_code, created_by_user_id, starts_on, ends_on, created_at, archived_at)
+trips(id, name, icon, hue, currency_code, created_by_user_id,
+      starts_on, ends_on, created_at, archived_at)
+                                           -- icon: a Lucide slug (plane, house, coffee)
+                                           -- hue:  1..8, the disc colour on GroupCard
 
 trip_members(id, trip_id, display_name, person_hue, user_id NULL, created_at)
     unique(trip_id, display_name)          -- user_id NULL until claimed
@@ -230,35 +250,79 @@ hue from the person ramp. Custom categories are scoped to their trip. **No emoji
 
 ---
 
-## 6. API surface (phase 1)
+## 6. API surface
+
+**Derived from the demo, not invented.** Every endpoint below exists because a screen in
+`ui_kits/mobile-app/` needs it. Anything no screen needs is not here.
+
+### What each screen actually needs
+
+| Screen (`Screens.jsx`) | Needs | Endpoint |
+|---|---|---|
+| `GroupsHome` | every group's name, icon, hue, member avatars, your net; overall net; count settled | `GET /api/trips` |
+| `OverallScreen` | net **per person across all groups**, and which groups each debt came from; total spent; what you fronted | `GET /api/overview` |
+| `GroupDetail` | balance hero, three stats, who-owes-who rows, members, currency, start date, expenses grouped by day, filters | `GET /api/trips/{id}` |
+| `ExpenseDetailSheet` | title, category, date, total, your share, payer, per-person splits, note | *(in the trip payload — see below)* |
+| `ExpenseDetailSheet` — approval | who has paid the payer back, each one's status, proof thumbnails | `GET /api/items/{id}` |
+| `Activity` | every expense across **all** groups, newest first, tagged with its group | `GET /api/activity` |
+| `You` | your name, email, avatar; friends with a shared-group count; currency; sign out | `GET /api/me` |
+| `AddExpenseSheet` | member list, category list, then save | `GET /api/trips/{id}/categories`, `POST /api/trips/{id}/items` |
+| `SettleUpSheet` | who owes who, and the shortest way to clear it | `GET /api/trips/{id}/settlement` |
+| `AppBar` invite action | a shareable link | `POST /api/trips/{id}/invite` |
+
+### The endpoints
 
 ```
 POST   /api/auth/session            { idToken }  → sets HttpOnly cookie
-DELETE /api/auth/session
-GET    /api/me
+DELETE /api/auth/session            sign out — "You" screen
+GET    /api/me                      profile + friends + shared-group counts
 
-POST   /api/trips
-GET    /api/trips
-GET    /api/trips/{id}              → trip + members + item summaries + my net
+GET    /api/trips                   every group: icon, hue, members, your net
+POST   /api/trips                   "New group" chip on GroupsHome
+GET    /api/trips/{id}              the whole group detail screen in one call
 POST   /api/trips/{id}/members
-DELETE /api/trips/{id}/members/{memberId}
 POST   /api/trips/{id}/invite       → signed share-link token
 POST   /api/trips/{id}/claim        { token, memberId }
-GET    /api/trips/{id}/categories
+GET    /api/trips/{id}/categories   eight built-ins + this trip's custom ones
 POST   /api/trips/{id}/categories   { name, icon, hue }
 
-POST   /api/trips/{id}/items
-GET    /api/items/{id}              → item + per-person share + paybacks + state
+POST   /api/trips/{id}/items        AddExpenseSheet save
+GET    /api/items/{id}              paybacks in full: status, proof, dates, reject reasons
 PATCH  /api/items/{id}              ← this is where the people list gets fixed
-DELETE /api/items/{id}
+DELETE /api/items/{id}              the bin button on ExpenseDetailSheet
 
 POST   /api/items/{id}/paybacks     { fromMemberId, amountMinor, paidOn, note }
 POST   /api/paybacks/{id}/proof     multipart → Cloud Storage
 POST   /api/paybacks/{id}/approve
 POST   /api/paybacks/{id}/reject    { reason }
 
-GET    /api/trips/{id}/settlement   → net per member + suggested transfers
+GET    /api/trips/{id}/settlement   net per member + suggested transfers
+GET    /api/overview                OverallScreen — cross-group, one call
+GET    /api/activity                Activity tab — cross-group feed
 ```
+
+### Added, because the demo needs them
+
+- **`GET /api/overview`** — `OverallScreen` nets each person across *every* group and lists
+  which groups each debt came from. Assembling that client-side would mean one call per group.
+- **`GET /api/activity`** — the Activity tab is a flat cross-group feed. Nothing else serves it.
+- **`GET /api/me` carries friends** — the "You" screen lists friends with a shared-group count.
+  Folded into `/api/me` rather than a second endpoint; it is the same page load.
+- **`trips.icon` and `trips.hue`** — `GroupCard` renders a Lucide glyph on a coloured disc
+  (`plane`, `house`, `coffee`). Neither column existed. Added to the schema.
+
+### Removed, because nothing needs them
+
+- **`DELETE /api/trips/{id}/members/{memberId}`** — no screen removes a member. S3 (someone
+  cancels) is served by editing that item's people list via `PATCH /api/items/{id}`, which is
+  the mechanism the whole design rests on. Add member-removal back when a screen calls for it.
+
+### One deliberate shape decision
+
+`GET /api/trips/{id}` returns each item **with its splits**, so `ExpenseDetailSheet` opens with
+no second request — matching the demo, where tapping a row shows the sheet instantly. Paybacks
+are *not* in that payload: they are unbounded per item and only the detail sheet's approval
+section uses them, so they come from `GET /api/items/{id}` when the sheet opens.
 
 ---
 
