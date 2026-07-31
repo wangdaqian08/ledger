@@ -1,0 +1,32 @@
+<!-- @dsCard group="Components" viewport="700x400" name="Forms & Inputs" subtitle="Split bar, keypad, amount, toggles, stepper, field" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:14px;background:var(--paper)}.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.col{display:flex;flex-direction:column;gap:12px}.lbl{font:800 11px/1 var(--font-core);letter-spacing:.06em;text-transform:uppercase;color:var(--text-subtle)}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const { SplitBar, PersonToggleRow, Stepper, Input, AmountInput, Keypad, CategoryPicker } = window.TallyDesignSystem_ae2e12;
+function Demo(){
+  const [people,setPeople]=React.useState([{name:'Mei',hue:4,value:34},{name:'Sam',hue:2,value:26},{name:'Ade',hue:6,value:22},{name:'Jo',hue:8,value:18}]);
+  const [sel,setSel]=React.useState(['Mei','Sam','Ade']);
+  const [n,setN]=React.useState(2);
+  const [cat,setCat]=React.useState('drinks');
+  const [d,setD]=React.useState('48.20');
+  const key=(k)=>setD(v=>k==='del'?(v.slice(0,-1)||'0'):(v==='0'&&k!=='.'?k:v+k));
+  return <div className="col">
+    <div><div className="lbl" style={{marginBottom:6}}>SplitBar — drag the handles</div><SplitBar people={people} total={84.5} onChange={setPeople}/></div>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18,alignItems:'start'}}>
+      <div className="col">
+        <div><div className="lbl" style={{marginBottom:6}}>PersonToggleRow</div><PersonToggleRow people={[{name:'Mei',hue:4},{name:'Sam',hue:2},{name:'Ade',hue:6},{name:'Jo',hue:8}]} selected={sel} onToggle={(x)=>setSel(s=>s.includes(x)?s.filter(y=>y!==x):[...s,x])}/></div>
+        <div><div className="lbl" style={{marginBottom:6}}>CategoryPicker</div><CategoryPicker value={cat} onChange={setCat}/></div>
+        <div className="row" style={{gap:18}}><div><div className="lbl" style={{marginBottom:6}}>Stepper</div><Stepper value={n} onChange={setN} suffix="×"/></div></div>
+        <Input label="What was it?" icon="receipt" placeholder="Dinner at Sichuan Rose"/>
+      </div>
+      <div className="col" style={{alignItems:'center'}}><AmountInput label="Total" value={d}/><Keypad onKey={key} style={{maxWidth:230}}/></div>
+    </div>
+  </div>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+</script></body></html>

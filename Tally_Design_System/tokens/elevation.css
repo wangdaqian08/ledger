@@ -1,0 +1,21 @@
+:root {
+  /* Tally has no blurry grey drop shadows. Depth is a HARD INK EDGE offset
+     downward, so every surface reads like a physical pressable slab. */
+  --slab-1: 0 2px 0 0 var(--ink);
+  --slab-2: 0 4px 0 0 var(--ink);
+  --slab-3: 0 6px 0 0 var(--ink);
+  --slab-press: 0 1px 0 0 var(--ink);
+  --border-slab: 2px solid var(--ink); /* @kind other */
+  --border-slab-thin: 1.5px solid var(--ink); /* @kind other */
+
+  /* Colored slabs: the edge takes the element's own darker press tone. */
+  --slab-action: 0 4px 0 0 var(--grape-press);
+  --slab-mint: 0 4px 0 0 var(--mint-press);
+  --slab-coral: 0 4px 0 0 var(--coral-press);
+  --slab-lemon: 0 4px 0 0 var(--lemon-press);
+
+  /* The only soft shadow in the system: floating layers over content. */
+  --lift-sheet: 0 -8px 32px rgba(26, 23, 32, 0.16);
+  --lift-drag: 0 12px 28px rgba(26, 23, 32, 0.22);
+  --lift-toast: 0 8px 24px rgba(26, 23, 32, 0.18);
+}
