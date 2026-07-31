@@ -2,10 +2,25 @@ package app.ledger.engine
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class SplitTest {
 
     private fun members(vararg names: String) = names.map { MemberId(it) }
+
+    @Test
+    fun `refuses to split between nobody rather than dividing by zero`() {
+        // An item with an empty people list is a data bug upstream. Fail loudly and
+        // specifically here rather than throwing ArithmeticException from inside the maths.
+        val thrown = assertFailsWith<IllegalArgumentException> {
+            splitEqually(10_000, emptyList())
+        }
+        assertTrue(
+            thrown.message!!.contains("no one"),
+            "message should say what is actually wrong, was: ${thrown.message}",
+        )
+    }
 
     @Test
     fun `rotates which members get the spare cents as the salt changes`() {

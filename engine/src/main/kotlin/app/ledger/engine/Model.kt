@@ -48,7 +48,12 @@ data class MemberBalance(
     val netMinor: Long get() = paidOutMinor - receivedBackMinor - owedMinor
 }
 
-data class Settlement(val balances: List<MemberBalance>) {
+data class Transfer(val from: MemberId, val to: MemberId, val amountMinor: Long)
+
+data class Settlement(
+    val balances: List<MemberBalance>,
+    val transfers: List<Transfer>,
+) {
     fun net(member: MemberId): Long =
         balances.first { it.member == member }.netMinor
 }
@@ -69,7 +74,44 @@ fun settle(trip: Trip): Settlement {
             owedMinor = trip.items.sumOf { it.shareOf(member) },
         )
     }
-    return Settlement(balances)
+    return Settlement(balances, suggestTransfers(balances))
+}
+
+/**
+ * The shortest practical list of payments that clears everyone.
+ *
+ * Greedy: repeatedly match the largest creditor against the largest debtor. Each step zeroes
+ * out at least one person, so this never needs more than one transfer fewer than there are
+ * people — typically three or four rather than one per head.
+ */
+private fun suggestTransfers(balances: List<MemberBalance>): List<Transfer> {
+    val owed = balances.filter { it.netMinor > 0 }
+        .sortedByDescending { it.netMinor }
+        .map { it.member to it.netMinor }
+        .toMutableList()
+    val owing = balances.filter { it.netMinor < 0 }
+        .sortedBy { it.netMinor }
+        .map { it.member to -it.netMinor }
+        .toMutableList()
+
+    val transfers = mutableListOf<Transfer>()
+    var creditor = 0
+    var debtor = 0
+
+    while (creditor < owed.size && debtor < owing.size) {
+        val (creditorId, stillOwedToThem) = owed[creditor]
+        val (debtorId, stillOwedByThem) = owing[debtor]
+        val amount = minOf(stillOwedToThem, stillOwedByThem)
+
+        if (amount > 0) transfers += Transfer(from = debtorId, to = creditorId, amountMinor = amount)
+
+        owed[creditor] = creditorId to (stillOwedToThem - amount)
+        owing[debtor] = debtorId to (stillOwedByThem - amount)
+        if (owed[creditor].second == 0L) creditor++
+        if (owing[debtor].second == 0L) debtor++
+    }
+
+    return transfers
 }
 
 private fun Item.approvedPaybacks(): List<Payback> =
@@ -78,3 +120,24 @@ private fun Item.approvedPaybacks(): List<Payback> =
 /** What [member] owes towards this item, or zero if they are not on its list. */
 private fun Item.shareOf(member: MemberId): Long =
     splitEqually(amountMinor, sharedBy, id.value)[member] ?: 0L
+
+enum class ItemState { OPEN, ALL_SQUARE }
+
+/**
+ * An item is square once every sharer has covered their portion.
+ *
+ * The payer is excluded — they fronted the money, so their own share needs no payback.
+ * Only approved paybacks count; a claim the payer hasn't agreed to leaves the item open.
+ */
+fun itemState(item: Item): ItemState {
+    val shares = splitEqually(item.amountMinor, item.sharedBy, item.id.value)
+    val approvedByMember = item.approvedPaybacks()
+        .groupBy { it.from }
+        .mapValues { (_, theirs) -> theirs.sumOf { it.amountMinor } }
+
+    val everyoneCovered = item.sharedBy
+        .filter { it != item.payer }
+        .all { sharer -> (approvedByMember[sharer] ?: 0L) >= (shares[sharer] ?: 0L) }
+
+    return if (everyoneCovered) ItemState.ALL_SQUARE else ItemState.OPEN
+}

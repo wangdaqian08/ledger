@@ -10,6 +10,8 @@ value class MemberId(val value: String)
  * The parts always sum to exactly [totalMinor] — never a cent more or less.
  */
 fun splitEqually(totalMinor: Long, members: List<MemberId>, salt: Long = 0): Map<MemberId, Long> {
+    require(members.isNotEmpty()) { "cannot split $totalMinor between no one" }
+
     val count = members.size
     val base = totalMinor / count
     val spareCents = (totalMinor % count).toInt()
