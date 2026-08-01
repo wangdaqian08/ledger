@@ -25,7 +25,7 @@ every number is derived from it, live.
 | | what it is | example |
 |---|---|---|
 | **Item** | money that left the group, paid by exactly one person | Bob paid **$1,000** hotel deposit, shared by 10 people |
-| **Payback** | money moving between two members, filed **under an item** | A gave Bob **$100** · B gave Bob **$100** (+ screenshot) |
+| **Payback** | money moving between two members, usually filed under an item | A gave Bob **$100** · B gave Bob **$100** (+ screenshot) |
 
 An **Item** carries its own people list, editable forever — after payment, after the trip,
 whenever. It divides among whoever is on that list right now, by its own split rule (equal by
@@ -41,7 +41,7 @@ going to. **Pending money counts for nothing** anywhere in the maths.
 paidOut(m)      = Σ item.amount        where item.payer == m
                 + Σ payback.amount     where payback.from == m  and status == APPROVED
 
-receivedBack(m) = Σ payback.amount     where payback.item.payer == m and status == APPROVED
+receivedBack(m) = Σ payback.amount     where payback.to == m         and status == APPROVED
 
 owed(m)         = Σ share(m, item)     for every item whose people list contains m
 
@@ -109,7 +109,7 @@ that item's exact amount.
 | Roster changes | **Manual.** Adding a trip member changes no existing item until you edit it. No auto-update, no nagging. |
 | New item default | **Nobody ticked.** An `All` chip selects everyone in one tap. |
 | Payers | Exactly one per item. |
-| Paybacks | Filed under an item. Amount + date + optional screenshot. |
+| Paybacks | Filed under an item, or trip-level with no item (the Settle-up screen). Amount + date + optional screenshot. |
 | Approval | Only **the person owed** approves. On an item that is the payer, who fronted the money; at trip level it is whoever the money is going to. Same rule, stated once. They ticking a name themselves is instant. |
 | Rejection | Reject with a reason → avatar turns coral → claimant edits and resubmits. |
 | Item state | `ALL_SQUARE` when every sharer's approved paybacks ≥ their share. Card greys out, sinks down. |
