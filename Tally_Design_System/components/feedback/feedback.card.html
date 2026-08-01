@@ -1,0 +1,30 @@
+<!-- @dsCard group="Components" viewport="700x340" name="Feedback" subtitle="Settled banner, progress, toasts, empty state" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:14px;background:var(--paper)}.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.col{display:flex;flex-direction:column;gap:12px}.lbl{font:800 11px/1 var(--font-core);letter-spacing:.06em;text-transform:uppercase;color:var(--text-subtle)}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const { SettledBanner, ProgressBar, Toast, EmptyState, Button } = window.TallyDesignSystem_ae2e12;
+function Demo(){
+  return <div style={{display:'grid',gridTemplateColumns:'1fr 300px',gap:16,alignItems:'start'}}>
+    <div className="col">
+      <SettledBanner message="You're all square" sub="Nobody owes anybody. Nice."/>
+      <ProgressBar value={3} max={4} tone="mint" label="Settled up"/>
+      <ProgressBar value={62} max={100} tone="action" label="Trip budget used"/>
+      <div style={{position:'relative',height:70}}>
+        <Toast open message="Split saved" tone="mint" icon="check" style={{bottom:36,left:0,right:0}}/>
+      </div>
+      <div style={{position:'relative',height:70}}>
+        <Toast open message="Expense deleted" tone="ink" icon="trash-2" action={<span style={{fontWeight:800,color:'var(--lemon)'}}>Undo</span>} style={{bottom:36,left:0,right:0}}/>
+      </div>
+    </div>
+    <div style={{border:'2px solid var(--ink)',borderRadius:'var(--radius-card)',background:'var(--surface-card)'}}>
+      <EmptyState icon="receipt" title="Nothing here yet" body="Add the first expense and Tally will do the maths." action={<Button icon="plus">Add expense</Button>}/>
+    </div>
+  </div>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+</script></body></html>
