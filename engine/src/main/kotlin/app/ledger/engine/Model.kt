@@ -163,3 +163,22 @@ fun Trip.itemState(itemId: ItemId): ItemState {
 
     return if (everyoneCovered) ItemState.ALL_SQUARE else ItemState.OPEN
 }
+
+/**
+ * What [a] owes [b], netted in both directions.
+ *
+ * Positive means [a] owes [b]. This is what the Settle-up screen's rows show — a person's
+ * position with each other person, rather than the minimised transfer set from [settle].
+ */
+fun owesBetween(trip: Trip, a: MemberId, b: MemberId): Long {
+    val approved = trip.approvedPaybacks()
+
+    fun oneWay(debtor: MemberId, creditor: MemberId): Long =
+        // The debtor's share of everything the creditor fronted...
+        trip.items.filter { it.payer == creditor }.sumOf { it.shareOf(debtor) } -
+            // ...less whatever they have already handed over and had approved, whether that
+            // was filed against an item or settled straight from the Settle-up screen.
+            approved.filter { it.from == debtor && it.to == creditor }.sumOf { it.amountMinor }
+
+    return oneWay(a, b) - oneWay(b, a)
+}

@@ -160,7 +160,8 @@ sealed interface SplitRule { Equal; Weighted(Map<MemberId, Int>); Exact(Map<Memb
 
 fun shares(totalMinor: Long, members: List<MemberId>, rule: SplitRule, salt: Long): Map<MemberId, Long>
 fun settle(trip: Trip): Settlement                  // net per member + suggested transfers
-fun itemState(item: Item): ItemState                // OPEN | ALL_SQUARE
+fun Trip.itemState(itemId: ItemId): ItemState       // OPEN | ALL_SQUARE
+fun owesBetween(trip: Trip, a: MemberId, b: MemberId): Long   // the Settle-up rows
 ```
 
 **Rounding — largest remainder.** Floor every share, then hand the leftover cents to the largest
@@ -483,9 +484,9 @@ Each step ends with something runnable and tested.
 1. **Spec** — this document. ✔
 2. **`engine`** — `shares`, `settle`, `itemState`, and S1–S6 as tests. No Spring yet.
    *This is where the app is proven correct.* ✔
-2a. **`engine` — bilateral balances.** Move `Payback` onto `Trip` with an explicit recipient and
-   an optional item, add `owesBetween`, and property-test that it sums to `−net`. Required by
-   the Settle-up screen (§7a).
+2a. **`engine` — bilateral balances.** ✔ `Payback` moved onto `Trip` with an explicit recipient
+   and an optional item; `owesBetween` added and property-tested to sum to `−net` across 500
+   random trips. Required by the Settle-up screen (§7a).
 3. **`server` skeleton** — Spring Boot 4 + Flyway + Postgres via Testcontainers, `/api/me`,
    `MockIdentityProvider`, session cookie.
 4. **Trips + members + claim flow** — endpoints and permission tests.
