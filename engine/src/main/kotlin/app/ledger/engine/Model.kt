@@ -4,13 +4,6 @@ package app.ledger.engine
 @JvmInline
 value class ItemId(val value: Long)
 
-/**
- * Money that left the group, paid by exactly one person.
- *
- * [sharedBy] is the list of people the cost is split equally between. It stays editable for
- * the life of the trip — correcting it is the whole mechanism by which a changed headcount
- * flows through to everyone's balance.
- */
 enum class PaybackStatus { PENDING, APPROVED, REJECTED }
 
 /**
@@ -24,12 +17,21 @@ data class Payback(
     val status: PaybackStatus,
 )
 
+/**
+ * Money that left the group, paid by exactly one person.
+ *
+ * [sharedBy] is the list of people the cost is divided between, and it stays editable for the
+ * life of the trip — correcting it is the whole mechanism by which a changed headcount flows
+ * through to everyone's balance. [split] decides how that division is done.
+ */
 data class Item(
     val id: ItemId,
     val amountMinor: Long,
     val payer: MemberId,
     val sharedBy: List<MemberId>,
     val paybacks: List<Payback> = emptyList(),
+    /** Evenly by default; the demo's SplitBar drag produces [SplitRule.Weighted]. */
+    val split: SplitRule = SplitRule.Equal,
 )
 
 data class Trip(
@@ -117,9 +119,12 @@ private fun suggestTransfers(balances: List<MemberBalance>): List<Transfer> {
 private fun Item.approvedPaybacks(): List<Payback> =
     paybacks.filter { it.status == PaybackStatus.APPROVED }
 
+/** Every person's portion of this item, honouring its split rule. */
+fun Item.shares(): Map<MemberId, Long> =
+    shares(amountMinor, sharedBy, split, id.value)
+
 /** What [member] owes towards this item, or zero if they are not on its list. */
-private fun Item.shareOf(member: MemberId): Long =
-    splitEqually(amountMinor, sharedBy, id.value)[member] ?: 0L
+private fun Item.shareOf(member: MemberId): Long = shares()[member] ?: 0L
 
 enum class ItemState { OPEN, ALL_SQUARE }
 
@@ -130,7 +135,7 @@ enum class ItemState { OPEN, ALL_SQUARE }
  * Only approved paybacks count; a claim the payer hasn't agreed to leaves the item open.
  */
 fun itemState(item: Item): ItemState {
-    val shares = splitEqually(item.amountMinor, item.sharedBy, item.id.value)
+    val shares = item.shares()
     val approvedByMember = item.approvedPaybacks()
         .groupBy { it.from }
         .mapValues { (_, theirs) -> theirs.sumOf { it.amountMinor } }

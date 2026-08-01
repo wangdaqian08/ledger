@@ -102,7 +102,7 @@ that item's exact amount.
 
 | Area | Decision |
 |---|---|
-| Fair share | Equalise the whole cost. Each item splits **equally** among its current people list. |
+| Fair share | Equalise the whole cost. Each item divides among its current people list by its own split rule: **Equal**, **Weighted** (the SplitBar drag), or **Exact** (typed amounts). |
 | People list | **Per item.** Hotel, dinner and ski pass each have their own. Editable forever. |
 | Roster changes | **Manual.** Adding a trip member changes no existing item until you edit it. No auto-update, no nagging. |
 | New item default | **Nobody ticked.** An `All` chip selects everyone in one tap. |
@@ -219,7 +219,13 @@ categories(id, trip_id NULL, key, name_en, name_zh, icon, hue, sort_order)
 items(id, trip_id, title, category_id, amount_minor BIGINT, payer_member_id,
       spent_on, note, created_by_user_id, created_at, updated_at)
 
-item_shares(item_id, member_id)            -- PK(item_id, member_id). The list. That's it.
+items ... + split_rule                     -- EQUAL | WEIGHTED | EXACT
+
+item_shares(item_id, member_id, weight NULL, exact_amount_minor NULL)
+                                           -- PK(item_id, member_id). The people list.
+                                           -- weight is set for WEIGHTED, exact_amount_minor
+                                           -- for EXACT; both null for EQUAL. Shares are
+                                           -- still derived, never stored.
 
 paybacks(id, item_id, from_member_id, amount_minor BIGINT, paid_on,
          proof_object_name NULL, note, status, created_by_user_id, created_at,
@@ -227,8 +233,9 @@ paybacks(id, item_id, from_member_id, amount_minor BIGINT, paid_on,
 ```
 
 No `settlements` table — final settle-up is display-only.
-No stored share amounts — they are derived, so editing a list can never leave stale numbers behind.
-Per-person share **overrides** would be one nullable column on `item_shares`; not built now.
+No computed share amounts are stored — they are derived on read, so editing a people list can
+never leave a stale total behind. `weight` and `exact_amount_minor` are *inputs* to that
+derivation, not results of it.
 
 **Categories.** Eight built-ins, matching Tally's canonical Lucide glyphs:
 `utensils` Food · `beer` Drinks · `car-front` Transport · `bed-double` Stay ·
@@ -362,8 +369,9 @@ deliberately naive and must not be copied.
 - **Approval states.** Tally has no two-party approval. `Avatar` already takes a `badge` prop —
   that is the slot: unpaid = no badge · pending = `clock` · approved = `check` · rejected =
   `x` in coral.
-- **SplitBar is read-only in phase 1.** Our model is equal-split-only, so its drag interaction
-  has nothing to drive yet. The kit already supports a read-only SplitBar for expense detail.
+- **SplitBar is fully interactive.** The drag produces a weight per person, which the server
+  turns into exact cents. Weights go over the wire rather than pre-multiplied amounts, so the
+  rounding is done once, in the engine, by largest remainder.
 - **Custom categories** extend Tally's fixed set of 8, per product requirement.
 
 ### Screens (phase 1)
@@ -404,10 +412,11 @@ Each step ends with something runnable and tested.
 
 ## 9. Deliberately not in phase 1
 
-- **Per-person share overrides** (unequal splits, couple sharing a room). One nullable column when needed.
 - **Multi-payer items.** One payer per item is how the group actually works.
 - **Refunds** (hotel refunds part of a deposit). Would be a negative-amount item.
 - **Recording final settlement transfers.** Settle up displays; it does not track.
+- **The demo's one-tap "mark everyone settled".** Replaced by the two-party payback approval,
+  which was specified later and in more detail. The demo predates that requirement.
 - **"Jack isn't on 5 items" prompts.** Roster editing is manual by choice; noted as a future
   convenience rather than built unasked.
 - **Chinese copy.** i18n machinery ships; the Chinese voice pass is its own task.
