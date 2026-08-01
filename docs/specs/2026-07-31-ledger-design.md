@@ -109,10 +109,13 @@ that item's exact amount.
 | New item default | **Nobody ticked.** An `All` chip selects everyone in one tap. |
 | Payers | Exactly one per item. |
 | Paybacks | Filed under an item. Amount + date + optional screenshot. |
-| Approval | Only the **item's payer** (or trip creator) approves. The payer ticking a name themselves is instant. |
+| Approval | Only **the person owed** approves. On an item that is the payer, who fronted the money; at trip level it is whoever the money is going to. Same rule, stated once. They ticking a name themselves is instant. |
 | Rejection | Reject with a reason → avatar turns coral → claimant edits and resubmits. |
 | Item state | `ALL_SQUARE` when every sharer's approved paybacks ≥ their share. Card greys out, sinks down. |
-| Final settlement | **Display only.** Settle up shows who-pays-who; the app does not record that it happened. |
+| Final settlement | **Recorded.** Tapping Pay sends a request to the person owed; it sits pending until they approve. Display-only is no longer possible — a pending approval is state. |
+| Settle-up rows | **Bilateral.** One row per person: what you owe them, or they owe you. Not a globally minimised transfer set. |
+| Undo | **Either side, any time**, before or after approval. The row returns to unpaid. |
+| Remind | A nudge to someone who owes you. Changes no balance. |
 | Recalculation | Live everywhere, plus a dedicated Settle up screen. |
 | Edit rights | Item payer + trip creator. Everyone else views and claims. |
 | Currency | One per trip, ISO-4217. |
@@ -231,12 +234,18 @@ item_shares(item_id, member_id, weight NULL, exact_amount_minor NULL)
                                            -- for EXACT; both null for EQUAL. Shares are
                                            -- still derived, never stored.
 
-paybacks(id, item_id, from_member_id, amount_minor BIGINT, paid_on,
-         proof_object_name NULL, note, status, created_by_user_id, created_at,
+paybacks(id, trip_id, item_id NULL, from_member_id, to_member_id,
+         amount_minor BIGINT, paid_on, proof_object_name NULL, note, status,
+         created_by_user_id, created_at,
          reviewed_by_user_id NULL, reviewed_at NULL, reject_reason NULL)
+                                           -- item_id NULL = a trip-level settlement from
+                                           -- the Settle-up screen. Same table, same state
+                                           -- machine, same approval rule. See section 7a.
 ```
 
-No `settlements` table — final settle-up is display-only.
+No separate settlements table: a settlement **is** a payback with no item. One record type,
+one state machine, one approval rule — and no way for an item repayment and a trip-level
+settlement between the same two people to both subtract.
 No computed share amounts are stored — they are derived on read, so editing a people list can
 never leave a stale total behind. `weight` and `exact_amount_minor` are *inputs* to that
 derivation, not results of it.
@@ -307,7 +316,10 @@ POST   /api/paybacks/{id}/proof     multipart → Cloud Storage
 POST   /api/paybacks/{id}/approve
 POST   /api/paybacks/{id}/reject    { reason }
 
-GET    /api/trips/{id}/settlement   net per member + suggested transfers
+GET    /api/trips/{id}/settlement   bilateral rows: your position with each person
+POST   /api/trips/{id}/settlements  { toMemberId, amountMinor } — the Pay button
+POST   /api/paybacks/{id}/undo      either side, before or after approval
+POST   /api/trips/{id}/remind       { memberId } — a nudge; changes no balance
 GET    /api/overview                OverallScreen — cross-group, one call
 GET    /api/activity                Activity tab — cross-group feed
 ```
@@ -393,13 +405,86 @@ deliberately naive and must not be copied.
 
 ---
 
+## 7a. The Settle-up screen
+
+Taken from the supplied screenshot, which is a faithful render of the demo's `SettleUpSheet`.
+Three of its behaviours contradicted the earlier design; this section is the resolution.
+
+### Rows are bilateral
+
+One row per person — what you owe them, or they owe you — not a globally minimised transfer
+set. `settle()` already emits transfers between arbitrary pairs (`Fei → Cara`) that the viewer
+is not party to and which have no row on this screen.
+
+```
+owesBetween(A, B) =   Σ A's share of items B paid for
+                    − Σ approved paybacks A → B
+                    − Σ B's share of items A paid for
+                    + Σ approved paybacks B → A
+```
+
+Positive means A owes B. This is consistent with the existing net by construction:
+
+```
+Σ over all B of owesBetween(A, B)  ==  −net(A)
+```
+
+which is why the screenshot's three rows (−39.10, −46.00, +42.30) add up to the −42.80 on the
+group's hero card. That identity is a property test, not a comment.
+
+### Pay is a request, not an act
+
+Only the person owed can approve, so tapping **Pay** cannot settle anything on its own.
+
+```
+  tap Pay  →  PENDING          "Sent to Mei for confirmation"   counts as unpaid
+  Mei approves  →  APPROVED    green tick                        counts as paid
+  Mei rejects   →  REJECTED    with a reason                     counts as unpaid
+  either side undoes  →  gone  row returns to unpaid             any time, either state
+```
+
+**Undo is available to both parties, before and after approval.** A settled trip can therefore
+un-settle; that is the accepted cost of never trapping someone in a wrong record.
+
+**Remind** nudges someone who owes you. It changes no balance and writes no payback.
+
+**"Done for now"** just closes the sheet. The group reaches all-square when every row is
+approved — it is a derived state, never a button.
+
+### What this costs the engine
+
+`Payback` currently hangs off `Item` and is implicitly *to* that item's payer. A trip-level
+settlement has no item, so it needs an explicit recipient. The change:
+
+```kotlin
+// Paybacks move up to Trip and carry both ends plus an optional item.
+data class Payback(
+    val from: MemberId,
+    val to: MemberId,
+    val amountMinor: Long,
+    val status: PaybackStatus,
+    val itemId: ItemId? = null,   // null = a trip-level settlement
+)
+
+fun owesBetween(trip: Trip, a: MemberId, b: MemberId): Long
+```
+
+`itemState` then takes the trip's paybacks filtered to that item rather than reading them off
+`Item` directly. `settle()` is unaffected in shape — a settlement adds to the sender's paid-out
+and the recipient's received-back exactly as an item payback does, so `Σ net == 0` still holds.
+
+---
+
 ## 8. Build order
 
 Each step ends with something runnable and tested.
 
 1. **Spec** — this document. ✔
-2. **`engine`** — `splitEqually`, `settle`, `itemState`, and S1–S6 as tests. No Spring yet.
-   *This is where the app is proven correct.*
+2. **`engine`** — `shares`, `settle`, `itemState`, and S1–S6 as tests. No Spring yet.
+   *This is where the app is proven correct.* ✔
+2a. **`engine` — bilateral balances.** Move `Payback` onto `Trip` with an explicit recipient and
+   an optional item, add `owesBetween`, and property-test that it sums to `−net`. Required by
+   the Settle-up screen (§7a).
 3. **`server` skeleton** — Spring Boot 4 + Flyway + Postgres via Testcontainers, `/api/me`,
    `MockIdentityProvider`, session cookie.
 4. **Trips + members + claim flow** — endpoints and permission tests.
@@ -418,9 +503,11 @@ Each step ends with something runnable and tested.
 
 - **Multi-payer items.** One payer per item is how the group actually works.
 - **Refunds** (hotel refunds part of a deposit). Would be a negative-amount item.
-- **Recording final settlement transfers.** Settle up displays; it does not track.
-- **The demo's one-tap "mark everyone settled".** Replaced by the two-party payback approval,
-  which was specified later and in more detail. The demo predates that requirement.
+- **Globally minimised transfers.** `settle()` computes them and they are still property-tested,
+  but no screen shows them — Settle-up is bilateral (§7a). Kept in the engine because it is the
+  honest answer to "what is the least money that needs to move", and costs nothing to retain.
+- **The demo's one-tap "mark everyone settled".** Replaced by the two-party approval, which was
+  specified later and in more detail. The demo predates that requirement.
 - **"Jack isn't on 5 items" prompts.** Roster editing is manual by choice; noted as a future
   convenience rather than built unasked.
 - **Chinese copy.** i18n machinery ships; the Chinese voice pass is its own task.
