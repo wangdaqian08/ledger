@@ -12,7 +12,6 @@ import kotlin.test.assertEquals
  * would have no row on that screen.
  */
 class BilateralTest {
-
     private val lucy = MemberId("lucy")
     private val ben = MemberId("ben")
     private val amy = MemberId("amy")
@@ -163,8 +162,11 @@ class BilateralTest {
         val settlements = (1..random.nextInt(0, 4)).mapNotNull {
             val from = members.random(random)
             val to = members.random(random)
-            if (from == to) null
-            else Payback(from, to, random.nextLong(1, 100_000), PaybackStatus.entries.random(random))
+            if (from == to) {
+                null
+            } else {
+                Payback(from, to, random.nextLong(1, 100_000), PaybackStatus.entries.random(random))
+            }
         }
 
         return Trip(members = members, items = items, paybacks = repayments + settlements)

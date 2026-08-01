@@ -38,8 +38,9 @@ fun shares(
     require(members.isNotEmpty()) { "cannot split $totalMinor between no one" }
 
     return when (rule) {
-        SplitRule.Equal ->
+        SplitRule.Equal -> {
             splitByWeight(totalMinor, members, members.associateWith { 1 }, salt)
+        }
 
         is SplitRule.Weighted -> {
             val weights = members.associateWith { member ->
