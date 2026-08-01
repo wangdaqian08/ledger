@@ -31,8 +31,9 @@ An **Item** carries its own people list, editable forever — after payment, aft
 whenever. It divides among whoever is on that list right now, by its own split rule (equal by
 default; a dragged weighting or typed amounts otherwise).
 
-A **Payback** is a claim. It is `PENDING` until the item's payer approves it.
-**Pending money counts for nothing** anywhere in the maths.
+A **Payback** is a claim. It is `PENDING` until **the person owed** approves it — on an item
+that is the payer, who fronted the money; on a trip-level settlement it is whoever the money is
+going to. **Pending money counts for nothing** anywhere in the maths.
 
 ### The settle-up formula
 
