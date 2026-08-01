@@ -1,0 +1,46 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json,md}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{kt,kts}]
+max_line_length = 120
+ktlint_code_style = ktlint_official
+
+# The engine tests are the executable form of the acceptance scenarios in
+# docs/specs/2026-07-31-ledger-design.md, and they are meant to be read. The five rules below
+# each fight that on purpose, so they are off:
+#
+#   no-multi-spaces            collapses the aligned trailing comments that annotate the hotel
+#                              scenario's members and amounts
+#   value-argument-comment     forbids the comments that explain what a payback list is doing,
+#                              on the argument they explain
+#   multiline-expression-wrapping
+#   function-signature         reflow rules with no defect-catching value; between them they
+#   class-signature            account for two thirds of the churn and change no behaviour
+#
+# Everything else in the standard rule set stays on — indentation, braces on multiline `if`,
+# chain continuation, imports, naming.
+ktlint_standard_no-multi-spaces = disabled
+ktlint_standard_value-argument-comment = disabled
+ktlint_standard_multiline-expression-wrapping = disabled
+ktlint_standard_function-signature = disabled
+ktlint_standard_class-signature = disabled
+
+# chain-method-continuation forces a wrap at four chained accesses. That is an improvement in
+# app code, where the chains are real pipelines. In a build script every version-catalog lookup
+# — `libs.versions.java.get().toInt()` — hits four by construction, and splitting a 48-character
+# expression over five lines helps nobody. The rule stays on for *.kt.
+[*.gradle.kts]
+ktlint_standard_chain-method-continuation = disabled

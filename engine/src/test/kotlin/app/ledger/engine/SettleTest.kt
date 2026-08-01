@@ -4,7 +4,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class SettleTest {
-
     private fun m(name: String) = MemberId(name)
 
     private val dinnerItem = Item(

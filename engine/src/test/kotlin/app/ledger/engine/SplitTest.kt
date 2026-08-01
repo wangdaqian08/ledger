@@ -6,7 +6,6 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class SplitTest {
-
     private fun members(vararg names: String) = names.map { MemberId(it) }
 
     @Test

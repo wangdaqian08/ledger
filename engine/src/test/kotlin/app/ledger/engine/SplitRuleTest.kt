@@ -12,7 +12,6 @@ import kotlin.test.assertTrue
  * All three must land on parts that sum to the item total exactly.
  */
 class SplitRuleTest {
-
     private val amy = MemberId("amy")
     private val bob = MemberId("bob")
     private val cara = MemberId("cara")

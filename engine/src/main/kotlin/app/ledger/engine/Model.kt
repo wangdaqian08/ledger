@@ -100,11 +100,13 @@ fun settle(trip: Trip): Settlement {
  * Note the Settle-up screen does not use this: its rows are bilateral (see `owesBetween`).
  */
 private fun suggestTransfers(balances: List<MemberBalance>): List<Transfer> {
-    val owed = balances.filter { it.netMinor > 0 }
+    val owed = balances
+        .filter { it.netMinor > 0 }
         .sortedByDescending { it.netMinor }
         .map { it.member to it.netMinor }
         .toMutableList()
-    val owing = balances.filter { it.netMinor < 0 }
+    val owing = balances
+        .filter { it.netMinor < 0 }
         .sortedBy { it.netMinor }
         .map { it.member to -it.netMinor }
         .toMutableList()

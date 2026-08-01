@@ -8,7 +8,6 @@ import kotlin.test.assertEquals
  * flips to all square the moment the third payback is approved.
  */
 class ItemStateTest {
-
     private val lucy = MemberId("lucy")
     private val ben = MemberId("ben")
     private val amy = MemberId("amy")

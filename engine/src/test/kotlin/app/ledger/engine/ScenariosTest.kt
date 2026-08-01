@@ -12,7 +12,6 @@ import kotlin.test.assertTrue
  * production code — they exist so the spec's promises can't silently rot.
  */
 class ScenariosTest {
-
     private fun m(name: String) = MemberId(name)
 
     // ---- S3 · the headcount drops ------------------------------------------------------
@@ -142,8 +141,11 @@ class ScenariosTest {
         val settlements = (1..random.nextInt(0, 4)).mapNotNull {
             val from = members.random(random)
             val to = members.random(random)
-            if (from == to) null
-            else Payback(from, to, random.nextLong(1, 100_000), PaybackStatus.entries.random(random))
+            if (from == to) {
+                null
+            } else {
+                Payback(from, to, random.nextLong(1, 100_000), PaybackStatus.entries.random(random))
+            }
         }
 
         return Trip(members = members, items = items, paybacks = repayments + settlements)

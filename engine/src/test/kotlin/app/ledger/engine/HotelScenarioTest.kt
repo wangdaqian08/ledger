@@ -15,7 +15,6 @@ import kotlin.test.assertTrue
  * paid must come out AHEAD — they are owed money back — and Jack must owe a full share.
  */
 class HotelScenarioTest {
-
     private val bob = MemberId("bob")
     private val originals = (1..9).map { MemberId("original-$it") }   // paid at both stages
     private val newcomers = (1..3).map { MemberId("newcomer-$it") }   // paid at stage 2 only
@@ -43,8 +42,8 @@ class HotelScenarioTest {
         paybacks =
             // The 9 originals each handed Bob $100 the day after booking.
             originals.map { deposit.repaidBy(it, 10_000) } +
-            // On arrival, the 12 others in the group of 13 each sent Bob $1,000/13.
-            (originals + newcomers).map { balance.repaidBy(it, 7_692) },
+                // On arrival, the 12 others in the group of 13 each sent Bob $1,000/13.
+                (originals + newcomers).map { balance.repaidBy(it, 7_692) },
     )
 
     private val settlement = settle(trip)

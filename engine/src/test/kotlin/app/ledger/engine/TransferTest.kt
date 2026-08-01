@@ -9,7 +9,6 @@ import kotlin.test.assertTrue
  * suggested transfer actually happened.
  */
 class TransferTest {
-
     private fun m(name: String) = MemberId(name)
 
     /**

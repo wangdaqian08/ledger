@@ -1,5 +1,7 @@
 # Ledger
 
+[![CI](https://github.com/wangdaqian08/ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/wangdaqian08/ledger/actions/workflows/ci.yml)
+
 A mobile web app for splitting costs on group trips.
 
 ## The problem it solves
@@ -41,7 +43,12 @@ Needs JDK 25. Gradle comes from the wrapper.
 
 ```bash
 ./gradlew :engine:test          # 51 tests
+./gradlew spotlessCheck         # formatting — ktlint via Spotless
+./gradlew spotlessApply         # fix formatting
+./gradlew check                 # both
 ```
+
+CI runs `spotlessCheck` and `:engine:test` on every push to `main` and every pull request.
 
 ## Status
 
