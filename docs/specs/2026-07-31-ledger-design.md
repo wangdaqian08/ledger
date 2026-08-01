@@ -488,7 +488,11 @@ Each step ends with something runnable and tested.
    and an optional item; `owesBetween` added and property-tested to sum to `−net` across 500
    random trips. Required by the Settle-up screen (§7a).
 3. **`server` skeleton** — Spring Boot 4 + Flyway + Postgres via Testcontainers, `/api/me`,
-   `MockIdentityProvider`, session cookie.
+   `MockIdentityProvider`, session cookie. ✔ `V1__init.sql` builds the whole of §5 and seeds the
+   eight built-in categories; sessions are Spring Session JDBC rows in Postgres rather than
+   in-memory, because Cloud Run will not always answer on the instance that signed you in.
+   `POST`/`DELETE /api/auth/session` and `GET /api/me` are live behind Spring Security with CSRF
+   on and a `NullRequestCache`, so anonymous traffic creates no session.
 4. **Trips + members + claim flow** — endpoints and permission tests.
 5. **Items + categories** — CRUD, people list editing, live shares, custom categories.
 6. **Paybacks + approval** — submit / approve / reject, pending excluded from maths, `ALL_SQUARE`.

@@ -29,6 +29,17 @@ with rounding.
 anywhere. `settle`, `itemState` and `owesBetween` all filter to `APPROVED` first. A claim the
 person owed has not agreed to must leave every balance untouched.
 
+**Flyway owns the schema; Hibernate only checks it.** `ddl-auto` is `validate` and must stay that
+way. Schema changes are a new `V__` migration — never an edit to `V1__init.sql`, which has already
+run everywhere. `SPRING_SESSION` is in that migration too, which is why
+`spring.session.jdbc.initialize-schema` is `never`: two owners of one schema is how you get a
+Flyway validation failure at the worst possible moment.
+
+**No share amount is ever stored.** `item_shares` holds the people list and the *inputs* to the
+split (`weight`, `exact_amount_minor`). Everything else — `owed`, `net`, `ALL_SQUARE` — is derived
+on read by `engine`. Caching a computed total in a column would reintroduce exactly the stale-number
+bug the whole design exists to avoid.
+
 ## The two invariants
 
 If a change breaks either of these, the change is wrong — not the test.
@@ -45,11 +56,15 @@ add a rule, add the property, not only the case that prompted it.
 
 ```
 engine/                pure Kotlin business rules: split, settle, item state
+server/                Spring Boot 4 + Flyway + Postgres. Skeleton only: schema, sign-in, /api/me
 docs/specs/            the design spec — source of truth
 Tally_Design_System/   vendored design reference. See below.
-server/                not built yet — Spring Boot 4 + Flyway + Postgres (build order step 3)
 web/                   not built yet — Vue 3 (build order step 8)
 ```
+
+Inside `server/`, `identity/` is the one seam to whoever vouches for a user — `MockIdentityProvider`
+on the dev profile today, Google at build order step 10. Nothing above that interface knows which is
+in play, and nothing should learn.
 
 `Tally_Design_System/` is **reference, not app code.** The `.jsx` files are a vendored React
 design system used to read tokens, spacing and component behaviour from. Do not edit them, do not
@@ -62,13 +77,23 @@ so do not write code that imports them or CI that builds them.
 
 ```bash
 ./gradlew :engine:test    # 51 tests, about a second
+./gradlew :server:test    # 18 tests, real Postgres — needs a running Docker daemon
 ./gradlew spotlessCheck   # formatting
 ./gradlew spotlessApply   # fix formatting
-./gradlew check           # both
+./gradlew check           # all of the above
 ```
 
-CI (`.github/workflows/ci.yml`) runs `spotlessCheck` then `:engine:test` on every push to `main`
-and every PR. Needs JDK 25; Gradle comes from the wrapper.
+CI (`.github/workflows/ci.yml`) runs `spotlessCheck`, then both suites, on every push to `main` and
+every PR. Needs JDK 25; Gradle comes from the wrapper.
+
+`server` tests use Testcontainers, never H2. The CHECK constraints, the partial unique indexes and
+Hibernate's schema validation are precisely what an in-memory substitute would silently not have,
+so a green suite against a fake database would prove nothing. If Docker is not running, start it —
+do not swap the database out to make the tests run.
+
+The container is started once in `PostgresTest`'s companion and deliberately carries **no**
+`@Testcontainers` annotation: that extension stops the container when its own test class finishes,
+which leaves every later class talking to a dead database.
 
 ## Formatting
 
