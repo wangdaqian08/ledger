@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Nothing here writes to the repo.
+permissions:
+  contents: read
+
+# A second push to a PR makes the first run pointless. `main` is exempt so every
+# commit that lands keeps a result of its own.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: temurin
+
+      # Restores the Gradle cache and checks gradle-wrapper.jar against the published
+      # checksums — worth having, since that jar is committed to the repo.
+      - uses: gradle/actions/setup-gradle@v6
+
+      # Formatting first: it fails in seconds and needs no compilation.
+      - name: Check formatting
+        run: ./gradlew spotlessCheck
+
+      # The engine is where the app is proven correct — spec §10.
+      - name: Test engine
+        run: ./gradlew :engine:test
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: engine/build/reports/tests/
+          retention-days: 7
