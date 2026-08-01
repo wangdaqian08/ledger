@@ -230,11 +230,13 @@ items(id, trip_id, title, category_id, amount_minor BIGINT, payer_member_id,
 
 items ... + split_rule                     -- EQUAL | WEIGHTED | EXACT
 
-item_shares(item_id, member_id, weight NULL, exact_amount_minor NULL)
+item_shares(trip_id, item_id, member_id, weight NULL, exact_amount_minor NULL)
                                            -- PK(item_id, member_id). The people list.
                                            -- weight is set for WEIGHTED, exact_amount_minor
                                            -- for EXACT; both null for EQUAL. Shares are
                                            -- still derived, never stored.
+                                           -- trip_id is here so both foreign keys can be
+                                           -- composite — see "Trip scoping" below.
 
 paybacks(id, trip_id, item_id NULL, from_member_id, to_member_id,
          amount_minor BIGINT, paid_on, proof_object_name NULL, note, status,
@@ -251,6 +253,18 @@ settlement between the same two people to both subtract.
 No computed share amounts are stored — they are derived on read, so editing a people list can
 never leave a stale total behind. `weight` and `exact_amount_minor` are *inputs* to that
 derivation, not results of it.
+
+**Trip scoping.** Every foreign key that reaches a member or an item is composite and carries
+`trip_id`: `items.payer_member_id`, both member columns on `paybacks`, and both keys on
+`item_shares` all point at `(trip_id, id)`, which `trip_members` and `items` expose as a `UNIQUE`
+constraint for exactly this purpose. A plain `REFERENCES trip_members (id)` would let one trip's
+member be put on another trip's item, and the consequence is not cosmetic — that person is handed
+a share of money they are not part of, and **both** trips' balances stop summing to zero. The
+database refuses it rather than trusting the service to remember.
+
+The one reference not scoped this way is `items.category_id`, because a category is either a
+built-in (`trip_id IS NULL`) or the trip's own, and "null or equal" is not expressible as a foreign
+key. A mis-scoped category is a wrong label, not wrong arithmetic; the service enforces it.
 
 **Categories.** Eight built-ins, matching Tally's canonical Lucide glyphs:
 `utensils` Food · `beer` Drinks · `car-front` Transport · `bed-double` Stay ·

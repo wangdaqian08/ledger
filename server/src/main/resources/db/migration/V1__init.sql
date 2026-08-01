@@ -7,6 +7,13 @@
 --
 -- All money is BIGINT minor units. There is no numeric/decimal/float column in this file and
 -- adding one is a bug.
+--
+-- The second rule: a trip cannot leak into another trip. Every foreign key that reaches a member
+-- or an item is a *composite* key carrying trip_id, so the database itself refuses to put one
+-- trip's member on another trip's item. A plain `REFERENCES trip_members (id)` would allow it, and
+-- the arithmetic consequence is not cosmetic — it is shares computed for somebody who is not on
+-- the trip, and balances that stop summing to zero on both trips at once. That is what the
+-- `UNIQUE (trip_id, id)` constraints below exist for: they are FK targets, not access paths.
 
 CREATE TABLE users (
     id            uuid        PRIMARY KEY,
@@ -47,8 +54,15 @@ CREATE TABLE trip_members (
     created_at   timestamptz NOT NULL DEFAULT now(),
 
     CONSTRAINT trip_members_name_unique UNIQUE (trip_id, display_name),
-    CONSTRAINT trip_members_hue_range CHECK (person_hue BETWEEN 1 AND 8)
+    CONSTRAINT trip_members_hue_range CHECK (person_hue BETWEEN 1 AND 8),
+    -- Redundant on its own — id is already unique. It exists so that items, item_shares and
+    -- paybacks can point at (trip_id, id) and be unable to name a member from another trip.
+    CONSTRAINT trip_members_trip_scoped UNIQUE (trip_id, id)
 );
+
+-- "Which trips am I in" is the first query every screen makes; the claim flow leaves this NULL
+-- until someone signs in, so the index only covers the rows that have been claimed.
+CREATE INDEX trip_members_user_idx ON trip_members (user_id) WHERE user_id IS NOT NULL;
 
 -- trip_id NULL = one of the eight built-ins, shared by every trip. Non-null = added by a member
 -- of that trip and scoped to it.
@@ -77,7 +91,7 @@ CREATE TABLE items (
     category_id        uuid        NOT NULL REFERENCES categories (id),
     amount_minor       bigint      NOT NULL,
     split_rule         text        NOT NULL,
-    payer_member_id    uuid        NOT NULL REFERENCES trip_members (id),
+    payer_member_id    uuid        NOT NULL,
     spent_on           date        NOT NULL,
     note               text,
     created_by_user_id uuid        NOT NULL REFERENCES users (id),
@@ -85,24 +99,42 @@ CREATE TABLE items (
     updated_at         timestamptz NOT NULL DEFAULT now(),
 
     CONSTRAINT items_amount_non_negative CHECK (amount_minor >= 0),
-    CONSTRAINT items_split_rule_known CHECK (split_rule IN ('EQUAL', 'WEIGHTED', 'EXACT'))
+    CONSTRAINT items_split_rule_known CHECK (split_rule IN ('EQUAL', 'WEIGHTED', 'EXACT')),
+    -- The payer is exactly one person (spec §3) and has to be on this trip.
+    CONSTRAINT items_payer_fk FOREIGN KEY (trip_id, payer_member_id) REFERENCES trip_members (trip_id, id),
+    -- FK target for item_shares and paybacks, so neither can reach across trips.
+    CONSTRAINT items_trip_scoped UNIQUE (trip_id, id)
 );
 
-CREATE INDEX items_trip_idx ON items (trip_id);
+-- No separate index on trip_id: items_trip_scoped is a (trip_id, id) index and serves the
+-- trip lookup on its leading column.
+CREATE INDEX items_payer_idx ON items (payer_member_id);
 
 -- The people list, and the whole point of the design: editing these rows is what fixes the hotel
 -- case. Which of weight / exact_amount_minor is populated depends on the parent item's
 -- split_rule, which is a cross-table rule and so lives in the service, not in a CHECK here.
+-- trip_id is carried here rather than only on the parent item, and it is not denormalisation for
+-- speed: it is the column that makes both foreign keys below land in the *same* trip. Without it
+-- there is no way to say "this member and this item belong together" in SQL.
 CREATE TABLE item_shares (
-    item_id            uuid   NOT NULL REFERENCES items (id) ON DELETE CASCADE,
-    member_id          uuid   NOT NULL REFERENCES trip_members (id),
+    trip_id            uuid   NOT NULL,
+    item_id            uuid   NOT NULL,
+    member_id          uuid   NOT NULL,
     weight             int,
     exact_amount_minor bigint,
 
     PRIMARY KEY (item_id, member_id),
+    CONSTRAINT item_shares_item_fk FOREIGN KEY (trip_id, item_id)
+        REFERENCES items (trip_id, id) ON DELETE CASCADE,
+    CONSTRAINT item_shares_member_fk FOREIGN KEY (trip_id, member_id)
+        REFERENCES trip_members (trip_id, id),
     CONSTRAINT item_shares_weight_positive CHECK (weight IS NULL OR weight > 0),
     CONSTRAINT item_shares_exact_non_negative CHECK (exact_amount_minor IS NULL OR exact_amount_minor >= 0)
 );
+
+-- "What is my share of everything" reads by member, which the (item_id, member_id) primary key
+-- cannot serve.
+CREATE INDEX item_shares_member_idx ON item_shares (member_id);
 
 -- item_id NULL = a trip-level settlement from the Settle-up screen (§7a). Same table, same state
 -- machine, same approval rule — which is what stops an item repayment and a trip-level settlement
@@ -113,9 +145,9 @@ CREATE TABLE item_shares (
 CREATE TABLE paybacks (
     id                  uuid        PRIMARY KEY,
     trip_id             uuid        NOT NULL REFERENCES trips (id) ON DELETE CASCADE,
-    item_id             uuid        REFERENCES items (id) ON DELETE CASCADE,
-    from_member_id      uuid        NOT NULL REFERENCES trip_members (id),
-    to_member_id        uuid        NOT NULL REFERENCES trip_members (id),
+    item_id             uuid,
+    from_member_id      uuid        NOT NULL,
+    to_member_id        uuid        NOT NULL,
     amount_minor        bigint      NOT NULL,
     paid_on             date        NOT NULL,
     proof_object_name   text,
@@ -130,11 +162,24 @@ CREATE TABLE paybacks (
     CONSTRAINT paybacks_amount_positive CHECK (amount_minor > 0),
     CONSTRAINT paybacks_not_self CHECK (from_member_id <> to_member_id),
     CONSTRAINT paybacks_status_known CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
-    CONSTRAINT paybacks_rejection_has_reason CHECK (status <> 'REJECTED' OR reject_reason IS NOT NULL)
+    CONSTRAINT paybacks_rejection_has_reason CHECK (status <> 'REJECTED' OR reject_reason IS NOT NULL),
+    -- Default MATCH SIMPLE is doing real work here: item_id is NULL for a trip-level settlement,
+    -- and a composite key with any NULL column is not checked. So this constrains item-filed
+    -- paybacks to an item on their own trip, and leaves Settle-up rows alone — which is exactly
+    -- the distinction §7a draws.
+    CONSTRAINT paybacks_item_fk FOREIGN KEY (trip_id, item_id)
+        REFERENCES items (trip_id, id) ON DELETE CASCADE,
+    CONSTRAINT paybacks_from_fk FOREIGN KEY (trip_id, from_member_id)
+        REFERENCES trip_members (trip_id, id),
+    CONSTRAINT paybacks_to_fk FOREIGN KEY (trip_id, to_member_id)
+        REFERENCES trip_members (trip_id, id)
 );
 
 CREATE INDEX paybacks_trip_idx ON paybacks (trip_id);
 CREATE INDEX paybacks_item_idx ON paybacks (item_id) WHERE item_id IS NOT NULL;
+-- Both directions, because a Settle-up row is "what I owe you" and "what you owe me" at once.
+CREATE INDEX paybacks_from_idx ON paybacks (from_member_id);
+CREATE INDEX paybacks_to_idx ON paybacks (to_member_id);
 
 -- The eight built-ins, matching Tally's canonical Lucide glyphs (§5). A trip member can add more,
 -- scoped to their trip.

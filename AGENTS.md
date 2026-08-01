@@ -40,6 +40,12 @@ split (`weight`, `exact_amount_minor`). Everything else — `owed`, `net`, `ALL_
 on read by `engine`. Caching a computed total in a column would reintroduce exactly the stale-number
 bug the whole design exists to avoid.
 
+**One trip cannot reach into another.** Every foreign key touching a member or an item is composite
+and carries `trip_id`, pointing at the `UNIQUE (trip_id, id)` constraints on `trip_members` and
+`items`. Do not "simplify" one back to `REFERENCES trip_members (id)` — that permits a member of
+trip B on trip A's item, which hands them a share of money they are not part of and breaks
+invariant 1 on both trips at once. `TripScopingTest` holds this, positive control included.
+
 ## The two invariants
 
 If a change breaks either of these, the change is wrong — not the test.
