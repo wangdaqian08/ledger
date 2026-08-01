@@ -25,17 +25,16 @@ class ScenariosTest {
 
         // Bob fronted the $1,000 deposit and Dana had already sent him her tenth of it.
         // Then Dana cancelled, so she comes off the item's people list entirely.
+        val hotel = Item(
+            id = ItemId(1),
+            amountMinor = 100_000,
+            payer = bob,
+            sharedBy = listOf(bob) + stayers,                  // Dana removed: 9, not 10
+        )
         val trip = Trip(
             members = listOf(bob, dana) + stayers,
-            items = listOf(
-                Item(
-                    id = ItemId(1),
-                    amountMinor = 100_000,
-                    payer = bob,
-                    sharedBy = listOf(bob) + stayers,          // Dana removed: 9, not 10
-                    paybacks = listOf(Payback(dana, 10_000, PaybackStatus.APPROVED)),
-                ),
-            ),
+            items = listOf(hotel),
+            paybacks = listOf(hotel.repaidBy(dana, 10_000)),
         )
 
         val settlement = settle(trip)
@@ -124,25 +123,29 @@ class ScenariosTest {
         val items = (1..random.nextInt(0, 7)).map { index ->
             // A non-empty people list, sometimes excluding the payer — someone can front a
             // bill they take no part in, like paying for everyone else's lift passes.
-            val sharedBy = members.filter { random.nextBoolean() }.ifEmpty { listOf(members.first()) }
-            val payer = members.random(random)
-
             Item(
                 id = ItemId(index.toLong()),
                 amountMinor = random.nextLong(1, 500_000),
-                payer = payer,
-                sharedBy = sharedBy,
-                paybacks = sharedBy.filter { it != payer && random.nextBoolean() }.map {
-                    Payback(
-                        from = it,
-                        // Deliberately unconstrained: under-payments and over-payments both happen.
-                        amountMinor = random.nextLong(1, 200_000),
-                        status = PaybackStatus.entries.random(random),
-                    )
-                },
+                payer = members.random(random),
+                sharedBy = members.filter { random.nextBoolean() }.ifEmpty { listOf(members.first()) },
             )
         }
 
-        return Trip(members = members, items = items)
+        val repayments = items.flatMap { item ->
+            item.sharedBy.filter { it != item.payer && random.nextBoolean() }.map {
+                // Deliberately unconstrained: under- and over-payments both happen.
+                item.repaidBy(it, random.nextLong(1, 200_000), PaybackStatus.entries.random(random))
+            }
+        }
+
+        // Trip-level settlements between any two members, with no item behind them.
+        val settlements = (1..random.nextInt(0, 4)).mapNotNull {
+            val from = members.random(random)
+            val to = members.random(random)
+            if (from == to) null
+            else Payback(from, to, random.nextLong(1, 100_000), PaybackStatus.entries.random(random))
+        }
+
+        return Trip(members = members, items = items, paybacks = repayments + settlements)
     }
 }

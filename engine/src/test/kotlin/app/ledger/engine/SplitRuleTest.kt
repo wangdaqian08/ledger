@@ -127,22 +127,15 @@ class SplitRuleTest {
     fun `a weighted item only goes square when the dragged portions are covered`() {
         val item = draggedItem()
 
-        // An equal-split-sized payback is not enough: Bob's dragged portion is $30, not $40.
-        val underPaid = item.copy(
-            paybacks = listOf(
-                Payback(bob, 3_000, PaybackStatus.APPROVED),
-                Payback(cara, 2_000, PaybackStatus.APPROVED),
-            ),
-        )
-        assertEquals(ItemState.OPEN, itemState(underPaid))
+        fun tripWith(vararg paybacks: Payback) =
+            Trip(members = everyone, items = listOf(item), paybacks = paybacks.toList())
 
-        val covered = item.copy(
-            paybacks = listOf(
-                Payback(bob, 3_000, PaybackStatus.APPROVED),
-                Payback(cara, 3_000, PaybackStatus.APPROVED),
-            ),
-        )
-        assertEquals(ItemState.ALL_SQUARE, itemState(covered))
+        // An equal-split-sized payback is not enough: Bob's dragged portion is $30, not $40.
+        val underPaid = tripWith(item.repaidBy(bob, 3_000), item.repaidBy(cara, 2_000))
+        assertEquals(ItemState.OPEN, underPaid.itemState(item.id))
+
+        val covered = tripWith(item.repaidBy(bob, 3_000), item.repaidBy(cara, 3_000))
+        assertEquals(ItemState.ALL_SQUARE, covered.itemState(item.id))
     }
 
     @Test

@@ -23,28 +23,28 @@ class HotelScenarioTest {
 
     private val everyone = listOf(bob) + originals + newcomers + listOf(jack)
 
+    private val deposit = Item(
+        id = ItemId(1),
+        amountMinor = 100_000,                            // $1,000 deposit
+        payer = bob,
+        sharedBy = everyone,                              // corrected from 10 to all 14
+    )
+
+    private val balance = Item(
+        id = ItemId(2),
+        amountMinor = 100_000,                            // $1,000 balance
+        payer = bob,
+        sharedBy = everyone,                              // corrected from 13 to all 14
+    )
+
     private val trip = Trip(
         members = everyone,
-        items = listOf(
-            Item(
-                id = ItemId(1),
-                amountMinor = 100_000,                    // $1,000 deposit
-                payer = bob,
-                sharedBy = everyone,                      // corrected from 10 to all 14
-                // The 9 originals each handed Bob $100 the day after booking.
-                paybacks = originals.map { Payback(it, 10_000, PaybackStatus.APPROVED) },
-            ),
-            Item(
-                id = ItemId(2),
-                amountMinor = 100_000,                    // $1,000 balance
-                payer = bob,
-                sharedBy = everyone,                      // corrected from 13 to all 14
-                // On arrival, the 12 others in the group of 13 each sent Bob $1,000/13.
-                paybacks = (originals + newcomers).map {
-                    Payback(it, 7_692, PaybackStatus.APPROVED)
-                },
-            ),
-        ),
+        items = listOf(deposit, balance),
+        paybacks =
+            // The 9 originals each handed Bob $100 the day after booking.
+            originals.map { deposit.repaidBy(it, 10_000) } +
+            // On arrival, the 12 others in the group of 13 each sent Bob $1,000/13.
+            (originals + newcomers).map { balance.repaidBy(it, 7_692) },
     )
 
     private val settlement = settle(trip)

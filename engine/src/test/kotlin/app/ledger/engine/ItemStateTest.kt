@@ -14,24 +14,33 @@ class ItemStateTest {
     private val amy = MemberId("amy")
     private val cara = MemberId("cara")
 
-    private fun dinner(vararg paybacks: Payback) = Item(
+    private val dinnerItem = Item(
         id = ItemId(7),
         amountMinor = 20_000,
         payer = lucy,
         sharedBy = listOf(lucy, ben, amy, cara),
-        paybacks = paybacks.toList(),
     )
 
-    private fun settled(who: MemberId) = Payback(who, 5_000, PaybackStatus.APPROVED)
+    /** Paybacks now live on the trip, so the helper builds one and asks it for the state. */
+    private fun dinner(vararg paybacks: Payback) = Trip(
+        members = listOf(lucy, ben, amy, cara),
+        items = listOf(dinnerItem),
+        paybacks = paybacks.toList(),
+    ).itemState(dinnerItem.id)
+
+    private fun settled(who: MemberId) = dinnerItem.repaidBy(who, 5_000)
+
+    private fun claimed(who: MemberId, amountMinor: Long, status: PaybackStatus) =
+        dinnerItem.repaidBy(who, amountMinor, status)
 
     @Test
     fun `is open while nobody has paid the payer back`() {
-        assertEquals(ItemState.OPEN, itemState(dinner()))
+        assertEquals(ItemState.OPEN, dinner())
     }
 
     @Test
     fun `is still open when only some have paid`() {
-        assertEquals(ItemState.OPEN, itemState(dinner(settled(ben), settled(amy))))
+        assertEquals(ItemState.OPEN, dinner(settled(ben), settled(amy)))
     }
 
     @Test
@@ -39,7 +48,7 @@ class ItemStateTest {
         // The payer's own share needs no payback — they already fronted the money.
         assertEquals(
             ItemState.ALL_SQUARE,
-            itemState(dinner(settled(ben), settled(amy), settled(cara))),
+            dinner(settled(ben), settled(amy), settled(cara)),
         )
     }
 
@@ -47,7 +56,7 @@ class ItemStateTest {
     fun `a pending payback does not make an item all square`() {
         assertEquals(
             ItemState.OPEN,
-            itemState(dinner(settled(ben), settled(amy), Payback(cara, 5_000, PaybackStatus.PENDING))),
+            dinner(settled(ben), settled(amy), claimed(cara, 5_000, PaybackStatus.PENDING)),
         )
     }
 
@@ -55,7 +64,7 @@ class ItemStateTest {
     fun `part-paying does not count as covered`() {
         assertEquals(
             ItemState.OPEN,
-            itemState(dinner(settled(ben), settled(amy), Payback(cara, 4_000, PaybackStatus.APPROVED))),
+            dinner(settled(ben), settled(amy), claimed(cara, 4_000, PaybackStatus.APPROVED)),
         )
     }
 
@@ -68,6 +77,9 @@ class ItemStateTest {
             sharedBy = listOf(lucy),
         )
 
-        assertEquals(ItemState.ALL_SQUARE, itemState(soloCoffee))
+        assertEquals(
+            ItemState.ALL_SQUARE,
+            Trip(members = listOf(lucy), items = listOf(soloCoffee)).itemState(soloCoffee.id),
+        )
     }
 }

@@ -7,14 +7,20 @@ value class ItemId(val value: Long)
 enum class PaybackStatus { PENDING, APPROVED, REJECTED }
 
 /**
- * Money handed back to an item's payer by one of its sharers.
+ * Money handed from one member to another.
  *
- * A claim only counts once the payer has approved it — see [PaybackStatus].
+ * With an [itemId] it is a repayment towards that item, and [to] is always that item's payer.
+ * With no [itemId] it is a trip-level settlement from the Settle-up screen, where there is no
+ * item to infer a recipient from — which is the whole reason [to] is stored rather than derived.
+ *
+ * Either way it only counts once the person owed has approved it — see [PaybackStatus].
  */
 data class Payback(
     val from: MemberId,
+    val to: MemberId,
     val amountMinor: Long,
     val status: PaybackStatus,
+    val itemId: ItemId? = null,
 )
 
 /**
@@ -29,14 +35,22 @@ data class Item(
     val amountMinor: Long,
     val payer: MemberId,
     val sharedBy: List<MemberId>,
-    val paybacks: List<Payback> = emptyList(),
     /** Evenly by default; the demo's SplitBar drag produces [SplitRule.Weighted]. */
     val split: SplitRule = SplitRule.Equal,
 )
 
+/** A repayment towards this item. The recipient can only ever be the person who fronted it. */
+fun Item.repaidBy(
+    from: MemberId,
+    amountMinor: Long,
+    status: PaybackStatus = PaybackStatus.APPROVED,
+): Payback = Payback(from = from, to = payer, amountMinor = amountMinor, status = status, itemId = id)
+
 data class Trip(
     val members: List<MemberId>,
     val items: List<Item>,
+    /** Every repayment and settlement in the trip, item-linked or not. */
+    val paybacks: List<Payback> = emptyList(),
 )
 
 /** One person's position across the whole trip. */
@@ -61,18 +75,15 @@ data class Settlement(
 }
 
 fun settle(trip: Trip): Settlement {
-    val balances = trip.members.map { member ->
-        val itemsTheyPaidFor = trip.items.filter { it.payer == member }
+    val approved = trip.approvedPaybacks()
 
+    val balances = trip.members.map { member ->
         MemberBalance(
             member = member,
-            paidOutMinor = itemsTheyPaidFor.sumOf { it.amountMinor } +
-                trip.items.sumOf { item ->
-                    item.approvedPaybacks().filter { it.from == member }.sumOf { it.amountMinor }
-                },
-            receivedBackMinor = itemsTheyPaidFor.sumOf { item ->
-                item.approvedPaybacks().sumOf { it.amountMinor }
-            },
+            paidOutMinor = trip.items.filter { it.payer == member }.sumOf { it.amountMinor } +
+                approved.filter { it.from == member }.sumOf { it.amountMinor },
+            // Whoever the money went to, item repayment or trip settlement alike.
+            receivedBackMinor = approved.filter { it.to == member }.sumOf { it.amountMinor },
             owedMinor = trip.items.sumOf { it.shareOf(member) },
         )
     }
@@ -85,6 +96,8 @@ fun settle(trip: Trip): Settlement {
  * Greedy: repeatedly match the largest creditor against the largest debtor. Each step zeroes
  * out at least one person, so this never needs more than one transfer fewer than there are
  * people — typically three or four rather than one per head.
+ *
+ * Note the Settle-up screen does not use this: its rows are bilateral (see `owesBetween`).
  */
 private fun suggestTransfers(balances: List<MemberBalance>): List<Transfer> {
     val owed = balances.filter { it.netMinor > 0 }
@@ -116,7 +129,7 @@ private fun suggestTransfers(balances: List<MemberBalance>): List<Transfer> {
     return transfers
 }
 
-private fun Item.approvedPaybacks(): List<Payback> =
+private fun Trip.approvedPaybacks(): List<Payback> =
     paybacks.filter { it.status == PaybackStatus.APPROVED }
 
 /** Every person's portion of this item, honouring its split rule. */
@@ -133,16 +146,20 @@ enum class ItemState { OPEN, ALL_SQUARE }
  *
  * The payer is excluded — they fronted the money, so their own share needs no payback.
  * Only approved paybacks count; a claim the payer hasn't agreed to leaves the item open.
+ * Trip-level settlements are ignored: they clear a person's overall position, not one bill.
  */
-fun itemState(item: Item): ItemState {
+fun Trip.itemState(itemId: ItemId): ItemState {
+    val item = items.first { it.id == itemId }
     val shares = item.shares()
-    val approvedByMember = item.approvedPaybacks()
+
+    val coveredByMember = approvedPaybacks()
+        .filter { it.itemId == itemId }
         .groupBy { it.from }
         .mapValues { (_, theirs) -> theirs.sumOf { it.amountMinor } }
 
     val everyoneCovered = item.sharedBy
         .filter { it != item.payer }
-        .all { sharer -> (approvedByMember[sharer] ?: 0L) >= (shares[sharer] ?: 0L) }
+        .all { sharer -> (coveredByMember[sharer] ?: 0L) >= (shares[sharer] ?: 0L) }
 
     return if (everyoneCovered) ItemState.ALL_SQUARE else ItemState.OPEN
 }
