@@ -28,7 +28,8 @@ every number is derived from it, live.
 | **Payback** | money moving between two members, filed **under an item** | A gave Bob **$100** · B gave Bob **$100** (+ screenshot) |
 
 An **Item** carries its own people list, editable forever — after payment, after the trip,
-whenever. Each item splits **equally** among whoever is on its list right now.
+whenever. It divides among whoever is on that list right now, by its own split rule (equal by
+default; a dragged weighting or typed amounts otherwise).
 
 A **Payback** is a claim. It is `PENDING` until the item's payer approves it.
 **Pending money counts for nothing** anywhere in the maths.
@@ -151,13 +152,16 @@ JavaScript. Cloud SQL Postgres, Cloud Storage for screenshots, Secret Manager fo
 
 ```kotlin
 // All money is Long minor units. No Double, no BigDecimal, anywhere.
-fun splitEqually(totalMinor: Long, memberIds: List<MemberId>, salt: Long): Map<MemberId, Long>
-fun settle(trip: TripSnapshot): Settlement          // net per member + suggested transfers
-fun itemState(item: ItemSnapshot): ItemState        // OPEN | ALL_SQUARE
+sealed interface SplitRule { Equal; Weighted(Map<MemberId, Int>); Exact(Map<MemberId, Long>) }
+
+fun shares(totalMinor: Long, members: List<MemberId>, rule: SplitRule, salt: Long): Map<MemberId, Long>
+fun settle(trip: Trip): Settlement                  // net per member + suggested transfers
+fun itemState(item: Item): ItemState                // OPEN | ALL_SQUARE
 ```
 
-**Rounding — largest remainder.** `base = total / n`, `rem = total % n`. The first `rem` members
-get `base + 1`. Parts sum to the total exactly, by construction. The starting offset rotates by
+**Rounding — largest remainder.** Floor every share, then hand the leftover cents to the largest
+fractional parts. Parts sum to the total exactly, by construction. Ties break on position
+rotated by
 `salt = itemId` so the spare cent lands on different people on different items. Minor-unit digits
 come from `java.util.Currency.getInstance(code).defaultFractionDigits`, so JPY (0 decimals) works
 without a special case.
