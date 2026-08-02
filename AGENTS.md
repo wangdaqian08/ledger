@@ -72,6 +72,19 @@ Inside `server/`, `identity/` is the one seam to whoever vouches for a user — 
 on the dev profile today, Google at build order step 10. Nothing above that interface knows which is
 in play, and nothing should learn.
 
+**A trip you cannot see returns 404, not 403.** A stranger must not be able to confirm that a trip
+exists. 403 is reserved for people who *are* on the trip but lack the right — a member who is not
+the creator trying to change the roster.
+
+**There is no default invite-signing secret, and there must never be one.** `application-dev.yaml`
+supplies one for local work and the tests; every other profile must be given one or the application
+refuses to start. A default committed here is a signing key that is public the moment the repository
+is, and "we'll override it in production" is not a mechanism.
+
+**Kotlin Boolean properties named `isX` reach the wire as `x`.** Jackson strips the prefix. Anything
+in a `*View` that starts with `is` needs `@get:JsonProperty` pinning the name, or the client silently
+reads a field that is not there — `MemberView.isYou` is the worked example.
+
 `SecurityConfig` publishes the `CsrfTokenRepository` and `CsrfTokenRequestHandler` as beans because
 `AuthController` rotates the token at sign-in and the filter chain validates against it. Two
 instances would be two opinions about where the token lives. The handler in particular must be the

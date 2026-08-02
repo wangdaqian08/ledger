@@ -205,6 +205,13 @@ class MockIdentityProvider    // @Profile("dev") — log in as any name, no netw
 it, signs in, and picks which name is them — that sets `trip_members.user_id`. Friends who never
 sign in still work; the payer just ticks them off directly.
 
+A name can be claimed once, and one person can hold one slot per trip. The second rule is the one
+that matters: two slots would let somebody owe and be owed as two different people on the same
+trip, and the balances would still sum to zero while being nonsense. The token is stateless and
+therefore cannot be withdrawn before it expires — rotating the signing secret invalidates every
+outstanding link at once, and is the only revocation there is. That is why validity is measured in
+days.
+
 ---
 
 ## 5. Data model (Flyway `V1__init.sql`)
@@ -278,6 +285,8 @@ hue from the person ramp. Custom categories are scoped to their trip. **No emoji
 |---|---|
 | create trip | any signed-in user |
 | add / remove trip members | trip creator |
+| generate a share link | trip creator — it is how the roster gets filled, so it follows the roster rule |
+| claim a member slot | anybody holding a valid link for that trip; the link *is* the authorisation |
 | create item, add a custom category | any trip member |
 | edit or delete item (amount, category, date, **people list**) | item payer + trip creator |
 | submit a payback claim | the claiming member |
@@ -512,7 +521,12 @@ Each step ends with something runnable and tested.
    in-memory, because Cloud Run will not always answer on the instance that signed you in.
    `POST`/`DELETE /api/auth/session` and `GET /api/me` are live behind Spring Security with CSRF
    on and a `NullRequestCache`, so anonymous traffic creates no session.
-4. **Trips + members + claim flow** — endpoints and permission tests.
+4. **Trips + members + claim flow** — endpoints and permission tests. ✔ Creating a trip makes you
+   its first member, already claimed. A trip you are not on returns 404, not 403 — a stranger
+   should not be able to confirm it exists. Invite tokens are HMAC-signed over trip and expiry,
+   with the secret supplied per environment and no default anywhere, so a profile without one
+   refuses to start. `yourNetMinor` comes from the engine over an empty item list rather than a
+   literal zero, so the mapping step 5 needs is already exercised.
 5. **Items + categories** — CRUD, people list editing, live shares, custom categories.
 6. **Paybacks + approval** — submit / approve / reject, pending excluded from maths, `ALL_SQUARE`.
 7. **Screenshot upload** — Cloud Storage, signed read URLs.
