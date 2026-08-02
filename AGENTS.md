@@ -72,6 +72,12 @@ Inside `server/`, `identity/` is the one seam to whoever vouches for a user — 
 on the dev profile today, Google at build order step 10. Nothing above that interface knows which is
 in play, and nothing should learn.
 
+`SecurityConfig` publishes the `CsrfTokenRepository` and `CsrfTokenRequestHandler` as beans because
+`AuthController` rotates the token at sign-in and the filter chain validates against it. Two
+instances would be two opinions about where the token lives. The handler in particular must be the
+eager one everywhere: rotation clears the old cookie first, and a deferred handler would decline to
+write the replacement, leaving the browser with no token and every write rejected.
+
 `Tally_Design_System/` is **reference, not app code.** The `.jsx` files are a vendored React
 design system used to read tokens, spacing and component behaviour from. Do not edit them, do not
 import them, and do not ship them. The frontend is Vue 3; components get ported, not reused.

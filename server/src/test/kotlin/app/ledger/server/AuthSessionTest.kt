@@ -6,6 +6,7 @@ import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -150,6 +151,57 @@ class AuthSessionTest : PostgresTest() {
             beforeSecondSignIn != client.cookie(SessionAwareClient.SESSION_COOKIE),
             "the session id was reused across sign-in",
         )
+    }
+
+    @Test
+    fun `the csrf token is replaced at sign-in`() {
+        val client = client()
+        client.get("/api/me")
+        val beforeSignIn = client.cookie(SessionAwareClient.CSRF_COOKIE)
+
+        signIn(client, "Trudy")
+
+        // Both halves matter. The token lives in a cookie, not the session, so invalidating the
+        // session does not touch it — a token planted in the browser before sign-in must not still
+        // be good afterwards. But "changed" is also satisfied by "cleared and never replaced",
+        // which would leave the SPA unable to write anything at all; assert a real replacement.
+        val afterSignIn = client.cookie(SessionAwareClient.CSRF_COOKIE)
+        assertNotNull(afterSignIn, "sign-in cleared the CSRF token without issuing a new one")
+        assertNotEquals(beforeSignIn, afterSignIn, "the pre-sign-in CSRF token survived authentication")
+    }
+
+    @Test
+    fun `signing out everywhere ends the session on the other device too`() {
+        // Two clients, one person: a phone and a laptop, each with its own session.
+        val phone = client().also { it.get("/api/me") }
+        val laptop = client().also { it.get("/api/me") }
+        signIn(phone, "Frankie")
+        signIn(laptop, "Frankie")
+        assertEquals(HttpStatus.OK, laptop.get("/api/me").statusCode, "the second sign-in did not take")
+
+        val response = phone.delete("/api/auth/sessions")
+
+        assertEquals(HttpStatus.NO_CONTENT, response.statusCode)
+        assertEquals(
+            HttpStatus.UNAUTHORIZED,
+            laptop.get("/api/me").statusCode,
+            "the lost device is still signed in",
+        )
+        assertEquals(HttpStatus.UNAUTHORIZED, phone.get("/api/me").statusCode)
+    }
+
+    @Test
+    fun `signing out everywhere leaves other people alone`() {
+        // The revocation is keyed on the principal name, so getting it wrong would sign out the
+        // entire application rather than one person.
+        val gilbert = client().also { it.get("/api/me") }
+        val hana = client().also { it.get("/api/me") }
+        signIn(gilbert, "Gilbert")
+        signIn(hana, "Hana")
+
+        gilbert.delete("/api/auth/sessions")
+
+        assertEquals(HttpStatus.OK, hana.get("/api/me").statusCode, "somebody else was signed out too")
     }
 
     @Test

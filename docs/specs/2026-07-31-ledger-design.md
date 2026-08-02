@@ -311,6 +311,7 @@ hue from the person ramp. Custom categories are scoped to their trip. **No emoji
 ```
 POST   /api/auth/session            { idToken }  → sets HttpOnly cookie
 DELETE /api/auth/session            sign out — "You" screen
+DELETE /api/auth/sessions           sign out everywhere — every device, not just this one
 GET    /api/me                      profile + friends + shared-group counts
 
 GET    /api/trips                   every group: icon, hue, members, your net
@@ -349,6 +350,10 @@ GET    /api/activity                Activity tab — cross-group feed
   Folded into `/api/me` rather than a second endpoint; it is the same page load.
 - **`trips.icon` and `trips.hue`** — `GroupCard` renders a Lucide glyph on a coloured disc
   (`plane`, `house`, `coffee`). Neither column existed. Added to the schema.
+- **`DELETE /api/auth/sessions`** — sessions last 30 days, which is the right feel for something
+  used on a phone during a trip. Without server-side revocation that also means a lost handset
+  stays signed in long after the trip ends, and the money it can move is real. Sessions live in
+  Postgres, so ending all of a user's is a lookup on the indexed `PRINCIPAL_NAME` column.
 
 ### Removed, because nothing needs them
 
