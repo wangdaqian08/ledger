@@ -1,14 +1,11 @@
 package app.ledger.server.trip
 
-import app.ledger.engine.MemberId
-import app.ledger.engine.Trip
-import app.ledger.engine.settle
 import app.ledger.server.invite.InvalidInviteToken
 import app.ledger.server.invite.InviteTokens
 import app.ledger.server.invite.IssuedInvite
+import app.ledger.server.item.toView
 import app.ledger.server.user.UserRepository
 import org.springframework.http.HttpStatus
-import org.springframework.security.access.AccessDeniedException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
@@ -21,6 +18,8 @@ class TripService(
     private val members: TripMemberRepository,
     private val users: UserRepository,
     private val inviteTokens: InviteTokens,
+    private val snapshots: TripSnapshots,
+    private val access: TripAccess,
 ) {
     /** Anyone signed in. Creating a trip makes you its first member, already claimed. */
     @Transactional
@@ -66,24 +65,24 @@ class TripService(
         val visible = trips.findAllForUser(actor)
         if (visible.isEmpty()) return TripsView(emptyList(), 0, 0)
 
-        val byTrip = members.findAllByTripIdInOrderByCreatedAt(visible.map { it.id }).groupBy { it.tripId }
-        val views = visible.map { trip -> view(trip, actor, byTrip[trip.id].orEmpty()) }
+        val loaded = snapshots.loadAll(visible.map { it.id })
+        val views = visible.mapNotNull { trip -> loaded[trip.id]?.let { trip.toView(it, actor) } }
 
         return TripsView(
             trips = views,
             overallNetMinor = views.sumOf { it.yourNetMinor },
+            // "Settled" is being square with the group, which is what the GroupsHome badge means.
             settledTripCount = views.count { it.yourNetMinor == 0L },
         )
     }
 
-    /** Any trip member. Non-members get 404 rather than 403 — see [visibleTrip]. */
     @Transactional(readOnly = true)
-    fun detail(tripId: UUID, actor: UUID): TripView = view(visibleTrip(tripId, actor), actor)
+    fun detail(tripId: UUID, actor: UUID): TripView = view(access.visibleTrip(tripId, actor), actor)
 
     /** Trip creator only (spec §5, permissions). */
     @Transactional
     fun addMember(tripId: UUID, command: AddMember, actor: UUID): MemberView {
-        val trip = creatorOnly(tripId, actor)
+        val trip = access.creatorOnly(tripId, actor)
         val displayName = command.displayName.trim()
 
         // The database enforces this too, but exactly and case-sensitively. Two members called
@@ -95,17 +94,17 @@ class TripService(
         val member = members.save(
             TripMemberEntity(tripId = trip.id, displayName = displayName, personHue = nextHue(trip.id)),
         )
-        return member.toView(actor)
+        return member.toMemberView(actor)
     }
 
     /** Trip creator only: the share link is how the roster gets filled, so it follows the roster rule. */
     @Transactional(readOnly = true)
-    fun invite(tripId: UUID, actor: UUID): IssuedInvite = inviteTokens.issue(creatorOnly(tripId, actor).id)
+    fun invite(tripId: UUID, actor: UUID): IssuedInvite = inviteTokens.issue(access.creatorOnly(tripId, actor).id)
 
     /**
-     * Deliberately not behind [visibleTrip]: the whole point is that the caller is *not* yet a
-     * member. The token is the authorisation, which is why it is verified before anything else and
-     * why the trip it names must match the one in the path.
+     * Deliberately not behind [TripAccess.visibleTrip]: the whole point is that the caller is *not*
+     * yet a member. The token is the authorisation, which is why it is verified before anything
+     * else and why the trip it names must match the one in the path.
      */
     @Transactional
     fun claim(tripId: UUID, command: ClaimMember, actor: UUID): TripView {
@@ -140,64 +139,36 @@ class TripService(
         }
 
         member.userId = actor
+        members.flush()
         return view(trip, actor)
-    }
-
-    private fun visibleTrip(tripId: UUID, actor: UUID): TripEntity {
-        val trip = trips.findById(tripId).orElseThrow {
-            ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
-        }
-        // 404 rather than 403 on purpose: to somebody with no business here, a trip they cannot see
-        // should be indistinguishable from one that does not exist.
-        members.findByTripIdAndUserId(tripId, actor)
-            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
-        return trip
-    }
-
-    private fun creatorOnly(tripId: UUID, actor: UUID): TripEntity {
-        val trip = visibleTrip(tripId, actor)
-        if (trip.createdByUserId != actor) {
-            throw AccessDeniedException("Only the person who created this trip can do that")
-        }
-        return trip
     }
 
     /** Round-robin over the eight person hues, and never reassigned once given. */
     private fun nextHue(tripId: UUID): Short = ((members.countByTripId(tripId) % 8) + 1).toShort()
 
-    private fun view(
-        trip: TripEntity,
-        actor: UUID,
-        roster: List<TripMemberEntity> = members.findAllByTripIdOrderByCreatedAt(trip.id),
-    ): TripView = TripView(
-        id = trip.id,
-        name = trip.name,
-        icon = trip.icon,
-        hue = trip.hue,
-        currencyCode = trip.currencyCode,
-        startsOn = trip.startsOn,
-        endsOn = trip.endsOn,
-        members = roster.map { it.toView(actor) },
-        yourNetMinor = netFor(roster, actor),
-    )
-
-    /**
-     * Asks the engine rather than returning a hardcoded zero. There are no items until build order
-     * step 5, so every answer here is currently 0 — but the mapping from rows to
-     * [app.ledger.engine.Trip] is the seam step 5 hangs off, and a seam nothing exercises is a seam
-     * nobody knows is broken.
-     */
-    private fun netFor(roster: List<TripMemberEntity>, actor: UUID): Long {
-        val you = roster.firstOrNull { it.userId == actor } ?: return 0
-        val trip = Trip(members = roster.map { MemberId(it.id.toString()) }, items = emptyList())
-        return settle(trip).net(MemberId(you.id.toString()))
+    private fun view(trip: TripEntity, actor: UUID): TripView {
+        members.flush()
+        return trip.toView(snapshots.load(trip.id), actor)
     }
-
-    private fun TripMemberEntity.toView(actor: UUID) = MemberView(
-        id = id,
-        displayName = displayName,
-        personHue = personHue,
-        claimed = userId != null,
-        isYou = userId == actor,
-    )
 }
+
+private fun TripEntity.toView(snapshot: TripSnapshot, actor: UUID) = TripView(
+    id = id,
+    name = name,
+    icon = icon,
+    hue = hue,
+    currencyCode = currencyCode,
+    startsOn = startsOn,
+    endsOn = endsOn,
+    members = snapshot.roster.map { it.toMemberView(actor) },
+    items = snapshot.items.map { snapshot.toView(it, actor) },
+    yourNetMinor = snapshot.memberFor(actor)?.let { snapshot.netFor(it.id) } ?: 0L,
+)
+
+private fun TripMemberEntity.toMemberView(actor: UUID) = MemberView(
+    id = id,
+    displayName = displayName,
+    personHue = personHue,
+    claimed = userId != null,
+    isYou = userId == actor,
+)

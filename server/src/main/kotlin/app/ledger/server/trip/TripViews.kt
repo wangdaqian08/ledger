@@ -1,5 +1,6 @@
 package app.ledger.server.trip
 
+import app.ledger.server.item.ItemView
 import com.fasterxml.jackson.annotation.JsonProperty
 import java.time.Instant
 import java.time.LocalDate
@@ -33,6 +34,13 @@ data class TripView(
     val startsOn: LocalDate?,
     val endsOn: LocalDate?,
     val members: List<MemberView>,
+    /**
+     * Each item carries its splits, so tapping a row opens the detail sheet with no second
+     * request — the demo's behaviour, and spec §6's one deliberate shape decision. Paybacks are
+     * *not* here: they are unbounded per item and only the approval section needs them, so they
+     * come from `GET /api/items/{id}`.
+     */
+    val items: List<ItemView>,
     /** Positive means the group owes you. Derived by the engine, never stored. */
     val yourNetMinor: Long,
 )

@@ -58,7 +58,7 @@ CI runs `spotlessCheck`, then both test suites, on every push to `main` and ever
 |---|---|
 | Design spec | done — `docs/specs/2026-07-31-ledger-design.md` |
 | Engine | done — 51 tests, including the hotel scenario above |
-| Server | sign-in, trips, members, the claim flow. Items are next |
+| Server | sign-in, trips, members, items and categories. Paybacks are next |
 | Web | not started |
 
 Backend is Kotlin on Spring Boot 4 with Postgres. Frontend will be **Vue 3** — the `.jsx` files

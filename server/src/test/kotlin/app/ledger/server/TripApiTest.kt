@@ -1,11 +1,7 @@
 package app.ledger.server
 
-import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Test
-import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.http.HttpStatus
-import org.springframework.http.ResponseEntity
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -19,14 +15,7 @@ import kotlin.test.assertTrue
  * Everything here goes over real HTTP as a real signed-in person, because the permission rules are
  * about *who is asking*, and a test that calls the service directly has already skipped that.
  */
-class TripApiTest : PostgresTest() {
-    @LocalServerPort
-    private var port: Int = 0
-
-    // Its own, not the application's: this only reads responses back, and borrowing the server's
-    // mapper would let a serialisation setting be wrong in both places at once and still pass.
-    private val json = ObjectMapper()
-
+class TripApiTest : ApiTest() {
     // --- creating and seeing trips -------------------------------------------------------------
 
     @Test
@@ -48,7 +37,7 @@ class TripApiTest : PostgresTest() {
     @Test
     fun `a trip you are not on is indistinguishable from one that does not exist`() {
         val alice = signedIn("Alice")
-        val tripId = alice.post("/api/trips", newTrip("Private")).id()
+        val tripId = alice.createTrip("Private")
         val stranger = signedIn("Stranger")
 
         // 404 rather than 403: a stranger should not be able to confirm the trip is even real.
@@ -72,7 +61,7 @@ class TripApiTest : PostgresTest() {
     @Test
     fun `signing out closes the door`() {
         val alice = signedIn("Alice")
-        val tripId = alice.post("/api/trips", newTrip("Hokkaido")).id()
+        val tripId = alice.createTrip("Hokkaido")
         alice.delete("/api/auth/session")
 
         assertEquals(HttpStatus.UNAUTHORIZED, alice.get("/api/trips/$tripId").statusCode)
@@ -93,10 +82,10 @@ class TripApiTest : PostgresTest() {
     @Test
     fun `only the creator can add members`() {
         val alice = signedIn("Alice")
-        val tripId = alice.post("/api/trips", newTrip("Hokkaido")).id()
-        val bobMember = alice.post("/api/trips/$tripId/members", mapOf("displayName" to "Bob")).id()
+        val tripId = alice.createTrip("Hokkaido")
+        val bobMember = alice.addMember(tripId, "Bob")
         val bob = signedIn("Bob")
-        claim(bob, tripId, alice.invite(tripId), bobMember)
+        bob.claim(tripId, alice.invite(tripId), bobMember)
 
         // Bob is a fully paid-up member of this trip and still cannot change its roster.
         val asMember = bob.post("/api/trips/$tripId/members", mapOf("displayName" to "Carol"))
@@ -108,7 +97,7 @@ class TripApiTest : PostgresTest() {
     @Test
     fun `person hues go round the eight and start again`() {
         val alice = signedIn("Alice")
-        val tripId = alice.post("/api/trips", newTrip("Big group")).id()
+        val tripId = alice.createTrip("Big group")
 
         // Alice already holds hue 1, so nine more members take us past the end of the ramp.
         repeat(9) { alice.post("/api/trips/$tripId/members", mapOf("displayName" to "Friend $it")) }
@@ -120,7 +109,7 @@ class TripApiTest : PostgresTest() {
     @Test
     fun `two people on one trip cannot share a name, whatever the capitalisation`() {
         val alice = signedIn("Alice")
-        val tripId = alice.post("/api/trips", newTrip("Hokkaido")).id()
+        val tripId = alice.createTrip("Hokkaido")
         alice.post("/api/trips/$tripId/members", mapOf("displayName" to "Bob"))
 
         // Picking the right name is how a friend claims their slot; two Bobs makes that a coin toss.
@@ -134,12 +123,12 @@ class TripApiTest : PostgresTest() {
     @Test
     fun `a friend follows the link, picks their name, and is on the trip`() {
         val alice = signedIn("Alice")
-        val tripId = alice.post("/api/trips", newTrip("Hokkaido")).id()
-        val bobMember = alice.post("/api/trips/$tripId/members", mapOf("displayName" to "Bob")).id()
+        val tripId = alice.createTrip("Hokkaido")
+        val bobMember = alice.addMember(tripId, "Bob")
         val bob = signedIn("Bob")
         assertEquals(HttpStatus.NOT_FOUND, bob.get("/api/trips/$tripId").statusCode)
 
-        val claimed = claim(bob, tripId, alice.invite(tripId), bobMember)
+        val claimed = bob.claim(tripId, alice.invite(tripId), bobMember)
 
         assertEquals(HttpStatus.OK, claimed.statusCode)
         val bobsRow = claimed.json()["members"].first { it["id"].asText() == bobMember.toString() }
@@ -151,13 +140,13 @@ class TripApiTest : PostgresTest() {
     @Test
     fun `a name somebody else has already claimed cannot be taken`() {
         val alice = signedIn("Alice")
-        val tripId = alice.post("/api/trips", newTrip("Hokkaido")).id()
-        val bobMember = alice.post("/api/trips/$tripId/members", mapOf("displayName" to "Bob")).id()
+        val tripId = alice.createTrip("Hokkaido")
+        val bobMember = alice.addMember(tripId, "Bob")
         val invite = alice.invite(tripId)
-        claim(signedIn("Bob"), tripId, invite, bobMember)
+        signedIn("Bob").claim(tripId, invite, bobMember)
 
         // The link is shareable, so a second person plausibly arrives holding the same one.
-        val impostor = claim(signedIn("Impostor"), tripId, invite, bobMember)
+        val impostor = signedIn("Impostor").claim(tripId, invite, bobMember)
 
         assertEquals(HttpStatus.CONFLICT, impostor.statusCode)
     }
@@ -165,26 +154,26 @@ class TripApiTest : PostgresTest() {
     @Test
     fun `one person cannot hold two slots on the same trip`() {
         val alice = signedIn("Alice")
-        val tripId = alice.post("/api/trips", newTrip("Hokkaido")).id()
-        val bobMember = alice.post("/api/trips/$tripId/members", mapOf("displayName" to "Bob")).id()
-        val spare = alice.post("/api/trips/$tripId/members", mapOf("displayName" to "Spare")).id()
+        val tripId = alice.createTrip("Hokkaido")
+        val bobMember = alice.addMember(tripId, "Bob")
+        val spare = alice.addMember(tripId, "Spare")
         val invite = alice.invite(tripId)
         val bob = signedIn("Bob")
-        claim(bob, tripId, invite, bobMember)
+        bob.claim(tripId, invite, bobMember)
 
         // Two slots would let one person owe and be owed as two people. The balances would still
         // sum to zero and still be nonsense.
-        assertEquals(HttpStatus.CONFLICT, claim(bob, tripId, invite, spare).statusCode)
+        assertEquals(HttpStatus.CONFLICT, bob.claim(tripId, invite, spare).statusCode)
     }
 
     @Test
     fun `a link for one trip does not open another`() {
         val alice = signedIn("Alice")
-        val hokkaido = alice.post("/api/trips", newTrip("Hokkaido")).id()
-        val kyoto = alice.post("/api/trips", newTrip("Kyoto")).id()
-        val kyotoMember = alice.post("/api/trips/$kyoto/members", mapOf("displayName" to "Bob")).id()
+        val hokkaido = alice.createTrip("Hokkaido")
+        val kyoto = alice.createTrip("Kyoto")
+        val kyotoMember = alice.addMember(kyoto, "Bob")
 
-        val crossed = claim(signedIn("Bob"), kyoto, alice.invite(hokkaido), kyotoMember)
+        val crossed = signedIn("Bob").claim(kyoto, alice.invite(hokkaido), kyotoMember)
 
         assertEquals(HttpStatus.BAD_REQUEST, crossed.statusCode)
     }
@@ -192,11 +181,11 @@ class TripApiTest : PostgresTest() {
     @Test
     fun `a tampered link is refused`() {
         val alice = signedIn("Alice")
-        val tripId = alice.post("/api/trips", newTrip("Hokkaido")).id()
-        val bobMember = alice.post("/api/trips/$tripId/members", mapOf("displayName" to "Bob")).id()
+        val tripId = alice.createTrip("Hokkaido")
+        val bobMember = alice.addMember(tripId, "Bob")
         val invite = alice.invite(tripId)
 
-        val forged = claim(signedIn("Mallory"), tripId, invite.dropLast(4) + "aaaa", bobMember)
+        val forged = signedIn("Mallory").claim(tripId, invite.dropLast(4) + "aaaa", bobMember)
 
         assertEquals(HttpStatus.BAD_REQUEST, forged.statusCode)
     }
@@ -204,11 +193,11 @@ class TripApiTest : PostgresTest() {
     @Test
     fun `a member of another trip cannot be claimed through this trip's link`() {
         val alice = signedIn("Alice")
-        val hokkaido = alice.post("/api/trips", newTrip("Hokkaido")).id()
-        val kyoto = alice.post("/api/trips", newTrip("Kyoto")).id()
-        val kyotoMember = alice.post("/api/trips/$kyoto/members", mapOf("displayName" to "Bob")).id()
+        val hokkaido = alice.createTrip("Hokkaido")
+        val kyoto = alice.createTrip("Kyoto")
+        val kyotoMember = alice.addMember(kyoto, "Bob")
 
-        val response = claim(signedIn("Bob"), hokkaido, alice.invite(hokkaido), kyotoMember)
+        val response = signedIn("Bob").claim(hokkaido, alice.invite(hokkaido), kyotoMember)
 
         assertEquals(HttpStatus.NOT_FOUND, response.statusCode)
     }
@@ -216,10 +205,10 @@ class TripApiTest : PostgresTest() {
     @Test
     fun `only the creator can hand out a link`() {
         val alice = signedIn("Alice")
-        val tripId = alice.post("/api/trips", newTrip("Hokkaido")).id()
-        val bobMember = alice.post("/api/trips/$tripId/members", mapOf("displayName" to "Bob")).id()
+        val tripId = alice.createTrip("Hokkaido")
+        val bobMember = alice.addMember(tripId, "Bob")
         val bob = signedIn("Bob")
-        claim(bob, tripId, alice.invite(tripId), bobMember)
+        bob.claim(tripId, alice.invite(tripId), bobMember)
 
         assertEquals(HttpStatus.FORBIDDEN, bob.post("/api/trips/$tripId/invite", emptyMap<String, String>()).statusCode)
     }
@@ -231,7 +220,7 @@ class TripApiTest : PostgresTest() {
         // Zero today because items arrive at step 5 — but the number comes from the engine, not
         // from a literal, so this is the seam being exercised rather than a placeholder.
         val alice = signedIn("Alice")
-        val tripId = alice.post("/api/trips", newTrip("Hokkaido")).id()
+        val tripId = alice.createTrip("Hokkaido")
         alice.post("/api/trips/$tripId/members", mapOf("displayName" to "Bob"))
 
         val trips = alice.get("/api/trips").json()
@@ -239,49 +228,5 @@ class TripApiTest : PostgresTest() {
         assertEquals(0, trips["trips"][0]["yourNetMinor"].asLong())
         assertEquals(0, trips["overallNetMinor"].asLong())
         assertEquals(1, trips["settledTripCount"].asInt())
-    }
-
-    // --- helpers -------------------------------------------------------------------------------
-
-    private fun signedIn(name: String): SessionAwareClient {
-        // One Postgres serves the whole suite and the mock provider keys users on their name, so
-        // "Alice" in two tests would otherwise be one person with both tests' trips.
-        val unique = "$name ${UUID.randomUUID().toString().take(8)}"
-        val client = SessionAwareClient("http://localhost:$port")
-        client.get("/api/me")
-        val response = client.post("/api/auth/session", mapOf("idToken" to unique))
-        check(response.statusCode == HttpStatus.OK) { "could not sign in as $unique: ${response.statusCode}" }
-        return client
-    }
-
-    private fun newTrip(name: String) = mapOf(
-        "name" to name,
-        "icon" to "plane",
-        "hue" to 3,
-        "currencyCode" to "AUD",
-    )
-
-    private fun SessionAwareClient.invite(tripId: UUID): String {
-        val response = post("/api/trips/$tripId/invite", emptyMap<String, String>())
-        check(response.statusCode == HttpStatus.OK) { "could not issue an invite: ${response.statusCode}" }
-        return json.readTree(response.body)["token"].asText()
-    }
-
-    private fun claim(
-        client: SessionAwareClient,
-        tripId: UUID,
-        token: String,
-        memberId: UUID,
-    ): ResponseEntity<String> =
-        client.post("/api/trips/$tripId/claim", mapOf("token" to token, "memberId" to memberId.toString()))
-
-    private fun ResponseEntity<String>.json(): JsonNode {
-        assertNotNull(body, "expected a body, got $statusCode")
-        return json.readTree(body)
-    }
-
-    private fun ResponseEntity<String>.id(): UUID {
-        assertFalse(statusCode.isError, "request failed with $statusCode: $body")
-        return UUID.fromString(json()["id"].asText())
     }
 }
