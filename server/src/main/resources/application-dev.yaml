@@ -10,6 +10,13 @@ spring:
     username: ledger
     password: ledger
 
+ledger:
+  invite:
+    # Local and test only. There is deliberately no secret in application.yaml, so any other
+    # profile must be given one — a shipped default is a signing key that is public the moment
+    # the repository is. Step 11 supplies the real one from Secret Manager.
+    secret: dev-only-invite-secret-not-for-any-real-deployment
+
 logging:
   level:
     org.flywaydb: info
