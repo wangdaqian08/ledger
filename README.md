@@ -28,9 +28,9 @@ is `$2,000/14`. No deposit-stage concept, no rebalancing pass.
 
 ```
 engine/                pure Kotlin. Split, settle, item state. No Spring, no database.
+server/                Spring Boot 4. Schema, sign-in and /api/me so far.
 docs/specs/            the design spec — read this first
 Tally_Design_System/   the design system: tokens, components, and a click-through demo
-server/                not built yet
 web/                   not built yet
 ```
 
@@ -39,16 +39,18 @@ generated trips be verified in about a second.
 
 ## Running it
 
-Needs JDK 25. Gradle comes from the wrapper.
+Needs JDK 25. Gradle comes from the wrapper. `:server:test` also needs a running Docker daemon —
+it starts a real Postgres rather than pretending with an in-memory database.
 
 ```bash
-./gradlew :engine:test          # 51 tests
+./gradlew :engine:test          # 51 tests, about a second
+./gradlew :server:test          # 18 tests against real Postgres, via Testcontainers
 ./gradlew spotlessCheck         # formatting — ktlint via Spotless
 ./gradlew spotlessApply         # fix formatting
-./gradlew check                 # both
+./gradlew check                 # all of the above
 ```
 
-CI runs `spotlessCheck` and `:engine:test` on every push to `main` and every pull request.
+CI runs `spotlessCheck`, then both test suites, on every push to `main` and every pull request.
 
 ## Status
 
@@ -56,7 +58,7 @@ CI runs `spotlessCheck` and `:engine:test` on every push to `main` and every pul
 |---|---|
 | Design spec | done — `docs/specs/2026-07-31-ledger-design.md` |
 | Engine | done — 51 tests, including the hotel scenario above |
-| Server | not started |
+| Server | skeleton — schema, sign-in, `/api/me`. Trips and items are next |
 | Web | not started |
 
 Backend is Kotlin on Spring Boot 4 with Postgres. Frontend will be **Vue 3** — the `.jsx` files

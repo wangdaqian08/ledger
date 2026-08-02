@@ -230,11 +230,13 @@ items(id, trip_id, title, category_id, amount_minor BIGINT, payer_member_id,
 
 items ... + split_rule                     -- EQUAL | WEIGHTED | EXACT
 
-item_shares(item_id, member_id, weight NULL, exact_amount_minor NULL)
+item_shares(trip_id, item_id, member_id, weight NULL, exact_amount_minor NULL)
                                            -- PK(item_id, member_id). The people list.
                                            -- weight is set for WEIGHTED, exact_amount_minor
                                            -- for EXACT; both null for EQUAL. Shares are
                                            -- still derived, never stored.
+                                           -- trip_id is here so both foreign keys can be
+                                           -- composite — see "Trip scoping" below.
 
 paybacks(id, trip_id, item_id NULL, from_member_id, to_member_id,
          amount_minor BIGINT, paid_on, proof_object_name NULL, note, status,
@@ -251,6 +253,18 @@ settlement between the same two people to both subtract.
 No computed share amounts are stored — they are derived on read, so editing a people list can
 never leave a stale total behind. `weight` and `exact_amount_minor` are *inputs* to that
 derivation, not results of it.
+
+**Trip scoping.** Every foreign key that reaches a member or an item is composite and carries
+`trip_id`: `items.payer_member_id`, both member columns on `paybacks`, and both keys on
+`item_shares` all point at `(trip_id, id)`, which `trip_members` and `items` expose as a `UNIQUE`
+constraint for exactly this purpose. A plain `REFERENCES trip_members (id)` would let one trip's
+member be put on another trip's item, and the consequence is not cosmetic — that person is handed
+a share of money they are not part of, and **both** trips' balances stop summing to zero. The
+database refuses it rather than trusting the service to remember.
+
+The one reference not scoped this way is `items.category_id`, because a category is either a
+built-in (`trip_id IS NULL`) or the trip's own, and "null or equal" is not expressible as a foreign
+key. A mis-scoped category is a wrong label, not wrong arithmetic; the service enforces it.
 
 **Categories.** Eight built-ins, matching Tally's canonical Lucide glyphs:
 `utensils` Food · `beer` Drinks · `car-front` Transport · `bed-double` Stay ·
@@ -297,6 +311,7 @@ hue from the person ramp. Custom categories are scoped to their trip. **No emoji
 ```
 POST   /api/auth/session            { idToken }  → sets HttpOnly cookie
 DELETE /api/auth/session            sign out — "You" screen
+DELETE /api/auth/sessions           sign out everywhere — every device, not just this one
 GET    /api/me                      profile + friends + shared-group counts
 
 GET    /api/trips                   every group: icon, hue, members, your net
@@ -335,6 +350,10 @@ GET    /api/activity                Activity tab — cross-group feed
   Folded into `/api/me` rather than a second endpoint; it is the same page load.
 - **`trips.icon` and `trips.hue`** — `GroupCard` renders a Lucide glyph on a coloured disc
   (`plane`, `house`, `coffee`). Neither column existed. Added to the schema.
+- **`DELETE /api/auth/sessions`** — sessions last 30 days, which is the right feel for something
+  used on a phone during a trip. Without server-side revocation that also means a lost handset
+  stays signed in long after the trip ends, and the money it can move is real. Sessions live in
+  Postgres, so ending all of a user's is a lookup on the indexed `PRINCIPAL_NAME` column.
 
 ### Removed, because nothing needs them
 
@@ -488,7 +507,11 @@ Each step ends with something runnable and tested.
    and an optional item; `owesBetween` added and property-tested to sum to `−net` across 500
    random trips. Required by the Settle-up screen (§7a).
 3. **`server` skeleton** — Spring Boot 4 + Flyway + Postgres via Testcontainers, `/api/me`,
-   `MockIdentityProvider`, session cookie.
+   `MockIdentityProvider`, session cookie. ✔ `V1__init.sql` builds the whole of §5 and seeds the
+   eight built-in categories; sessions are Spring Session JDBC rows in Postgres rather than
+   in-memory, because Cloud Run will not always answer on the instance that signed you in.
+   `POST`/`DELETE /api/auth/session` and `GET /api/me` are live behind Spring Security with CSRF
+   on and a `NullRequestCache`, so anonymous traffic creates no session.
 4. **Trips + members + claim flow** — endpoints and permission tests.
 5. **Items + categories** — CRUD, people list editing, live shares, custom categories.
 6. **Paybacks + approval** — submit / approve / reject, pending excluded from maths, `ALL_SQUARE`.

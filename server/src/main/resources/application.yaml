@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: ledger
+
+  # Flyway owns every table in this database. Hibernate is only allowed to check that the entities
+  # still match what the migrations built — it must never alter anything.
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  session:
+    # `never`, because SPRING_SESSION and SPRING_SESSION_ATTRIBUTES are created by V1__init.sql
+    # like every other table. Letting Spring Session create them would leave two owners of the
+    # schema and a Flyway validation failure the first time it mattered.
+    jdbc:
+      initialize-schema: never
+    timeout: 30d
+
+server:
+  servlet:
+    session:
+      cookie:
+        name: LEDGER_SESSION
+        http-only: true
+        # Lax, not Strict: the share link in the claim flow is a cross-site top-level navigation,
+        # and Strict would drop the session on arrival and bounce a signed-in friend to sign-in.
+        same-site: lax
+        path: /
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+server:
+  servlet:
+    session:
+      cookie:
+        # Only outside dev, where localhost is plain http. Set here rather than left to step 11 so
+        # that deploying cannot accidentally ship a session cookie that travels in the clear.
+        secure: true

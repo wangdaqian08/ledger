@@ -1,0 +1,15 @@
+# Local development: a Postgres on localhost and MockIdentityProvider, so nothing here needs
+# Google credentials or a network. `docker run --rm -e POSTGRES_USER=ledger \
+# -e POSTGRES_PASSWORD=ledger -e POSTGRES_DB=ledger -p 5432:5432 postgres:18-alpine`
+#
+# The Testcontainers tests also run under this profile, and their @ServiceConnection container
+# overrides the datasource below — a ConnectionDetails bean beats properties.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ledger
+    username: ledger
+    password: ledger
+
+logging:
+  level:
+    org.flywaydb: info
