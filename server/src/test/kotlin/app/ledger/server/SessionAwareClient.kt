@@ -4,6 +4,7 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.http.client.JdkClientHttpRequestFactory
 import org.springframework.web.client.RestClient
 
 /**
@@ -20,6 +21,10 @@ class SessionAwareClient(baseUrl: String) {
     private val http = RestClient
         .builder()
         .baseUrl(baseUrl)
+        // Named rather than left to auto-detection: the factory Spring falls back to when no HTTP
+        // client library is on the path cannot send PATCH at all, which would fail the people-list
+        // tests for a reason that has nothing to do with the application.
+        .requestFactory(JdkClientHttpRequestFactory())
         // Every status is the test's business, including the 401s and 403s that are the point.
         .defaultStatusHandler({ true }, { _, _ -> })
         .build()
@@ -27,6 +32,8 @@ class SessionAwareClient(baseUrl: String) {
     fun get(path: String): ResponseEntity<String> = exchange(HttpMethod.GET, path, null)
 
     fun post(path: String, body: Any): ResponseEntity<String> = exchange(HttpMethod.POST, path, body)
+
+    fun patch(path: String, body: Any): ResponseEntity<String> = exchange(HttpMethod.PATCH, path, body)
 
     fun delete(path: String): ResponseEntity<String> = exchange(HttpMethod.DELETE, path, null)
 

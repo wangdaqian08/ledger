@@ -40,6 +40,16 @@ split (`weight`, `exact_amount_minor`). Everything else — `owed`, `net`, `ALL_
 on read by `engine`. Caching a computed total in a column would reintroduce exactly the stale-number
 bug the whole design exists to avoid.
 
+**The item salt mapping is permanent.** `engineItemId` in `TripSnapshot.kt` turns an item's UUID
+into the `ItemId` the engine rotates its largest-remainder tie-break on. Change it and every
+existing item redistributes a cent between different people, silently, with no migration that could
+put it back. It is a pure function of the item's identity and must stay one.
+
+**`spring.mvc.problemdetails.enabled` must stay on.** Without it Spring answers with its legacy
+error body, which omits the message — every reason attached to a `ResponseStatusException` is
+discarded and the client gets a bare status it cannot explain. `ItemApiTest` asserts a 400 still
+carries its numbers.
+
 **One trip cannot reach into another.** Every foreign key touching a member or an item is composite
 and carries `trip_id`, pointing at the `UNIQUE (trip_id, id)` constraints on `trip_members` and
 `items`. Do not "simplify" one back to `REFERENCES trip_members (id)` — that permits a member of

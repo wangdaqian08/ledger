@@ -2,6 +2,15 @@ spring:
   application:
     name: ledger
 
+  mvc:
+    # RFC 7807 problem responses. Without this Spring answers with its legacy error body, which
+    # omits the message entirely — so every reason carefully attached to a 400 or 409 ("the exact
+    # amounts add up to 9000, but the expense is 10000") was being thrown away, and the client got
+    # a bare status it could not explain to anybody. Only reasons we set deliberately are exposed;
+    # unexpected exceptions still say nothing.
+    problemdetails:
+      enabled: true
+
   # Flyway owns every table in this database. Hibernate is only allowed to check that the entities
   # still match what the migrations built — it must never alter anything.
   jpa:

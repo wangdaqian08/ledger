@@ -527,7 +527,11 @@ Each step ends with something runnable and tested.
    with the secret supplied per environment and no default anywhere, so a profile without one
    refuses to start. `yourNetMinor` comes from the engine over an empty item list rather than a
    literal zero, so the mapping step 5 needs is already exercised.
-5. **Items + categories** — CRUD, people list editing, live shares, custom categories.
+5. **Items + categories** — CRUD, people list editing, live shares, custom categories. ✔ The hotel
+   case is covered end to end over HTTP: two $1,000 bills for thirteen, a fourteenth person ticked
+   onto both people lists, and every share re-derived with the bills still adding up to the cent.
+   Shares are never stored — `item_shares` holds only the inputs. The engine's split salt comes
+   from the item's UUID, which fixes that mapping permanently.
 6. **Paybacks + approval** — submit / approve / reject, pending excluded from maths, `ALL_SQUARE`.
 7. **Screenshot upload** — Cloud Storage, signed read URLs.
 8. **Tally → Vue port** — tokens, then presentational, then interactive components.
