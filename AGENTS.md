@@ -31,6 +31,10 @@ person owed has not agreed to must leave every balance untouched. `TripSnapshot`
 the engine *every* payback and lets it do the filtering — passing only the approved ones would
 work today and hide the rule the moment anything here had to reason about a pending claim.
 
+**`POST /api/trips/{id}/remind` delivers nothing, on purpose.** Push notifications are out of
+phase 1 (§9), so it validates that the nudge makes sense and returns. Do not make it "work" by
+inventing a channel, and do not let any response imply something was sent.
+
 **Approval is the person owed, or the trip's creator.** Never the person paying. §3 and §7a once
 said "only the person owed" while §5 added the creator; that was settled in favour of §5, and all
 three now say so. The creator being able to settle a debt between two other people is the accepted
@@ -70,7 +74,9 @@ If a change breaks either of these, the change is wrong — not the test.
 1. **Balances sum to zero.** Across every member of a trip, `netMinor` totals exactly 0.
 2. **Settle-up rows sum to a person's overall position.** For any member, their `owesBetween`
    figures against everyone else sum to `−netMinor`. If this breaks, the Settle-up screen
-   silently lies about who owes what, which is the one failure the app cannot survive.
+   silently lies about who owes what, which is the one failure the app cannot survive. Asserted
+   over HTTP in `SettlementApiTest` as well as property-tested in the engine — the engine holding
+   it is no use if the adapter loses it on the way out.
 
 Both are property-tested over hundreds of randomly generated trips, not just examples. When you
 add a rule, add the property, not only the case that prompted it.
