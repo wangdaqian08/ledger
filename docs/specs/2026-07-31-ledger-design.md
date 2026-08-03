@@ -110,7 +110,7 @@ that item's exact amount.
 | New item default | **Nobody ticked.** An `All` chip selects everyone in one tap. |
 | Payers | Exactly one per item. |
 | Paybacks | Filed under an item, or trip-level with no item (the Settle-up screen). Amount + date + optional screenshot. |
-| Approval | Only **the person owed** approves. On an item that is the payer, who fronted the money; at trip level it is whoever the money is going to. Same rule, stated once. They ticking a name themselves is instant. |
+| Approval | **The person owed**, or the trip's creator. On an item the person owed is the payer, who fronted the money; at trip level it is whoever the money is going to. Them ticking a name off themselves is instant, since the only agreement needed is their own. The creator is included so a trip cannot stall when somebody stops answering their phone — the cost being that a creator can mark a debt between two other people as settled. That is deliberate; it was the one place §3 and §5 disagreed, and §5 won. |
 | Rejection | Reject with a reason → avatar turns coral → claimant edits and resubmits. |
 | Item state | `ALL_SQUARE` when every sharer's approved paybacks ≥ their share. Card greys out, sinks down. |
 | Final settlement | **Recorded.** Tapping Pay sends a request to the person owed; it sits pending until they approve. Display-only is no longer possible — a pending approval is state. |
@@ -341,6 +341,7 @@ POST   /api/items/{id}/paybacks     { fromMemberId, amountMinor, paidOn, note }
 POST   /api/paybacks/{id}/proof     multipart → Cloud Storage
 POST   /api/paybacks/{id}/approve
 POST   /api/paybacks/{id}/reject    { reason }
+PATCH  /api/paybacks/{id}           claimant corrects a rejected claim → back to PENDING
 
 GET    /api/trips/{id}/settlement   bilateral rows: your position with each person
 POST   /api/trips/{id}/settlements  { toMemberId, amountMinor } — the Pay button
@@ -464,7 +465,8 @@ group's hero card. That identity is a property test, not a comment.
 
 ### Pay is a request, not an act
 
-Only the person owed can approve, so tapping **Pay** cannot settle anything on its own.
+The person paying cannot approve their own claim, so tapping **Pay** cannot settle anything on its
+own. Only the person owed — or the trip's creator — can (§3).
 
 ```
   tap Pay  →  PENDING          "Sent to Mei for confirmation"   counts as unpaid
@@ -532,7 +534,12 @@ Each step ends with something runnable and tested.
    onto both people lists, and every share re-derived with the bills still adding up to the cent.
    Shares are never stored — `item_shares` holds only the inputs. The engine's split salt comes
    from the item's UUID, which fixes that mapping permanently.
-6. **Paybacks + approval** — submit / approve / reject, pending excluded from maths, `ALL_SQUARE`.
+6. **Paybacks + approval** — submit / approve / reject, pending excluded from maths, `ALL_SQUARE`. ✔
+   §10's end-to-end check now runs as a test: thirteen people, two $1,000 bills, nine paying $100
+   and twelve paying $76.92, Jack ticked on at the end — landing on Bob +$34.10, the nine +$34.06,
+   the three joiners −$65.94, Jack −$142.86, and the column summing to exactly zero. The
+   Settle-up screen's own endpoints (bilateral rows, trip-level settlements, remind) are the
+   remaining part of §7a and come next.
 7. **Screenshot upload** — Cloud Storage, signed read URLs.
 8. **Tally → Vue port** — tokens, then presentational, then interactive components.
 9. **`web` screens** — 1–7 above, i18n EN/中文 scaffolding from the first component.

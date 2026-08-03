@@ -8,8 +8,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The scenario the whole application exists for, over HTTP — spec §10's manual check, as far as it
- * can be taken before paybacks arrive at step 6.
+ * The scenario the whole application exists for, over HTTP — spec §10's manual check, run as a
+ * test rather than performed by hand.
  *
  * A hotel is booked for thirteen. Two bills of $1,000 each are paid by Bob. Then Jack turns up at
  * check-in, and the *only* thing anybody does about it is tick him onto both bills' people lists.
@@ -111,7 +111,79 @@ class HotelScenarioApiTest : ApiTest() {
         assertEquals(0, bobsNet + alicesNet, "balances must sum to zero")
     }
 
+    /**
+     * Spec §10's end-to-end check, in full, now that paybacks exist.
+     *
+     * Thirteen people, two $1,000 bills fronted by Bob. Nine pay him $100 towards the deposit;
+     * twelve pay $76.92 towards the balance. Then Jack turns up having paid nothing, and is ticked
+     * onto both lists. Every figure below is the spec's, and the column must come to exactly zero.
+     */
+    @Test
+    fun `the whole hotel scenario, ending with the column summing to zero`() {
+        val bob = signedIn("Bob")
+        val tripId = bob.createTrip("Hokkaido")
+        val bobMember = bob.memberIdOf(tripId)
+        val friends = (1..12).map { bob.addMember(tripId, "Friend $it") }
+        val category = bob.builtInCategory(tripId, "stay")
+
+        val deposit = bob
+            .post(
+                "/api/trips/$tripId/items",
+                expense("Hotel deposit", thousandDollars, category, bobMember, listOf(bobMember) + friends),
+            ).id()
+        val balance = bob
+            .post(
+                "/api/trips/$tripId/items",
+                expense("Hotel balance", thousandDollars, category, bobMember, listOf(bobMember) + friends),
+            ).id()
+
+        // Recorded by Bob, who is the person owed, so each is agreed on the spot — the spec's
+        // "approve them all as Bob".
+        friends.take(9).forEach { bob.payBack(deposit, it, 10_000) }
+        friends.forEach { bob.payBack(balance, it, 7_692) }
+
+        val jack = bob.addMember(tripId, "Jack")
+        listOf(deposit, balance).forEach { itemId ->
+            val fourteen = (listOf(bobMember) + friends + jack).map { mapOf("memberId" to it.toString()) }
+            bob.patch("/api/items/$itemId", mapOf("sharedBy" to fourteen))
+        }
+
+        val invite = bob.invite(tripId)
+        val nets = (friends + jack).associateWith { member ->
+            signedIn("Member").let { client ->
+                client.claim(tripId, invite, member)
+                client.get("/api/trips/$tripId").json()["yourNetMinor"].asLong()
+            }
+        }
+        val bobsNet = bob.get("/api/trips/$tripId").json()["yourNetMinor"].asLong()
+
+        // The spec's figures. The tolerance is the one cent that largest remainder hands to some
+        // people and not others across two bills — not slack for an arithmetic mistake.
+        friends.take(9).forEach { assertNear(3_406, nets.getValue(it), "an original nine") }
+        friends.drop(9).forEach { assertNear(-6_594, nets.getValue(it), "a stage-two joiner") }
+        assertNear(-14_286, nets.getValue(jack), "Jack")
+        assertNear(3_410, bobsNet, "Bob")
+
+        // No tolerance here, ever. This is the invariant the app cannot survive breaking.
+        assertEquals(0, bobsNet + nets.values.sum(), "the settle-up column does not sum to zero")
+    }
+
     // --- helpers -----------------------------------------------------------------------------
+
+    private fun assertNear(expected: Long, actual: Long, who: String) =
+        assertTrue(actual in (expected - 2)..(expected + 2), "$who should be about $expected but was $actual")
+
+    private fun SessionAwareClient.payBack(itemId: UUID, fromMemberId: UUID, amountMinor: Long) {
+        val response = post(
+            "/api/items/$itemId/paybacks",
+            mapOf(
+                "fromMemberId" to fromMemberId.toString(),
+                "amountMinor" to amountMinor,
+                "paidOn" to "2026-08-01",
+            ),
+        )
+        check(!response.statusCode.isError) { "could not record a payback: ${response.statusCode} ${response.body}" }
+    }
 
     private fun SessionAwareClient.memberIdOf(tripId: UUID): UUID {
         val you = get("/api/trips/$tripId").json()["members"].first { it["isYou"].asBoolean() }

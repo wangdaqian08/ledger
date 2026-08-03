@@ -1,5 +1,7 @@
 package app.ledger.server.item
 
+import app.ledger.server.payback.PaybackView
+import com.fasterxml.jackson.annotation.JsonUnwrapped
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotEmpty
@@ -77,6 +79,21 @@ data class ItemView(
     val note: String?,
     val splits: List<SplitView>,
     val yourShareMinor: Long,
-    /** OPEN or ALL_SQUARE, from the engine. Everything is OPEN until paybacks arrive at step 6. */
+    /**
+     * OPEN or ALL_SQUARE, from the engine: square once every sharer bar the payer has covered
+     * their portion with *approved* paybacks. A derived state, never a button (§7a).
+     */
     val state: String,
+)
+
+/**
+ * One expense with its paybacks, for the detail sheet's approval section.
+ *
+ * Kept separate from [ItemView] because paybacks are unbounded per item and only this screen wants
+ * them — the trip payload deliberately carries items without them (spec §6).
+ */
+data class ItemDetailView(
+    @get:JsonUnwrapped
+    val item: ItemView,
+    val paybacks: List<PaybackView>,
 )
