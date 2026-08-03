@@ -1,6 +1,7 @@
 package app.ledger.server.item
 
 import app.ledger.server.category.CategoryRepository
+import app.ledger.server.payback.toView
 import app.ledger.server.trip.TripAccess
 import app.ledger.server.trip.TripEntity
 import app.ledger.server.trip.TripMemberRepository
@@ -50,10 +51,16 @@ class ItemService(
     }
 
     @Transactional(readOnly = true)
-    fun detail(itemId: UUID, actor: UUID): ItemView {
+    fun detail(itemId: UUID, actor: UUID): ItemDetailView {
         val item = items.findById(itemId).orElseThrow { noSuchItem() }
         access.visibleTrip(item.tripId, actor)
-        return viewOf(item.id, item.tripId, actor)
+
+        val snapshot = snapshots.load(item.tripId)
+        val loaded = snapshot.items.first { it.id == item.id }
+        return ItemDetailView(
+            item = snapshot.toView(loaded, actor),
+            paybacks = snapshot.paybacksFor(loaded).map { it.toView() },
+        )
     }
 
     /**

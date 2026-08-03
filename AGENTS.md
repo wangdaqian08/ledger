@@ -27,7 +27,14 @@ with rounding.
 
 **Only approved paybacks count.** A `Payback` with `PaybackStatus.PENDING` moves no number
 anywhere. `settle`, `itemState` and `owesBetween` all filter to `APPROVED` first. A claim the
-person owed has not agreed to must leave every balance untouched.
+person owed has not agreed to must leave every balance untouched. `TripSnapshot` therefore hands
+the engine *every* payback and lets it do the filtering — passing only the approved ones would
+work today and hide the rule the moment anything here had to reason about a pending claim.
+
+**Approval is the person owed, or the trip's creator.** Never the person paying. §3 and §7a once
+said "only the person owed" while §5 added the creator; that was settled in favour of §5, and all
+three now say so. The creator being able to settle a debt between two other people is the accepted
+cost of a trip not stalling when somebody stops answering.
 
 **Flyway owns the schema; Hibernate only checks it.** `ddl-auto` is `validate` and must stay that
 way. Schema changes are a new `V__` migration — never an edit to `V1__init.sql`, which has already

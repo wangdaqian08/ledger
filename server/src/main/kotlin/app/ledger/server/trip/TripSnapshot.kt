@@ -4,6 +4,8 @@ import app.ledger.engine.Item
 import app.ledger.engine.ItemId
 import app.ledger.engine.ItemState
 import app.ledger.engine.MemberId
+import app.ledger.engine.Payback
+import app.ledger.engine.PaybackStatus
 import app.ledger.engine.SplitRule
 import app.ledger.engine.Trip
 import app.ledger.engine.itemState
@@ -14,6 +16,9 @@ import app.ledger.server.item.ItemRepository
 import app.ledger.server.item.ItemShareEntity
 import app.ledger.server.item.ItemShareRepository
 import app.ledger.server.item.SplitRuleName
+import app.ledger.server.payback.PaybackEntity
+import app.ledger.server.payback.PaybackRepository
+import app.ledger.server.payback.PaybackStatusName
 import org.springframework.stereotype.Component
 import java.util.UUID
 
@@ -39,14 +44,16 @@ fun engineItemId(itemId: UUID): ItemId = ItemId(itemId.mostSignificantBits)
 class TripSnapshot(
     val roster: List<TripMemberEntity>,
     val items: List<ItemEntity>,
+    val paybacks: List<PaybackEntity>,
     private val sharesByItem: Map<UUID, List<ItemShareEntity>>,
 ) {
     private val engineTrip: Trip = Trip(
         members = roster.map { MemberId(it.id.toString()) },
         items = items.map { it.toEngineItem(sharesByItem[it.id].orEmpty()) },
-        // Paybacks arrive at build order step 6. Until then every item reads OPEN and every
-        // balance is simply what people owe.
-        paybacks = emptyList(),
+        // Every payback, whatever its status. The engine filters to APPROVED itself — passing only
+        // the approved ones would work today and quietly hide the rule the moment anything here
+        // needed to reason about a pending claim.
+        paybacks = paybacks.map { it.toEnginePayback() },
     )
 
     private val settlement by lazy { settle(engineTrip) }
@@ -71,6 +78,21 @@ class TripSnapshot(
         sharesByItem[item.id].orEmpty().associateBy { it.id.memberId }
 
     fun memberFor(userId: UUID): TripMemberEntity? = roster.firstOrNull { it.userId == userId }
+
+    /** Every payback filed against one bill, newest last, whatever its status. */
+    fun paybacksFor(item: ItemEntity): List<PaybackEntity> = paybacks.filter { it.itemId == item.id }
+
+    private fun PaybackEntity.toEnginePayback() = Payback(
+        from = MemberId(fromMemberId.toString()),
+        to = MemberId(toMemberId.toString()),
+        amountMinor = amountMinor,
+        status = when (status) {
+            PaybackStatusName.PENDING -> PaybackStatus.PENDING
+            PaybackStatusName.APPROVED -> PaybackStatus.APPROVED
+            PaybackStatusName.REJECTED -> PaybackStatus.REJECTED
+        },
+        itemId = itemId?.let(::engineItemId),
+    )
 
     private fun ItemEntity.toEngineItem(shares: List<ItemShareEntity>) = Item(
         id = engineItemId(id),
@@ -100,19 +122,21 @@ class TripSnapshots(
     private val members: TripMemberRepository,
     private val items: ItemRepository,
     private val shares: ItemShareRepository,
+    private val paybacks: PaybackRepository,
 ) {
     /**
-     * Three queries for a whole trip, however many items it has. Loading shares per item would be
+     * Four queries for a whole trip, however many items it has. Loading shares per item would be
      * the classic N+1, and every screen in this app reads a trip whole.
      */
     fun load(tripId: UUID): TripSnapshot = TripSnapshot(
         roster = members.findAllByTripIdOrderByCreatedAt(tripId),
         items = items.findAllByTripIdOrderBySpentOnDescCreatedAtDesc(tripId),
+        paybacks = paybacks.findAllByTripIdOrderByCreatedAt(tripId),
         sharesByItem = shares.findAllByTripId(tripId).groupBy { it.id.itemId },
     )
 
     /**
-     * Still three queries for any number of trips. GroupsHome shows your net on every group at
+     * Still four queries for any number of trips. GroupsHome shows your net on every group at
      * once, and doing that a trip at a time is the N+1 that turns a snappy home screen slow the
      * week somebody joins their tenth trip.
      */
@@ -122,11 +146,13 @@ class TripSnapshots(
         val rosters = members.findAllByTripIdInOrderByCreatedAt(tripIds).groupBy { it.tripId }
         val itemsByTrip = items.findAllByTripIdInOrderBySpentOnDescCreatedAtDesc(tripIds).groupBy { it.tripId }
         val sharesByTrip = shares.findAllByTripIdIn(tripIds).groupBy { it.tripId }
+        val paybacksByTrip = paybacks.findAllByTripIdInOrderByCreatedAt(tripIds).groupBy { it.tripId }
 
         return tripIds.associateWith { tripId ->
             TripSnapshot(
                 roster = rosters[tripId].orEmpty(),
                 items = itemsByTrip[tripId].orEmpty(),
+                paybacks = paybacksByTrip[tripId].orEmpty(),
                 sharesByItem = sharesByTrip[tripId].orEmpty().groupBy { it.id.itemId },
             )
         }

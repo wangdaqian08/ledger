@@ -28,7 +28,7 @@ class ItemController(private val items: ItemService) {
     fun detail(
         @PathVariable itemId: UUID,
         @AuthenticationPrincipal principal: LedgerPrincipal,
-    ): ItemView = items.detail(itemId, principal.userId)
+    ): ItemDetailView = items.detail(itemId, principal.userId)
 
     /** Where the people list gets fixed — see [ItemService.patch]. */
     @PatchMapping("/api/items/{itemId}")
