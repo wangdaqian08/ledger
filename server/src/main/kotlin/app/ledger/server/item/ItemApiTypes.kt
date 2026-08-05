@@ -23,6 +23,16 @@ data class ShareInput(
 )
 
 data class CreateItem(
+    /**
+     * Supplied by the client so the split's salt — and therefore who absorbs each spare cent — is
+     * known before saving, which is what lets the SplitBar show amounts that will not move when it
+     * is. Sending the same id twice returns the first item rather than making a second, so a retry
+     * after a dropped connection cannot double an expense.
+     *
+     * Optional: omitted, the server mints one, and the split is still correct — only the preview
+     * would have been a guess.
+     */
+    val id: UUID? = null,
     @field:NotBlank
     @field:Size(max = 120)
     val title: String,
@@ -85,6 +95,14 @@ data class ItemView(
      */
     val state: String,
 )
+
+/**
+ * An item, and whether this request is what created it.
+ *
+ * [fresh] is false when the same client id has been seen before, which the controller turns into
+ * 200 rather than 201 — the request was answered, but nothing new happened.
+ */
+data class CreatedItem(val item: ItemView, val fresh: Boolean)
 
 /**
  * One expense with its paybacks, for the detail sheet's approval section.

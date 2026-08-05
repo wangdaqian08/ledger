@@ -51,6 +51,19 @@ split (`weight`, `exact_amount_minor`). Everything else — `owed`, `net`, `ALL_
 on read by `engine`. Caching a computed total in a column would reintroduce exactly the stale-number
 bug the whole design exists to avoid.
 
+**The split algorithm exists twice, and the two are pinned together.** `web/src/lib/split.ts` is a
+deliberate port of `Split.kt`, because the SplitBar shows each person's amount live while it is
+dragged and that means predicting largest remainder — spare cents included — before anything is
+saved. `engine/src/test/resources/split-vectors.json` is the contract: `SplitVectorsTest`
+regenerates and checks it, `web/tests/split.spec.ts` checks the port against the same file. Change
+one implementation without the other and a test goes red. Change both without reading the vector
+diff and every existing item's rounding has quietly moved.
+
+**The client mints an item's id.** That is what makes the preview exact — the salt is the id, so it
+has to exist before the split can be shown. `POST /api/trips/{id}/items` takes an optional `id` and
+returns 200 instead of 201 when it has seen that id before, so a retry on a flaky connection cannot
+double an expense.
+
 **The item salt mapping is permanent.** `engineItemId` in `TripSnapshot.kt` turns an item's UUID
 into the `ItemId` the engine rotates its largest-remainder tie-break on. Change it and every
 existing item redistributes a cent between different people, silently, with no migration that could

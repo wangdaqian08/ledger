@@ -26,14 +26,27 @@ class ItemService(
 ) {
     /** Any trip member can record what they spent (spec §5). */
     @Transactional
-    fun create(tripId: UUID, command: CreateItem, actor: UUID): ItemView {
+    fun create(tripId: UUID, command: CreateItem, actor: UUID): CreatedItem {
         val trip = access.visibleTrip(tripId, actor)
+
+        // Checked before anything else is validated: a replay should be answered, not re-argued.
+        command.id?.let { id ->
+            val existing = items.findById(id).orElse(null)
+            if (existing != null) {
+                if (existing.tripId != trip.id) {
+                    throw ResponseStatusException(HttpStatus.CONFLICT, "That id is already in use")
+                }
+                return CreatedItem(viewOf(existing.id, trip.id, actor), fresh = false)
+            }
+        }
+
         validateAgainstRoster(trip, command.payerMemberId, command.sharedBy)
         validateSplit(command.splitRule, command.amountMinor, command.sharedBy)
         requireCategoryAvailable(trip.id, command.categoryId)
 
         val item = items.save(
             ItemEntity(
+                id = command.id ?: UUID.randomUUID(),
                 tripId = trip.id,
                 title = command.title.trim(),
                 categoryId = command.categoryId,
@@ -47,7 +60,7 @@ class ItemService(
         )
         writeShares(item, command.sharedBy)
 
-        return viewOf(item.id, trip.id, actor)
+        return CreatedItem(viewOf(item.id, trip.id, actor), fresh = true)
     }
 
     @Transactional(readOnly = true)

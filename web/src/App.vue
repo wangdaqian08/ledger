@@ -5,6 +5,11 @@ import PersonAvatar from './components/PersonAvatar.vue'
 import TallyBadge from './components/TallyBadge.vue'
 import TallyButton from './components/TallyButton.vue'
 import TallyCard from './components/TallyCard.vue'
+import SplitBar from './components/SplitBar.vue'
+import AmountInput from './components/AmountInput.vue'
+import PersonToggleRow from './components/PersonToggleRow.vue'
+import { ref } from 'vue'
+import { saltFor, splitShares } from './lib/split'
 
 /**
  * A gallery of what has been ported so far, not a screen.
@@ -12,6 +17,26 @@ import TallyCard from './components/TallyCard.vue'
  * The real screens are build order step 9; this exists so the components can be looked at in a
  * browser while they are being built, and it will be replaced by the router when the screens land.
  */
+const amount = ref(20000)
+
+// A fixed id so the gallery is stable to look at; a real sheet mints one with newItemId().
+const salt = saltFor('01234567-89ab-cdef-0000-000000000000')
+
+const split = ref([
+  { memberId: '1', displayName: 'Bob', personHue: 1, weight: 2 },
+  { memberId: '2', displayName: 'Alice', personHue: 2, weight: 1 },
+  { memberId: '3', displayName: 'Mei', personHue: 3, weight: 1 },
+])
+
+const onList = ref<Record<string, boolean>>({ '1': true, '2': true, '3': false })
+
+const previewShares = () =>
+  splitShares({
+    totalMinor: amount.value,
+    weights: split.value.map((p) => p.weight),
+    salt,
+  })
+
 const people = [
   { id: '1', displayName: 'Bob Chen', personHue: 1 },
   { id: '2', displayName: 'Alice Wu', personHue: 2 },
@@ -57,6 +82,31 @@ const people = [
         <TallyBadge tone="settled">All square</TallyBadge>
         <TallyBadge tone="pending">Waiting for Mei</TallyBadge>
         <TallyBadge tone="owe">You owe</TallyBadge>
+      </p>
+    </TallyCard>
+
+    <TallyCard>
+      <h2>Entering an amount</h2>
+      <p><AmountInput v-model="amount" /></p>
+      <p>Stored as {{ amount }} minor units — never a float.</p>
+    </TallyCard>
+
+    <TallyCard>
+      <h2>Dragging a split</h2>
+      <SplitBar v-model:people="split" :total-minor="amount" :salt="salt" />
+      <p>These are the engine's own figures, to the cent, before anything is saved.</p>
+    </TallyCard>
+
+    <TallyCard>
+      <h2>Who is on it</h2>
+      <p v-for="(person, i) in split" :key="person.memberId" style="display: block">
+        <PersonToggleRow
+          :selected="onList[person.memberId] ?? false"
+          :display-name="person.displayName"
+          :person-hue="person.personHue"
+          :share-minor="previewShares()[i] ?? 0"
+          @update:selected="onList[person.memberId] = $event"
+        />
       </p>
     </TallyCard>
 

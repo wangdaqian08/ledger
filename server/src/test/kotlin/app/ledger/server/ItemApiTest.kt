@@ -212,6 +212,55 @@ class ItemApiTest : ApiTest() {
         assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
     }
 
+    @Test
+    fun `the client can choose the expense's id, and sending it twice does not double the expense`() {
+        // The frontend mints the id so the split's salt is known before saving, which is what lets
+        // the SplitBar show amounts that will not move once it lands. The same property makes a
+        // retry after a dropped connection safe.
+        val trip = tripWith("Alice", "Bob")
+        val chosen = UUID.randomUUID()
+        val body = expense("Dinner", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)) +
+            mapOf("id" to chosen.toString())
+
+        val first = trip.owner.post("/api/trips/${trip.id}/items", body)
+        val replay = trip.owner.post("/api/trips/${trip.id}/items", body)
+
+        assertEquals(HttpStatus.CREATED, first.statusCode)
+        assertEquals(chosen, first.id())
+        // 200, not 201: the request was answered, but nothing new happened.
+        assertEquals(HttpStatus.OK, replay.statusCode)
+        assertEquals(chosen, replay.id())
+        assertEquals(
+            1,
+            trip.owner
+                .get("/api/trips/${trip.id}")
+                .json()["items"]
+                .size(),
+        )
+    }
+
+    @Test
+    fun `an id already used by another trip is refused`() {
+        val trip = tripWith("Alice", "Bob")
+        val elsewhere = tripWith("Alice", "Bob")
+        val chosen = UUID.randomUUID()
+        elsewhere.owner.post(
+            "/api/trips/${elsewhere.id}/items",
+            expense("Theirs", 5_000, elsewhere.category, elsewhere.ownerMember, listOf(elsewhere.ownerMember)) +
+                mapOf("id" to chosen.toString()),
+        )
+
+        val response = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Mine", 5_000, trip.category, trip.ownerMember, listOf(trip.ownerMember)) +
+                mapOf("id" to chosen.toString()),
+        )
+
+        // Not a silent hand-over of somebody else's expense, and not a 404 either — the id is
+        // genuinely taken.
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
+    }
+
     // --- helpers -----------------------------------------------------------------------------
 
     private class Fixture(
