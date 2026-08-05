@@ -23,17 +23,23 @@ import org.springframework.stereotype.Component
 import java.util.UUID
 
 /**
- * The salt an item's split rotates on, and therefore which member absorbs a spare cent.
+ * The item's identity inside the engine: both the salt its split rotates on and the key its
+ * paybacks are matched by.
  *
- * This mapping is permanent. Change it and every existing item redistributes its rounding by one
- * cent between people, silently, with no migration that could put it back. It is a pure function
- * of the item's identity — which is exactly what the spec means by `salt = itemId` — so it needs
- * no column and cannot drift.
+ * **Both halves of the UUID, folded together.** An earlier version took only
+ * `mostSignificantBits`, which is fine for random v4 ids and wrong for anything structured — two
+ * ids differing solely in their low bits mapped to the same engine item, so one bill's paybacks
+ * were counted against the other and a half-paid bill read ALL_SQUARE. That is not hypothetical:
+ * UUIDv7 carries a millisecond timestamp in the high bits, so two expenses added in the same
+ * moment would collide, and the client is the thing that mints these ids.
+ *
+ * This mapping is permanent once anything is deployed. Change it and every existing item
+ * redistributes its rounding by a cent, silently, with no migration that could put it back.
  *
  * A negative value is fine: the engine rotates with `((index - offset) % count + count) % count`,
  * which is well defined for any Long.
  */
-fun engineItemId(itemId: UUID): ItemId = ItemId(itemId.mostSignificantBits)
+fun engineItemId(itemId: UUID): ItemId = ItemId(itemId.mostSignificantBits xor itemId.leastSignificantBits)
 
 /**
  * One trip, loaded once, in the shape the engine understands.

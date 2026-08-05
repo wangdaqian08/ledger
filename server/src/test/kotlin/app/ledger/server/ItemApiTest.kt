@@ -261,6 +261,47 @@ class ItemApiTest : ApiTest() {
         assertEquals(HttpStatus.CONFLICT, response.statusCode)
     }
 
+    @Test
+    fun `two expenses whose ids differ only in the low bits stay two expenses`() {
+        // Regression. engineItemId once folded only the UUID's high 64 bits, so these two became
+        // one item inside the engine: one bill's paybacks were counted against the other, and a
+        // bill nobody had paid reported ALL_SQUARE. UUIDv7 carries a millisecond timestamp in the
+        // high bits, so two expenses added in the same moment collide by construction — and the
+        // client is what mints these ids.
+        val trip = tripWith("Alice", "Bob")
+        val paid = "cccccccc-0000-4000-8000-000000000001"
+        val unpaid = "cccccccc-0000-4000-8000-000000000002"
+
+        listOf(paid, unpaid).forEach { id ->
+            trip.owner.post(
+                "/api/trips/${trip.id}/items",
+                expense("Bill", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)) +
+                    mapOf("id" to id),
+            )
+        }
+        // Bob covers his half of one bill and none of the other.
+        trip.owner.post(
+            "/api/items/$paid/paybacks",
+            mapOf("fromMemberId" to trip.bob.toString(), "amountMinor" to 5_000, "paidOn" to "2026-08-02"),
+        )
+
+        assertEquals(
+            "ALL_SQUARE",
+            trip.owner
+                .get("/api/items/$paid")
+                .json()["state"]
+                .asText(),
+        )
+        assertEquals(
+            "OPEN",
+            trip.owner
+                .get("/api/items/$unpaid")
+                .json()["state"]
+                .asText(),
+            "one bill's paybacks settled another",
+        )
+    }
+
     // --- helpers -----------------------------------------------------------------------------
 
     private class Fixture(
