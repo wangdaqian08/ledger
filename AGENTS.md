@@ -175,7 +175,7 @@ there, and `web` never will be.
 ## Verifying
 
 ```bash
-./gradlew :engine:test    # 51 tests, about a second
+./gradlew :engine:test    # 64 tests, about a second
 ./gradlew :server:test    # real Postgres via Testcontainers — needs a running Docker daemon
 ./gradlew spotlessCheck   # Kotlin formatting
 ./gradlew spotlessApply   # fix Kotlin formatting
