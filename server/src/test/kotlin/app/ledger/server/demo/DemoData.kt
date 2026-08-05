@@ -106,7 +106,7 @@ class DemoData {
 
             // Jack is on the trip and on neither bill. Adding a member changes no existing item
             // (§3, roster changes are manual) — which is exactly the state the demo wants to open in.
-            check(jack.id !in shares.findAllByIdItemId(deposit.id).map { it.id.memberId })
+            check(jack.id !in shares.findAllByIdItemIdOrderByPosition(deposit.id).map { it.id.memberId })
         }
 
         /** A small second trip, so the home screen has more than one card and one that is square. */
@@ -163,7 +163,9 @@ class DemoData {
                 ),
             )
             shares.saveAll(
-                sharedBy.map { ItemShareEntity(ItemShareId(item.id, it.id), tripId = trip.id) },
+                sharedBy.mapIndexed { index, member ->
+                    ItemShareEntity(ItemShareId(item.id, member.id), tripId = trip.id, position = index.toShort())
+                },
             )
             return item
         }

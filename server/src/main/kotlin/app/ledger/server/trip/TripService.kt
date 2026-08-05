@@ -5,6 +5,7 @@ import app.ledger.server.invite.InviteTokens
 import app.ledger.server.invite.IssuedInvite
 import app.ledger.server.item.toView
 import app.ledger.server.user.UserRepository
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -139,7 +140,18 @@ class TripService(
         }
 
         member.userId = actor
-        members.flush()
+        try {
+            members.flush()
+        } catch (raceLost: DataIntegrityViolationException) {
+            // Two claims can pass the check above together — the same link open on two devices.
+            // trip_members_user_trip_unique lets only one of them keep a slot; the other lands
+            // here and gets the same answer it would have got arriving a moment later.
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "You are already on this trip under another name",
+                raceLost,
+            )
+        }
         return view(trip, actor)
     }
 

@@ -90,6 +90,11 @@ class SecurityConfig {
         // including from crawlers and probes.
         http.requestCache { it.requestCache(NullRequestCache()) }
 
+        // Spring stands up POST /logout by default — a second sign-out path that skips
+        // AuthController and answers with a redirect to a login page that does not exist. Sign-out
+        // is DELETE /api/auth/session and nothing else.
+        http.logout { it.disable() }
+
         return http.build()
     }
 }

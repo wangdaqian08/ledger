@@ -149,7 +149,7 @@ class TripSnapshots(
         roster = members.findAllByTripIdOrderByCreatedAt(tripId),
         items = items.findAllByTripIdOrderBySpentOnDescCreatedAtDesc(tripId),
         paybacks = paybacks.findAllByTripIdOrderByCreatedAt(tripId),
-        sharesByItem = shares.findAllByTripId(tripId).groupBy { it.id.itemId },
+        sharesByItem = shares.findAllByTripIdOrderByPosition(tripId).groupBy { it.id.itemId },
     )
 
     /**
@@ -162,7 +162,7 @@ class TripSnapshots(
 
         val rosters = members.findAllByTripIdInOrderByCreatedAt(tripIds).groupBy { it.tripId }
         val itemsByTrip = items.findAllByTripIdInOrderBySpentOnDescCreatedAtDesc(tripIds).groupBy { it.tripId }
-        val sharesByTrip = shares.findAllByTripIdIn(tripIds).groupBy { it.tripId }
+        val sharesByTrip = shares.findAllByTripIdInOrderByPosition(tripIds).groupBy { it.tripId }
         val paybacksByTrip = paybacks.findAllByTripIdInOrderByCreatedAt(tripIds).groupBy { it.tripId }
 
         return tripIds.associateWith { tripId ->

@@ -212,6 +212,25 @@ class AuthSessionTest : PostgresTest() {
         assertEquals(HttpStatus.UNAUTHORIZED, signIn(client, "   ").statusCode)
     }
 
+    @Test
+    fun `spring's stock logout endpoint is not a second door out`() {
+        // Spring Security stands up POST /logout by default — a sign-out path that would skip
+        // AuthController and answer with a redirect to a login page this app does not have. It is
+        // disabled in SecurityConfig; sign-out is DELETE /api/auth/session and nothing else.
+        val gilbert = client().also { it.get("/api/me") }
+        signIn(gilbert, "Gilbert")
+
+        val logout = gilbert.post("/logout", emptyMap<String, String>())
+
+        assertEquals(HttpStatus.NOT_FOUND, logout.statusCode, "no such endpoint, no redirect")
+        assertEquals(HttpStatus.OK, gilbert.get("/api/me").statusCode, "and the session survived it")
+        assertEquals(
+            HttpStatus.UNAUTHORIZED,
+            client().get("/logout").statusCode,
+            "anonymous callers get the same closed door as everywhere else",
+        )
+    }
+
     private fun sessionCount(): Int =
         jdbc.queryForObject("SELECT count(*) FROM spring_session", Int::class.java)!!
 

@@ -92,7 +92,7 @@ class ItemService(
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "an expense has to be shared by somebody")
         }
 
-        val effectiveShares = sharedBy ?: shares.findAllByIdItemId(item.id).map {
+        val effectiveShares = sharedBy ?: shares.findAllByIdItemIdOrderByPosition(item.id).map {
             ShareInput(it.id.memberId, it.weight, it.exactAmountMinor)
         }
         validateAgainstRoster(trip, payerMemberId, effectiveShares)
@@ -170,11 +170,32 @@ class ItemService(
                 if (sharedBy.any { (it.weight ?: 0) <= 0 }) {
                     throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Every weight has to be a positive number")
                 }
+                // The engine refuses combinations where amount × weight cannot fit in a Long,
+                // because past that point the arithmetic wraps and the shares come out wrong with
+                // no error. Caught here so the refusal is a 400 the client can act on.
+                val heaviest = sharedBy.maxOf { it.weight ?: 0 }
+                if (amountMinor > Long.MAX_VALUE / heaviest) {
+                    throw ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "That amount and those weights are too large to split exactly",
+                    )
+                }
             }
 
             SplitRuleName.EXACT -> {
                 if (sharedBy.any { it.exactAmountMinor == null }) {
                     throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Every person needs an exact amount")
+                }
+                // Checked per share, not only in sum: a negative here and a padded amount there
+                // cancel out, sail past the sum check, and die at the database's CHECK as a bare
+                // 500. A share below zero is not a share, it is a payment — and there is a flow
+                // for those.
+                val negative = sharedBy.firstOrNull { (it.exactAmountMinor ?: 0L) < 0L }
+                if (negative != null) {
+                    throw ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "An exact amount cannot be below zero, got ${negative.exactAmountMinor}",
+                    )
                 }
                 // The engine refuses to split amounts that do not add up, and it is right to.
                 // Catching it here makes it a 400 the client can act on rather than a 500.
@@ -204,12 +225,13 @@ class ItemService(
         shares.deleteAllByIdItemId(item.id)
         shares.flush()
         shares.saveAll(
-            sharedBy.map {
+            sharedBy.mapIndexed { index, share ->
                 ItemShareEntity(
-                    id = ItemShareId(itemId = item.id, memberId = it.memberId),
+                    id = ItemShareId(itemId = item.id, memberId = share.memberId),
                     tripId = item.tripId,
-                    weight = if (item.splitRule == SplitRuleName.WEIGHTED) it.weight else null,
-                    exactAmountMinor = if (item.splitRule == SplitRuleName.EXACT) it.exactAmountMinor else null,
+                    position = index.toShort(),
+                    weight = if (item.splitRule == SplitRuleName.WEIGHTED) share.weight else null,
+                    exactAmountMinor = if (item.splitRule == SplitRuleName.EXACT) share.exactAmountMinor else null,
                 )
             },
         )

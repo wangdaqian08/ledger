@@ -11,11 +11,13 @@ interface ItemRepository : JpaRepository<ItemEntity, UUID> {
 }
 
 interface ItemShareRepository : JpaRepository<ItemShareEntity, ItemShareId> {
-    fun findAllByTripId(tripId: UUID): List<ItemShareEntity>
+    // Always ordered by position: these lists reach the engine, whose remainder tie-break is
+    // positional. An unordered read would let the database's row order decide who pays a cent.
+    fun findAllByTripIdOrderByPosition(tripId: UUID): List<ItemShareEntity>
 
-    fun findAllByTripIdIn(tripIds: Collection<UUID>): List<ItemShareEntity>
+    fun findAllByTripIdInOrderByPosition(tripIds: Collection<UUID>): List<ItemShareEntity>
 
-    fun findAllByIdItemId(itemId: UUID): List<ItemShareEntity>
+    fun findAllByIdItemIdOrderByPosition(itemId: UUID): List<ItemShareEntity>
 
     /**
      * Editing a people list replaces it wholesale rather than diffing: the list is the statement of
