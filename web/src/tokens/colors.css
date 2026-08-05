@@ -1,0 +1,75 @@
+/*
+ * Ported from Tally_Design_System/tokens/colors.css.
+ *
+ * Copied values, not an import: the design system is a vendored React reference and is
+ * never shipped. Keep this in step with it by hand — that is the deliberate cost of the
+ * frontend being Vue and the reference being React.
+ */
+:root {
+  /* ---- Base ramp: warm paper + soft ink ---- */
+  --paper: #fffbf2;
+  --paper-sunk: #f6f0e4;
+  --surface: #ffffff;
+  --surface-hover: #fbf8f1;
+  --ink: #1a1720;
+  --ink-2: #4b4655;
+  --ink-3: #7c7689;
+  --ink-4: #aba5b6;
+  --hairline: #e7e0d3;
+  --hairline-strong: #d6cdbc;
+
+  /* ---- Brand ---- */
+  --grape: #4b3bff;
+  --grape-press: #3a2cd6;
+  --grape-tint: #edebff;
+  --lemon: #ffce2e;
+  --lemon-press: #e8b517;
+  --lemon-tint: #fff6dc;
+
+  /* ---- Semantic money colors ---- */
+  --mint: #00bf87;
+  --mint-press: #00a374;
+  --mint-tint: #dcf7ef;
+  --coral: #ff5147;
+  --coral-press: #e23a31;
+  --coral-tint: #ffe6e4;
+
+  /* ---- Person hues: assigned round-robin to members of a group ---- */
+  --person-1: #ff5147;
+  --person-2: #ff9e1b;
+  --person-3: #ffce2e;
+  --person-4: #00bf87;
+  --person-5: #19b6e8;
+  --person-6: #4b3bff;
+  --person-7: #a855f7;
+  --person-8: #ff5fa2;
+
+  /* ---- Semantic aliases: use these, not the raw ramp ---- */
+  --bg-app: var(--paper);
+  --bg-sunk: var(--paper-sunk);
+  --surface-card: var(--surface);
+  --surface-card-hover: var(--surface-hover);
+
+  --text-body: var(--ink);
+  --text-heading: var(--ink);
+  --text-muted: var(--ink-3);
+  --text-subtle: var(--ink-4);
+  --text-on-accent: #ffffff;
+  --text-on-lemon: var(--ink);
+
+  --action: var(--grape);
+  --action-press: var(--grape-press);
+  --action-tint: var(--grape-tint);
+
+  --owed-to-you: var(--mint);
+  --owed-to-you-tint: var(--mint-tint);
+  --you-owe: var(--coral);
+  --you-owe-tint: var(--coral-tint);
+  --settled: var(--ink-3);
+
+  --border-card: var(--ink);
+  --border-soft: var(--hairline);
+  --focus-ring: var(--grape);
+
+  --scrim: rgba(26, 23, 32, 0.44);
+}

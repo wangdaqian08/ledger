@@ -1,0 +1,19 @@
+/*
+ * Ported from Tally_Design_System/tokens/fonts.css.
+ *
+ * Copied values, not an import: the design system is a vendored React reference and is
+ * never shipped. Keep this in step with it by hand — that is the deliberate cost of the
+ * frontend being Vue and the reference being React.
+ */
+/* Tally webfonts.
+   SUBSTITUTION NOTE: no font binaries were supplied with the source material, so
+   both faces are Google Fonts loaded over CDN rather than self-hosted binaries.
+   Figtree  = friendly geometric sans, all UI + headlines.
+   Space Grotesk = money amounts and tabular figures.
+   Swap these @import lines for self-hosted @font-face rules when licensed files arrive. */
+@import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --font-core: 'Figtree', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
+  --font-money: 'Space Grotesk', ui-monospace, 'SF Mono', monospace;
+}

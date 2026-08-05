@@ -45,6 +45,29 @@ jobs:
       - name: Test server
         run: ./gradlew :server:test
 
+      # `web` is a plain npm project, not a Gradle module, so it needs its own steps. That is a
+      # deliberate trade: `./gradlew check` stays JVM-only and fast, and §10's documented npm
+      # commands are the real ones rather than a second way of doing it.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm --prefix web ci
+
+      - name: Lint web
+        run: npm --prefix web run lint
+
+      - name: Test web
+        run: npm --prefix web test
+
+      # Typechecks as well as bundles — vue-tsc runs as part of the build script, so a type error
+      # fails here rather than at deploy time.
+      - name: Build web
+        run: npm --prefix web run build
+
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v7

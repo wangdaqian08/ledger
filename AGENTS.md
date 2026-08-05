@@ -85,11 +85,15 @@ add a rule, add the property, not only the case that prompted it.
 
 ```
 engine/                pure Kotlin business rules: split, settle, item state
-server/                Spring Boot 4 + Flyway + Postgres. Skeleton only: schema, sign-in, /api/me
+server/                Spring Boot 4 + Flyway + Postgres: auth, trips, items, paybacks, settle-up
+web/                   Vue 3 + TS + Vite. Tokens and core components so far; screens are step 9
 docs/specs/            the design spec — source of truth
 Tally_Design_System/   vendored design reference. See below.
-web/                   not built yet — Vue 3 (build order step 8)
 ```
+
+`web/` is a plain npm project, **not** a Gradle module, so `./gradlew check` does not touch it and
+never will. That is deliberate: the JVM build stays fast and JVM-only, and §10's `npm --prefix web`
+commands are the real ones rather than a second way of doing the same thing. CI runs both.
 
 Inside `server/`, `identity/` is the one seam to whoever vouches for a user — `MockIdentityProvider`
 on the dev profile today, Google at build order step 10. Nothing above that interface knows which is
@@ -118,17 +122,27 @@ write the replacement, leaving the browser with no token and every write rejecte
 design system used to read tokens, spacing and component behaviour from. Do not edit them, do not
 import them, and do not ship them. The frontend is Vue 3; components get ported, not reused.
 
-Modules are added to `settings.gradle.kts` as they are built. `server` and `web` do not exist yet,
-so do not write code that imports them or CI that builds them.
+**Porting is not copying, and `Amount` is the worked example.** Tally's version takes a major-unit
+float and calls `toLocaleString`. `AmountText.vue` takes integer minor units and never computes a
+fraction — `web/src/lib/money.ts` splits with `%` and an exact division instead of `/ 100`. The
+money rule does not stop at the API boundary, and a faithful port would have broken it at the very
+last step, where nobody looks.
+
+Gradle modules are added to `settings.gradle.kts` as they are built; `engine` and `server` are
+there, and `web` never will be.
 
 ## Verifying
 
 ```bash
 ./gradlew :engine:test    # 51 tests, about a second
-./gradlew :server:test    # 18 tests, real Postgres — needs a running Docker daemon
-./gradlew spotlessCheck   # formatting
-./gradlew spotlessApply   # fix formatting
-./gradlew check           # all of the above
+./gradlew :server:test    # real Postgres via Testcontainers — needs a running Docker daemon
+./gradlew spotlessCheck   # Kotlin formatting
+./gradlew spotlessApply   # fix Kotlin formatting
+./gradlew check           # all of the JVM side
+
+npm --prefix web test     # Vitest
+npm --prefix web run lint # ESLint + Prettier
+npm --prefix web run build  # typechecks with vue-tsc, then bundles
 ```
 
 CI (`.github/workflows/ci.yml`) runs `spotlessCheck`, then both suites, on every push to `main` and

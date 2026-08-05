@@ -11,6 +11,12 @@ indent_size = 4
 [*.{yml,yaml,json,md}]
 indent_size = 2
 
+# The four-space default above is Kotlin's. Prettier reads this file, so without this section the
+# whole frontend would be formatted to Kotlin's indentation — which is nobody's idea of Vue.
+[*.{ts,js,vue,css,html}]
+indent_size = 2
+max_line_length = 110
+
 [*.md]
 trim_trailing_whitespace = false
 
