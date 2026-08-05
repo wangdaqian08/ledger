@@ -43,7 +43,7 @@ Needs JDK 25. Gradle comes from the wrapper. `:server:test` also needs a running
 it starts a real Postgres rather than pretending with an in-memory database.
 
 ```bash
-./gradlew :engine:test          # 51 tests, about a second
+./gradlew :engine:test          # 64 tests, about a second
 ./gradlew :server:test          # 18 tests against real Postgres, via Testcontainers
 ./gradlew spotlessCheck         # formatting — ktlint via Spotless
 ./gradlew spotlessApply         # fix formatting
@@ -70,7 +70,7 @@ CI runs the Kotlin checks and then the web ones, on every push to `main` and eve
 | | |
 |---|---|
 | Design spec | done — `docs/specs/2026-07-31-ledger-design.md` |
-| Engine | done — 51 tests, including the hotel scenario above |
+| Engine | done — 64 tests, including the hotel scenario above |
 | Server | sign-in, trips, members, items, paybacks, and the settle-up screen |
 | Web | not started |
 
