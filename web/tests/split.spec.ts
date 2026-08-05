@@ -79,7 +79,20 @@ describe('saltFor', () => {
     expect(Number(salt % 17n)).toBe(Number(0x0123456789abcdefn % 17n))
   })
 
+  it('folds in the low bits, so ids differing only there differ here too', () => {
+    // The server matches paybacks to items by this value. When it used only the high 64 bits,
+    // these two were one item and one bill's repayments settled the other. UUIDv7 makes that the
+    // normal case for two expenses added in the same millisecond.
+    const first = saltFor('cccccccc-0000-4000-8000-000000000001')
+    const second = saltFor('cccccccc-0000-4000-8000-000000000002')
+
+    expect(first).not.toBe(second)
+    expect(saltFor('00000000-0000-0000-0000-000000000005')).toBe(5n)
+  })
+
   it('rejects anything that is not a uuid', () => {
     expect(() => saltFor('not-a-uuid')).toThrow(/not a uuid/)
+    // A truncated id used to be silently accepted, because only the first 16 hex digits were read.
+    expect(() => saltFor('cccccccc-0000-4000-8000')).toThrow(/not a uuid/)
   })
 })

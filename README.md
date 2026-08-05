@@ -52,7 +52,16 @@ it starts a real Postgres rather than pretending with an in-memory database.
 npm --prefix web test           # 19 tests, no browser needed
 npm --prefix web run lint       # ESLint + Prettier
 npm --prefix web run build      # typechecks, then bundles
+
+./gradlew :server:bootTestRun   # the whole app, seeded with the hotel scenario
 ```
+
+`bootTestRun` starts a real Postgres through Testcontainers and seeds a trip mid-story: two $1,000
+hotel bills, everybody paid, and Jack on the trip but not yet on either bill's people list. Ticking
+him on is the demonstration. Sign in as any name — the dev provider asks for nothing else.
+
+`docs/demo/tally-demo.html` is the original click-through prototype. Open it in a browser to see
+the intended screens and navigation; it is a design reference, not this application.
 
 CI runs the Kotlin checks and then the web ones, on every push to `main` and every pull request.
 

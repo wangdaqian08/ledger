@@ -70,10 +70,17 @@ has to exist before the split can be shown. `POST /api/trips/{id}/items` takes a
 returns 200 instead of 201 when it has seen that id before, so a retry on a flaky connection cannot
 double an expense.
 
-**The item salt mapping is permanent.** `engineItemId` in `TripSnapshot.kt` turns an item's UUID
-into the `ItemId` the engine rotates its largest-remainder tie-break on. Change it and every
-existing item redistributes a cent between different people, silently, with no migration that could
-put it back. It is a pure function of the item's identity and must stay one.
+**`engineItemId` must fold both halves of the UUID.** It is the item's identity inside the engine
+as well as its split salt, so two ids that map to the same value become one item: one bill's
+paybacks get counted against the other and a bill nobody paid reads ALL_SQUARE. It once used only
+`mostSignificantBits`, which is fine for random v4 ids and wrong for UUIDv7 — that carries a
+millisecond timestamp in the high bits, so two expenses added in the same moment collide by
+construction, and the client is what mints these ids. `ItemApiTest` holds this with ids differing
+only in their low bits.
+
+The mapping is also permanent once anything is deployed: change it and every existing item
+redistributes a cent between different people, silently, with no migration that could put it
+back.
 
 **`spring.mvc.problemdetails.enabled` must stay on.** Without it Spring answers with its legacy
 error body, which omits the message — every reason attached to a `ResponseStatusException` is
@@ -109,6 +116,14 @@ web/                   Vue 3 + TS + Vite. The design system is ported; screens a
 docs/specs/            the design spec — source of truth
 Tally_Design_System/   vendored design reference. See below.
 ```
+
+Run the whole thing with seeded demo data — the hotel scenario, mid-story — with
+`./gradlew :server:bootTestRun`. It starts a real Postgres through Testcontainers, so it needs
+Docker and uses the same migration as production. H2 was measured and rejected: it refuses fourteen
+statements of `V1__init.sql`, and the blocking one is that it has no partial indexes at all,
+including the two that stop a trip having two categories called "Food". A demo on a weaker schema
+is a demo of a different application. `docs/demo/tally-demo.html` is the original click-through
+prototype, kept for navigating the intended screens quickly.
 
 `web/` is a plain npm project, **not** a Gradle module, so `./gradlew check` does not touch it and
 never will. That is deliberate: the JVM build stays fast and JVM-only, and §10's `npm --prefix web`

@@ -74,15 +74,18 @@ export function splitShares({ totalMinor, weights, salt }: SplitInput): number[]
 }
 
 /**
- * The salt for an item, from its UUID — the browser's copy of `engineItemId` on the server, which
- * takes the UUID's most significant 64 bits as a signed Long.
+ * The salt for an item, from its UUID — the browser's copy of `engineItemId` on the server.
+ *
+ * Both halves are folded together with XOR. Taking only the high 64 bits, as this once did, means
+ * two ids differing solely in their low bits share a salt — and on the server, an identity. That
+ * is exactly what UUIDv7 produces for two items created in the same millisecond.
  */
 export function saltFor(itemId: string): bigint {
-  const hex = itemId.replace(/-/g, '').slice(0, 16)
-  if (!/^[0-9a-fA-F]{16}$/.test(hex)) throw new Error(`not a uuid: ${itemId}`)
+  const hex = itemId.replace(/-/g, '')
+  if (!/^[0-9a-fA-F]{32}$/.test(hex)) throw new Error(`not a uuid: ${itemId}`)
 
-  const unsigned = BigInt(`0x${hex}`)
-  // Two's complement, exactly as Java reads it.
+  const unsigned = BigInt(`0x${hex.slice(0, 16)}`) ^ BigInt(`0x${hex.slice(16)}`)
+  // Two's complement, exactly as Java reads a Long.
   return unsigned >= 1n << 63n ? unsigned - (1n << 64n) : unsigned
 }
 
