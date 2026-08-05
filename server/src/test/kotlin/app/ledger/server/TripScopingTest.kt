@@ -27,7 +27,7 @@ class TripScopingTest : PostgresTest() {
         val fixture = twoTrips()
 
         val inserted = jdbc.update(
-            "INSERT INTO item_shares (trip_id, item_id, member_id) VALUES (?, ?, ?)",
+            "INSERT INTO item_shares (trip_id, item_id, member_id, position) VALUES (?, ?, ?, 0)",
             fixture.tripA,
             fixture.itemOnTripA,
             fixture.memberOnTripA,
@@ -42,7 +42,7 @@ class TripScopingTest : PostgresTest() {
 
         assertFailsWith<DataIntegrityViolationException> {
             jdbc.update(
-                "INSERT INTO item_shares (trip_id, item_id, member_id) VALUES (?, ?, ?)",
+                "INSERT INTO item_shares (trip_id, item_id, member_id, position) VALUES (?, ?, ?, 0)",
                 fixture.tripA,
                 fixture.itemOnTripA,
                 fixture.memberOnTripB,
@@ -57,7 +57,7 @@ class TripScopingTest : PostgresTest() {
 
         assertFailsWith<DataIntegrityViolationException> {
             jdbc.update(
-                "INSERT INTO item_shares (trip_id, item_id, member_id) VALUES (?, ?, ?)",
+                "INSERT INTO item_shares (trip_id, item_id, member_id, position) VALUES (?, ?, ?, 0)",
                 fixture.tripB,
                 fixture.itemOnTripA,
                 fixture.memberOnTripB,

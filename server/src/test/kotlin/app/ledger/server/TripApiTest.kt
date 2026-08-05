@@ -3,6 +3,8 @@ package app.ledger.server
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
 import java.util.UUID
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -164,6 +166,36 @@ class TripApiTest : ApiTest() {
         // Two slots would let one person owe and be owed as two people. The balances would still
         // sum to zero and still be nonsense.
         assertEquals(HttpStatus.CONFLICT, bob.claim(tripId, invite, spare).statusCode)
+    }
+
+    @Test
+    fun `two devices racing the same claim cannot leave one person holding two slots`() {
+        // The test above proves the sequential check; this one proves the race. Both requests can
+        // pass the "not on this trip yet" read together, so it is the database's unique index —
+        // not the service's politeness — that has to hold the line.
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip("Hokkaido")
+        val first = alice.addMember(tripId, "Bob")
+        val second = alice.addMember(tripId, "Bobby")
+        val invite = alice.invite(tripId)
+        val bob = signedIn("Bob")
+
+        val together = CyclicBarrier(2)
+        val executor = Executors.newFixedThreadPool(2)
+        val outcomes = try {
+            listOf(first, second)
+                .map { member ->
+                    executor.submit<HttpStatus> {
+                        together.await()
+                        bob.claim(tripId, invite, member).statusCode as HttpStatus
+                    }
+                }.map { it.get() }
+        } finally {
+            executor.shutdown()
+        }
+
+        assertEquals(1, outcomes.count { it == HttpStatus.OK }, "exactly one claim wins: $outcomes")
+        assertEquals(1, outcomes.count { it == HttpStatus.CONFLICT }, "and the other is told no: $outcomes")
     }
 
     @Test

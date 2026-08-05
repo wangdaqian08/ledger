@@ -77,6 +77,13 @@ class ItemShareEntity(
     /** Carried so the foreign keys can be composite and cannot reach into another trip. */
     @Column(name = "trip_id", nullable = false)
     val tripId: UUID,
+    /**
+     * The person's place on the list as the client sent it. The engine breaks remainder ties by
+     * position, so without this column "who carries the spare cent" would ride on whatever order
+     * the database returned rows in — an answer a plan change could alter with no write.
+     */
+    @Column(nullable = false)
+    val position: Short,
     @Column
     var weight: Int? = null,
     @Column(name = "exact_amount_minor")

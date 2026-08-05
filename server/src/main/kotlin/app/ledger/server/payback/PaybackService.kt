@@ -38,7 +38,7 @@ class PaybackService(
         if (command.fromMemberId == item.payerMemberId) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "The payer cannot pay themselves back")
         }
-        val onTheBill = shares.findAllByIdItemId(item.id).map { it.id.memberId }.toSet()
+        val onTheBill = shares.findAllByIdItemIdOrderByPosition(item.id).map { it.id.memberId }.toSet()
         if (command.fromMemberId !in onTheBill) {
             // Money moving between two people who do not share this bill is a trip-level
             // settlement, not a repayment towards it — a different record with a different meaning.

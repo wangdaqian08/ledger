@@ -312,6 +312,54 @@ class ItemApiTest : ApiTest() {
         val category: UUID,
     )
 
+    @Test
+    fun `an exact amount below zero is refused even when the sum still matches`() {
+        val trip = tripWith("Alice", "Bob")
+
+        // 15000 − 5000 is exactly the 10000 total, so the sum check alone would wave this
+        // through — and the database CHECK would then kill it as a bare 500.
+        val response = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Dinner", 10_000, trip.category, trip.ownerMember, emptyList(), splitRule = "EXACT") +
+                mapOf(
+                    "sharedBy" to listOf(
+                        mapOf("memberId" to trip.ownerMember.toString(), "exactAmountMinor" to 15_000),
+                        mapOf("memberId" to trip.bob.toString(), "exactAmountMinor" to -5_000),
+                    ),
+                ),
+        )
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+        assertTrue(response.body!!.contains("-5000"), "the message should name the amount: ${response.body}")
+    }
+
+    @Test
+    fun `an amount too large to multiply by its weights is refused, not answered wrongly`() {
+        // Past Long.MAX_VALUE / weight the engine's products would wrap and the shares would come
+        // back negative under a 200. The engine refuses; this pins that the API says why, as a 400.
+        val trip = tripWith("Alice", "Bob")
+
+        val response = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense(
+                "Impossible",
+                Long.MAX_VALUE,
+                trip.category,
+                trip.ownerMember,
+                emptyList(),
+                splitRule = "WEIGHTED",
+            ) +
+                mapOf(
+                    "sharedBy" to listOf(
+                        mapOf("memberId" to trip.ownerMember.toString(), "weight" to 2),
+                        mapOf("memberId" to trip.bob.toString(), "weight" to 1),
+                    ),
+                ),
+        )
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+    }
+
     private fun tripWith(ownerName: String, friend: String): Fixture {
         val owner = signedIn(ownerName)
         val tripId = owner.createTrip()
