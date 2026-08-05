@@ -27,10 +27,18 @@ import java.util.UUID
 /**
  * The trip the whole application exists for, as something you can click through.
  *
- * This is spec §10 with the paybacks already approved: thirteen people, two $1,000 hotel bills
- * fronted by Bob, nine having paid $100 towards the deposit and twelve $76.92 towards the balance.
- * Jack is on the trip having paid nothing — and, deliberately, is **not yet on either bill's people
- * list**. Ticking him on is the demonstration.
+ * Spec §10 with the paybacks already approved: thirteen people, two $1,000 hotel bills fronted by
+ * Bob, nine having paid $100 towards the deposit and twelve $76.92 towards the balance. Jack is on
+ * the trip having paid nothing — and, deliberately, is **not yet on either bill's people list**.
+ * Ticking him on is the demonstration.
+ *
+ * Both hotel bills open as OPEN, and that is right rather than unfinished. The deposit has three
+ * people who never paid it. The balance is subtler and worth looking at: everybody paid, but they
+ * paid a round $76.92, and a thirteenth of $1,000 is $76.93 for four of them. A bill is square
+ * when every sharer has *covered* their portion, and being a cent short is not covering it. This
+ * is the same cent that leaves Bob 4¢ clear of the other nine in §2.
+ *
+ * The Flat trip settles exactly, so ALL_SQUARE is visible somewhere too.
  *
  * Sign in as any of the names below; the dev identity provider takes a name and nothing else.
  */
