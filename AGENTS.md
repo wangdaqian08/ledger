@@ -59,6 +59,12 @@ regenerates and checks it, `web/tests/split.spec.ts` checks the port against the
 one implementation without the other and a test goes red. Change both without reading the vector
 diff and every existing item's rounding has quietly moved.
 
+**A test that asserts exact cents must pin the item id.** The salt is the id, so with a
+server-generated one the tie-break is redrawn on every run and any assertion about *which* person
+carries the spare cent is a coin toss. `HotelScenarioApiTest` learned this the hard way — it passed
+locally for two steps and then failed in CI on a bound that was wrong by one cent. Pin the id, then
+assert exactly.
+
 **The client mints an item's id.** That is what makes the preview exact — the salt is the id, so it
 has to exist before the split can be shown. `POST /api/trips/{id}/items` takes an optional `id` and
 returns 200 instead of 201 when it has seen that id before, so a retry on a flaky connection cannot
