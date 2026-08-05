@@ -32,6 +32,10 @@ export function splitShares({ totalMinor, weights, salt }: SplitInput): number[]
   const count = weights.length
   if (count === 0) throw new Error('cannot split between no one')
   if (!Number.isInteger(totalMinor)) throw new Error(`total must be whole minor units, got ${totalMinor}`)
+  // The engine refuses negatives too (refunds are a decision §9 has not taken), and the two
+  // refusals must stay in step: this port floors where Kotlin truncates, so for negative totals
+  // the implementations would quietly disagree about who carries the spare cent.
+  if (totalMinor < 0) throw new Error(`cannot split a negative amount, got ${totalMinor}`)
   if (weights.some((w) => !Number.isInteger(w) || w < 0)) {
     throw new Error('every weight must be a whole number that is not negative')
   }

@@ -36,6 +36,11 @@ fun shares(
     salt: Long = 0,
 ): Map<MemberId, Long> {
     require(members.isNotEmpty()) { "cannot split $totalMinor between no one" }
+    // Refunds (§9) are a decision not yet taken; until they are, a negative total must be refused
+    // here rather than quietly mis-split — Kotlin division truncates toward zero, so the largest
+    // remainder arithmetic below is only correct for totals that are not negative.
+    require(totalMinor >= 0) { "cannot split a negative amount, got $totalMinor" }
+    require(members.size == members.toSet().size) { "the same person cannot be on one item twice" }
 
     return when (rule) {
         SplitRule.Equal -> {
@@ -55,6 +60,10 @@ fun shares(
         is SplitRule.Exact -> {
             require(rule.amounts.keys == members.toSet()) {
                 "exact amounts must name exactly the people on the item"
+            }
+            // Checked per person, not only in sum: a negative here and padding there cancel out.
+            rule.amounts.forEach { (member, amount) ->
+                require(amount >= 0) { "${member.value} has a negative amount of $amount" }
             }
             val given = rule.amounts.values.sum()
             require(given == totalMinor) {
@@ -84,6 +93,14 @@ private fun splitByWeight(
     val totalWeight = weights.values.sumOf { it.toLong() }
     val count = members.size
     val offset = (salt % count).toInt()
+
+    // Refusing beats silently wrapping: past this, totalMinor * weight no longer fits in a Long
+    // and every number that falls out of the wreckage still looks plausible. The web port draws
+    // the same line at its own limit (Number.MAX_SAFE_INTEGER).
+    val heaviest = weights.values.max()
+    require(heaviest == 0 || totalMinor <= Long.MAX_VALUE / heaviest) {
+        "the amount and weights are too large to split exactly"
+    }
 
     val parts = members.mapIndexed { index, member ->
         val numerator = totalMinor * weights.getValue(member)

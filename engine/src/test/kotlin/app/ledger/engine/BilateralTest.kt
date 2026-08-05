@@ -112,6 +112,50 @@ class BilateralTest {
         }
     }
 
+    @Test
+    fun `both ends of every debt state the same figure`() {
+        // owesBetween(a, b) == -owesBetween(b, a), across random trips. If the two ends of one
+        // debt could ever disagree, the same repayment would read as two different amounts on the
+        // two people's phones — the quiet cousin of the invariant above, and worth its own name.
+        (1..500).forEach { seed ->
+            val trip = randomTrip(Random(seed))
+            trip.members.forEach { a ->
+                trip.members.filter { it != a }.forEach { b ->
+                    assertEquals(
+                        -owesBetween(trip, b, a),
+                        owesBetween(trip, a, b),
+                        "seed $seed: ${a.value} and ${b.value} disagree about one debt",
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `overpaying flips the debt rather than capping it`() {
+        val dinner = Item(ItemId(1), 20_000, payer = lucy, sharedBy = listOf(lucy, ben))
+        val trip = Trip(
+            members = listOf(lucy, ben),
+            items = listOf(dinner),
+            paybacks = listOf(dinner.repaidBy(ben, 12_000)),
+        )
+
+        // Ben owed $100 and handed over $120, so Lucy now owes him the $20 back.
+        assertEquals(-2_000L, owesBetween(trip, ben, lucy))
+    }
+
+    @Test
+    fun `paying somebody you owe nothing creates the reverse debt`() {
+        // An unprompted transfer is not an error and not a no-op: the books remember it.
+        val trip = Trip(
+            members = listOf(lucy, ben),
+            items = emptyList(),
+            paybacks = listOf(Payback(ben, lucy, 5_000, PaybackStatus.APPROVED)),
+        )
+
+        assertEquals(-5_000L, owesBetween(trip, ben, lucy))
+    }
+
     /**
      * The supplied Settle-up screenshot, reconstructed from items that would produce it:
      * you owe Mei $39.10, you owe Sam $46.00, Ade owes you $42.30 — and the hero card

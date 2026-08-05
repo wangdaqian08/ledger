@@ -88,6 +88,9 @@ class SplitVectorsTest {
             add(Case(100_000, List(14) { 1 }, salt = 7, equal = true))
             add(Case(200_000, List(14) { 1 }, salt = 12_345_678_901L, equal = true))
             add(Case(100_000, List(13) { 1 }, salt = -5, equal = true))
+            // The salt is a UUID's two halves XORed together, which can land anywhere in a Long —
+            // including its minimum, the one value naive negation cannot survive.
+            add(Case(100_000, List(7) { 1 }, salt = Long.MIN_VALUE, equal = true))
             add(Case(1, List(4) { 1 }, salt = 0, equal = true))
             add(Case(0, List(3) { 1 }, salt = 0, equal = true))
 
