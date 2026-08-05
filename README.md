@@ -28,10 +28,10 @@ is `$2,000/14`. No deposit-stage concept, no rebalancing pass.
 
 ```
 engine/                pure Kotlin. Split, settle, item state. No Spring, no database.
-server/                Spring Boot 4. Schema, sign-in and /api/me so far.
+server/                Spring Boot 4. Auth, trips, items, paybacks, settle-up.
+web/                   Vue 3 + TS. Design tokens and core components so far.
 docs/specs/            the design spec — read this first
 Tally_Design_System/   the design system: tokens, components, and a click-through demo
-web/                   not built yet
 ```
 
 `engine/` deliberately has no production dependencies. That is what lets 2,000 randomly
@@ -47,10 +47,14 @@ it starts a real Postgres rather than pretending with an in-memory database.
 ./gradlew :server:test          # 18 tests against real Postgres, via Testcontainers
 ./gradlew spotlessCheck         # formatting — ktlint via Spotless
 ./gradlew spotlessApply         # fix formatting
-./gradlew check                 # all of the above
+./gradlew check                 # all of the JVM side
+
+npm --prefix web test           # 19 tests, no browser needed
+npm --prefix web run lint       # ESLint + Prettier
+npm --prefix web run build      # typechecks, then bundles
 ```
 
-CI runs `spotlessCheck`, then both test suites, on every push to `main` and every pull request.
+CI runs the Kotlin checks and then the web ones, on every push to `main` and every pull request.
 
 ## Status
 

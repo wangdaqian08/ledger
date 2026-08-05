@@ -1,0 +1,43 @@
+/*
+ * Ported from Tally_Design_System/tokens/base.css.
+ *
+ * Copied values, not an import: the design system is a vendored React reference and is
+ * never shipped. Keep this in step with it by hand — that is the deliberate cost of the
+ * frontend being Vue and the reference being React.
+ */
+/* Minimal resets + link colors. Components carry their own styling inline. */
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+body {
+  margin: 0;
+  font-family: var(--font-core);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  color: var(--text-body);
+  background: var(--bg-app);
+  -webkit-font-smoothing: antialiased;
+  text-wrap: pretty;
+}
+a {
+  color: var(--action);
+  text-decoration: none;
+  font-weight: var(--weight-semibold);
+}
+a:hover {
+  color: var(--action-press);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+.tally-money {
+  font-family: var(--font-money);
+  font-variant-numeric: var(--numeric-money);
+  font-feature-settings: 'tnum' 1;
+}

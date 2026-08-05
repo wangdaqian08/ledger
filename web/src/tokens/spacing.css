@@ -1,0 +1,32 @@
+/*
+ * Ported from Tally_Design_System/tokens/spacing.css.
+ *
+ * Copied values, not an import: the design system is a vendored React reference and is
+ * never shipped. Keep this in step with it by hand — that is the deliberate cost of the
+ * frontend being Vue and the reference being React.
+ */
+:root {
+  /* 4px base. Structural layout uses 12/16/20/24. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Semantic */
+  --gutter-screen: 16px; /* left/right page margin on mobile */
+  --pad-card: 16px;
+  --pad-card-lg: 20px;
+  --gap-list: 10px; /* between stacked list cards */
+  --gap-inline: 8px;
+  --stack-section: 28px; /* between screen sections */
+  --tap-min: 48px; /* minimum hit target, never smaller */
+  --appbar-h: 56px;
+  --tabbar-h: 64px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}

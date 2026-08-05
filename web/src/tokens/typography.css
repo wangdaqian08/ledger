@@ -1,0 +1,49 @@
+/*
+ * Ported from Tally_Design_System/tokens/typography.css.
+ *
+ * Copied values, not an import: the design system is a vendored React reference and is
+ * never shipped. Keep this in step with it by hand — that is the deliberate cost of the
+ * frontend being Vue and the reference being React.
+ */
+:root {
+  /* ---- Scale. Mobile-first; nothing below 13px ships. ---- */
+  --text-hero: 40px;
+  --lh-hero: 1.02; /* @kind other */
+  --ls-hero: -0.03em; /* @kind other */
+  --text-display: 32px;
+  --lh-display: 1.06; /* @kind other */
+  --ls-display: -0.025em; /* @kind other */
+  --text-title: 24px;
+  --lh-title: 1.12; /* @kind other */
+  --ls-title: -0.02em; /* @kind other */
+  --text-heading-lg: 19px;
+  --lh-heading-lg: 1.2; /* @kind other */
+  --ls-heading-lg: -0.012em; /* @kind other */
+  --text-heading-sm: 16px;
+  --lh-heading-sm: 1.25; /* @kind other */
+  --ls-heading-sm: -0.008em; /* @kind other */
+  --text-body-lg: 17px;
+  --lh-body-lg: 1.45; /* @kind other */
+  --text-body: 15px;
+  --lh-body: 1.47; /* @kind other */
+  --text-caption: 13px;
+  --lh-caption: 1.35; /* @kind other */
+  --text-label: 12px;
+  --lh-label: 1.1; /* @kind other */
+  --ls-label: 0.06em; /* @kind other */
+
+  /* ---- Money: always Space Grotesk, always tabular ---- */
+  --text-money-hero: 48px;
+  --text-money-lg: 28px;
+  --text-money: 17px;
+  --text-money-sm: 14px;
+
+  /* ---- Weights. 500 is the UI default; 800 is the shout. ---- */
+  --weight-regular: 400; /* @kind other */
+  --weight-medium: 500; /* @kind other */
+  --weight-semibold: 600; /* @kind other */
+  --weight-bold: 700; /* @kind other */
+  --weight-black: 800; /* @kind other */
+
+  --numeric-money: tabular-nums; /* @kind other */
+}
