@@ -33,7 +33,9 @@ const text = ref(render(props.modelValue))
 watch(
   () => [props.modelValue, props.currencyCode] as const,
   ([value]) => {
-    if (toMinor(text.value) !== value) text.value = render(value)
+    // Compared as rendered text, not as digits: a currency change moves the decimal point while
+    // leaving every digit alone, and a digit comparison would call that "no change".
+    if (render(value) !== text.value) text.value = render(value)
   },
 )
 
@@ -53,14 +55,20 @@ function toMinor(shown: string): number {
 }
 
 function onInput(event: Event) {
-  const raw = (event.target as HTMLInputElement).value
-  const minor = toMinor(raw)
+  const field = event.target as HTMLInputElement
+  const minor = toMinor(field.value)
 
   // Cap rather than silently wrap: past this, integers stop being exact and the amount would drift.
-  if (minor > Number.MAX_SAFE_INTEGER) return
+  if (minor <= Number.MAX_SAFE_INTEGER) {
+    text.value = render(minor)
+    emit('update:modelValue', minor)
+  }
 
-  text.value = render(minor)
-  emit('update:modelValue', minor)
+  // The browser paints the keystroke before this handler runs, and Vue skips its patch whenever
+  // `text` lands on the value it already held — typing "0" into an empty field, or one digit past
+  // the cap, would leave the screen showing text the model never accepted. Written back by hand,
+  // unconditionally.
+  field.value = text.value
 }
 </script>
 
