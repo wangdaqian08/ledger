@@ -18,6 +18,9 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform()
+    // Gradle's own -D lands on the daemon, not on the forked test JVM, so the golden-vector
+    // regeneration switch has to be handed across explicitly. See SplitVectorsTest.
+    systemProperty("ledger.vectors.write", System.getProperty("ledger.vectors.write") ?: "false")
     testLogging {
         events("passed", "failed", "skipped")
         showStandardStreams = true

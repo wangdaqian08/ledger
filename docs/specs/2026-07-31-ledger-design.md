@@ -332,7 +332,8 @@ POST   /api/trips/{id}/claim        { token, memberId }
 GET    /api/trips/{id}/categories   eight built-ins + this trip's custom ones
 POST   /api/trips/{id}/categories   { name, icon, hue }
 
-POST   /api/trips/{id}/items        AddExpenseSheet save
+POST   /api/trips/{id}/items        AddExpenseSheet save; optional client-supplied id,
+                                    replayed → 200 rather than a second expense
 GET    /api/items/{id}              paybacks in full: status, proof, dates, reject reasons
 PATCH  /api/items/{id}              ← this is where the people list gets fixed
 DELETE /api/items/{id}              the bin button on ExpenseDetailSheet
@@ -547,7 +548,12 @@ Each step ends with something runnable and tested.
    property-tested in the engine. **Remind validates but delivers nothing** — see §9.
 
 7. **Screenshot upload** — Cloud Storage, signed read URLs.
-8. **Tally → Vue port** — tokens, then presentational, then interactive components.
+8. **Tally → Vue port** — tokens, then presentational, then interactive components. Tokens and the
+   presentational set are done; SplitBar, AmountInput and PersonToggleRow follow. Two things did
+   *not* port: Tally's `Amount` takes a major-unit float, and its SplitBar keeps float percentages.
+   Both were rebuilt on integer minor units, and the SplitBar asks a TypeScript port of the
+   engine's own largest remainder so the amounts shown while dragging are the amounts charged. The
+   client mints the item id to make that possible, since the id is the split's salt.
 9. **`web` screens** — 1–7 above, i18n EN/中文 scaffolding from the first component.
 10. **Google Sign-In** — swap in `GoogleIdentityProvider` behind the same seam.
 11. **Deploy** — Cloud Run + Cloud SQL + Secret Manager.

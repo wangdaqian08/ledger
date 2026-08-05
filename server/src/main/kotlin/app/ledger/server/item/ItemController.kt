@@ -3,6 +3,7 @@ package app.ledger.server.item
 import app.ledger.server.auth.LedgerPrincipal
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -16,13 +17,19 @@ import java.util.UUID
 
 @RestController
 class ItemController(private val items: ItemService) {
+    /**
+     * 201 when this request created the expense, 200 when the same client id has been seen before.
+     * A retry after a dropped connection is answered rather than doubling somebody's dinner.
+     */
     @PostMapping("/api/trips/{tripId}/items")
-    @ResponseStatus(HttpStatus.CREATED)
     fun create(
         @PathVariable tripId: UUID,
         @Valid @RequestBody command: CreateItem,
         @AuthenticationPrincipal principal: LedgerPrincipal,
-    ): ItemView = items.create(tripId, command, principal.userId)
+    ): ResponseEntity<ItemView> {
+        val created = items.create(tripId, command, principal.userId)
+        return ResponseEntity.status(if (created.fresh) HttpStatus.CREATED else HttpStatus.OK).body(created.item)
+    }
 
     @GetMapping("/api/items/{itemId}")
     fun detail(

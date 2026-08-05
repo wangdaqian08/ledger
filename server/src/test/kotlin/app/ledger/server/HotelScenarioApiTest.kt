@@ -28,15 +28,20 @@ class HotelScenarioApiTest : ApiTest() {
         val thirteen = listOf(bobMember) + others
         val category = bob.builtInCategory(tripId, "stay")
 
+        // Fixed ids, so the split's salt is fixed and so is who absorbs each spare cent. With
+        // server-generated ids this test drew a different tie-break on every run and passed or
+        // failed on luck — which it duly did, in CI, on a range that was wrong by one cent.
         val deposit = bob
             .post(
                 "/api/trips/$tripId/items",
-                expense("Hotel deposit", thousandDollars, category, bobMember, thirteen),
+                expense("Hotel deposit", thousandDollars, category, bobMember, thirteen) +
+                    mapOf("id" to "aaaaaaaa-0000-4000-8000-000000000001"),
             ).id()
         val balance = bob
             .post(
                 "/api/trips/$tripId/items",
-                expense("Hotel balance", thousandDollars, category, bobMember, thirteen),
+                expense("Hotel balance", thousandDollars, category, bobMember, thirteen) +
+                    mapOf("id" to "aaaaaaaa-0000-4000-8000-000000000002"),
             ).id()
 
         // Thirteen people, $2,000: nobody's share is a whole number of cents, so the largest
@@ -61,11 +66,14 @@ class HotelScenarioApiTest : ApiTest() {
             assertEquals(HttpStatus.OK, patched.statusCode, "could not correct the people list: ${patched.body}")
         }
 
+        // $2,000 over fourteen is $142.857 each. Each bill hands out 7142 or 7143, so a person's
+        // total across both is 14284, 14285 or 14286 — never 14287, which is what the original
+        // bound allowed for and what let this test agree with itself on some runs and not others.
         val shareOfFourteen = bob.totalShare(tripId, of = others.first())
         assertEquals(2 * thousandDollars, bob.totalOwedAcross(tripId), "a cent went missing in the re-split")
-        assertTrue(shareOfFourteen in 14_285..14_287, "unexpected share of 2000/14: $shareOfFourteen")
+        assertTrue(shareOfFourteen in 14_284..14_286, "unexpected share of 2000/14: $shareOfFourteen")
         assertTrue(shareOfFourteen < shareOfThirteen, "the original thirteen should owe less, not more")
-        assertTrue(bob.totalShare(tripId, of = jack) in 14_285..14_287, "Jack is not carrying a full share")
+        assertTrue(bob.totalShare(tripId, of = jack) in 14_284..14_286, "Jack is not carrying a full share")
     }
 
     @Test
@@ -126,15 +134,20 @@ class HotelScenarioApiTest : ApiTest() {
         val friends = (1..12).map { bob.addMember(tripId, "Friend $it") }
         val category = bob.builtInCategory(tripId, "stay")
 
+        // Fixed ids again, so which two of the fourteen carry the lower share is settled rather
+        // than redrawn on every run. The tolerance below is for the spec's rounded figures, not
+        // for randomness.
         val deposit = bob
             .post(
                 "/api/trips/$tripId/items",
-                expense("Hotel deposit", thousandDollars, category, bobMember, listOf(bobMember) + friends),
+                expense("Hotel deposit", thousandDollars, category, bobMember, listOf(bobMember) + friends) +
+                    mapOf("id" to "bbbbbbbb-0000-4000-8000-000000000001"),
             ).id()
         val balance = bob
             .post(
                 "/api/trips/$tripId/items",
-                expense("Hotel balance", thousandDollars, category, bobMember, listOf(bobMember) + friends),
+                expense("Hotel balance", thousandDollars, category, bobMember, listOf(bobMember) + friends) +
+                    mapOf("id" to "bbbbbbbb-0000-4000-8000-000000000002"),
             ).id()
 
         // Recorded by Bob, who is the person owed, so each is agreed on the spot — the spec's
