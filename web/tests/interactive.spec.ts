@@ -49,6 +49,22 @@ describe('SplitBar', () => {
     const bar = mount(SplitBar, { props: { people: three, totalMinor: 9_000, salt: 0n } })
     expect(bar.findAll('.split__handle-hit')).toHaveLength(2)
   })
+
+  it('holds still beside a zero-weight person instead of snatching the whole weight across', async () => {
+    // A pair holding one unit between them cannot be re-divided with both kept above zero. The
+    // clamp used to answer 0 here — the first pixel of drag flipped the entire weight to the
+    // other person, committing a $0 share for somebody who should have kept everything.
+    const zeroNeighbour = [
+      { memberId: 'a', displayName: 'Bob', personHue: 1, weight: 1 },
+      { memberId: 'b', displayName: 'Alice', personHue: 2, weight: 0 },
+    ]
+    const bar = mount(SplitBar, { props: { people: zeroNeighbour, totalMinor: 10_000, salt: 0n } })
+
+    await bar.find('.split__handle-hit').trigger('pointerdown')
+    await bar.find('.split').trigger('pointermove', { clientX: 1 })
+
+    expect(bar.emitted('update:people')).toBeUndefined()
+  })
 })
 
 describe('AmountInput', () => {
@@ -82,6 +98,38 @@ describe('AmountInput', () => {
   it('shows an empty field rather than a zero, so the placeholder can do its job', () => {
     const input = mount(AmountInput, { props: { modelValue: 0 } })
     expect((input.find('input').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('clears a typed zero from the screen, not only from the model', async () => {
+    // The browser paints the keystroke before Vue hears about it, and a ref set to the value it
+    // already holds patches nothing — so a typed "0" used to stay visible against a model of 0.
+    const input = mount(AmountInput, { props: { modelValue: 0 } })
+
+    await input.find('input').setValue('0')
+
+    expect(input.emitted('update:modelValue')?.at(-1)).toEqual([0])
+    expect((input.find('input').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('rejects a digit past the safe-integer cap on screen as well as in the model', async () => {
+    const input = mount(AmountInput, { props: { modelValue: 9_007_199_254_740_991 } })
+
+    await input.find('input').setValue('90071992547409919')
+
+    // Nothing was emitted, and the field snapped back to the last accepted amount rather than
+    // keeping the rejected text.
+    expect(input.emitted('update:modelValue')).toBeUndefined()
+    expect((input.find('input').element as HTMLInputElement).value).toBe('90071992547409.91')
+  })
+
+  it('moves the decimal point when the currency changes under an unchanged amount', async () => {
+    const input = mount(AmountInput, { props: { modelValue: 1999 } })
+    expect((input.find('input').element as HTMLInputElement).value).toBe('19.99')
+
+    await input.setProps({ currencyCode: 'JPY', symbol: '¥' })
+
+    // Same digits, different currency: 1999 minor units of yen are ¥1999, not ¥19.99.
+    expect((input.find('input').element as HTMLInputElement).value).toBe('1999')
   })
 })
 

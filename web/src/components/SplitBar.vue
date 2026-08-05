@@ -73,9 +73,18 @@ function onMove(event: PointerEvent) {
   const box = bar.value.getBoundingClientRect()
   const fraction = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width))
 
+  // The people list can shrink under a held pointer; a vanished neighbour ends the drag.
+  const right = props.people[index + 1]
+  if (!right) return
+
   // The drag is converted to whole weights immediately. Holding a float and rounding at save time
   // is how a bar that reads 33/33/34 turns into something else entirely once it lands.
-  const pairWeight = props.people[index]!.weight + props.people[index + 1]!.weight
+  const pairWeight = props.people[index]!.weight + right.weight
+
+  // One unit between two people cannot be re-divided with both kept above zero. The clamp below
+  // would answer 0 — snatching the whole weight across on the first pixel of movement — so the
+  // handle holds still instead.
+  if (pairWeight < 2) return
   const before = props.people.slice(0, index).reduce((sum, p) => sum + p.weight, 0)
   const target = Math.round(fraction * totalWeight.value) - before
 
