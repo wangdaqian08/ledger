@@ -59,6 +59,13 @@ describe('splitShares against the engine', () => {
     expect(() => splitShares({ totalMinor: 100, weights: [0, 0], salt: 0n })).toThrow(/some weight/)
     expect(() => splitShares({ totalMinor: 100, weights: [-1, 2], salt: 0n })).toThrow(/not negative/)
   })
+
+  it('refuses a negative total, in step with the engine', () => {
+    // This port floors where Kotlin truncates, so for a negative total the two implementations
+    // would quietly disagree about who carries the spare cent. Both refuse until refunds are
+    // actually designed (spec §9).
+    expect(() => splitShares({ totalMinor: -10, weights: [1, 1, 1], salt: 0n })).toThrow(/negative amount/)
+  })
 })
 
 describe('saltFor', () => {

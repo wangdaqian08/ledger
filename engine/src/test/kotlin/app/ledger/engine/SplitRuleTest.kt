@@ -100,6 +100,75 @@ class SplitRuleTest {
         assertFailsWith<IllegalArgumentException> { shares(10_000, everyone, missingCara) }
     }
 
+    @Test
+    fun `exact amounts that overshoot the total are rejected the same way as a shortfall`() {
+        val over = SplitRule.Exact(mapOf(amy to 5_000L, bob to 3_000L, cara to 2_001L))
+
+        assertFailsWith<IllegalArgumentException> { shares(10_000, everyone, over) }
+    }
+
+    @Test
+    fun `an exact amount below zero is refused even when padding hides it in the sum`() {
+        // -1000 + 6000 + 5000 is exactly 10000, so a sum check alone waves it through — and Amy
+        // is billed a negative share, which is a payment wearing a share's clothes.
+        val padded = SplitRule.Exact(mapOf(amy to -1_000L, bob to 6_000L, cara to 5_000L))
+
+        assertFailsWith<IllegalArgumentException> { shares(10_000, everyone, padded) }
+    }
+
+    // ---- refusals that keep the arithmetic honest -------------------------------------
+
+    @Test
+    fun `a negative total is refused rather than mis-split`() {
+        // Kotlin division truncates toward zero where the web port floors, so for a negative
+        // total the two implementations would quietly disagree. Refunds are a decision §9 has
+        // not taken yet; until it is, both sides refuse.
+        assertFailsWith<IllegalArgumentException> { splitEqually(-10, everyone) }
+    }
+
+    @Test
+    fun `the same person listed twice is refused`() {
+        // A duplicate collapses to one entry in the weight map but still holds two positions,
+        // and the arithmetic that follows hands out more money than the total.
+        assertFailsWith<IllegalArgumentException> { splitEqually(300, listOf(amy, amy, bob)) }
+    }
+
+    @Test
+    fun `an amount too large to multiply by its weights is refused, not wrapped`() {
+        // 2^62 x 2 is one past Long.MAX_VALUE. Unguarded, the products wrap and both shares come
+        // out negative while still looking plausible — wrong numbers with a 200, the one failure
+        // this engine exists to make impossible.
+        val huge = 4_611_686_018_427_387_904L // 2^62
+
+        assertFailsWith<IllegalArgumentException> {
+            shares(huge, listOf(amy, bob), SplitRule.Weighted(mapOf(amy to 2, bob to 2)))
+        }
+    }
+
+    @Test
+    fun `the largest representable amount still splits exactly`() {
+        // Right at the guard's edge: with every weight at 1 nothing multiplies past a Long.
+        val result = splitEqually(Long.MAX_VALUE, listOf(amy, bob))
+
+        assertEquals(Long.MAX_VALUE, result.values.sum())
+    }
+
+    @Test
+    fun `installments add up — two part-payments square a bill that one alone would not`() {
+        val item = draggedItem()
+        val trip = Trip(
+            members = everyone,
+            items = listOf(item),
+            paybacks = listOf(
+                item.repaidBy(bob, 1_000),
+                item.repaidBy(bob, 2_000), // Bob's dragged portion is $30, paid in two goes.
+                item.repaidBy(cara, 3_000),
+            ),
+        )
+
+        assertEquals(ItemState.ALL_SQUARE, trip.itemState(item.id))
+    }
+
     // ---- the rule has to survive the trip round-trip, not just the split function -----
 
     /** Amy drags her handle to double: she takes half, Bob and Cara a quarter each. */
