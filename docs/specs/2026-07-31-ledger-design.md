@@ -540,6 +540,12 @@ Each step ends with something runnable and tested.
    the three joiners −$65.94, Jack −$142.86, and the column summing to exactly zero. The
    Settle-up screen's own endpoints (bilateral rows, trip-level settlements, remind) are the
    remaining part of §7a and come next.
+6a. **Settle-up screen endpoints.** ✔ Bilateral rows (`GET /api/trips/{id}/settlement`), Pay as a
+   pending request (`POST /api/trips/{id}/settlements`), and Remind. §7a specified these but §8
+   never gave them a step of their own, so they are recorded here rather than left to fall between
+   two. The `Σ owesBetween(A, B) == −net(A)` identity is asserted over HTTP as well as
+   property-tested in the engine. **Remind validates but delivers nothing** — see §9.
+
 7. **Screenshot upload** — Cloud Storage, signed read URLs.
 8. **Tally → Vue port** — tokens, then presentational, then interactive components.
 9. **`web` screens** — 1–7 above, i18n EN/中文 scaffolding from the first component.
@@ -562,6 +568,10 @@ Each step ends with something runnable and tested.
   convenience rather than built unasked.
 - **Chinese copy.** i18n machinery ships; the Chinese voice pass is its own task.
 - **Multi-currency, offline/PWA, receipt OCR, CSV export, push notifications, dark mode.**
+  One consequence worth stating plainly rather than discovering: with no notifications,
+  `POST /api/trips/{id}/remind` checks that the nudge makes sense — they are on the trip, and they
+  really do owe you — and then does nothing. The endpoint exists so the button can be wired and the
+  rule has a home. Nobody should be told it sent anything.
 
 ---
 

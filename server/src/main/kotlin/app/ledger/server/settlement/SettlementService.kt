@@ -1,0 +1,118 @@
+package app.ledger.server.settlement
+
+import app.ledger.server.payback.PaybackEntity
+import app.ledger.server.payback.PaybackRepository
+import app.ledger.server.payback.PaybackStatusName
+import app.ledger.server.payback.PaybackView
+import app.ledger.server.payback.toView
+import app.ledger.server.trip.TripAccess
+import app.ledger.server.trip.TripSnapshots
+import org.springframework.http.HttpStatus
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import org.springframework.web.server.ResponseStatusException
+import java.time.LocalDate
+import java.util.UUID
+
+@Service
+class SettlementService(
+    private val paybacks: PaybackRepository,
+    private val snapshots: TripSnapshots,
+    private val access: TripAccess,
+) {
+    /** Your position with every other person on the trip, one row each. */
+    @Transactional(readOnly = true)
+    fun forViewer(tripId: UUID, actor: UUID): SettlementView {
+        access.visibleTrip(tripId, actor)
+        val snapshot = snapshots.load(tripId)
+        val you = snapshot.memberFor(actor)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
+
+        val pendingByOther = snapshot.paybacks
+            .filter { it.itemId == null && it.status == PaybackStatusName.PENDING }
+            .filter { it.fromMemberId == you.id || it.toMemberId == you.id }
+            .groupBy { if (it.fromMemberId == you.id) it.toMemberId else it.fromMemberId }
+
+        val rows = snapshot.roster
+            .filter { it.id != you.id }
+            .map { other ->
+                SettlementRow(
+                    memberId = other.id,
+                    displayName = other.displayName,
+                    personHue = other.personHue,
+                    owedMinor = snapshot.owesBetween(you.id, other.id),
+                    pending = pendingByOther[other.id].orEmpty().map(PaybackEntity::toView),
+                )
+            }
+
+        return SettlementView(
+            rows = rows,
+            yourNetMinor = snapshot.netFor(you.id),
+            allSquare = rows.all { it.owedMinor == 0L },
+        )
+    }
+
+    /**
+     * Tapping Pay files a trip-level settlement: a payback with no item, from you to them, sitting
+     * PENDING until they agree (§7a). It is a request, not an act — until it is approved the row
+     * still counts as unpaid, which is the whole reason display-only settlement was abandoned.
+     *
+     * A trip-level settlement clears a person's overall position rather than one bill, which is why
+     * it carries an explicit recipient instead of inferring one from a payer.
+     */
+    @Transactional
+    fun pay(tripId: UUID, command: SubmitSettlement, actor: UUID): PaybackView {
+        val trip = access.visibleTrip(tripId, actor)
+        val snapshot = snapshots.load(tripId)
+        val you = snapshot.memberFor(actor)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
+        val them = snapshot.roster.firstOrNull { it.id == command.toMemberId }
+            ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "That person is not on this trip")
+
+        if (them.id == you.id) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "You cannot settle up with yourself")
+        }
+
+        // Deliberately not capped at what you currently owe. Paying more than the running figure is
+        // a real thing people do — rounding a debt up, or covering something not yet entered — and
+        // refusing it would be the app telling somebody they are wrong about their own money.
+        return paybacks
+            .save(
+                PaybackEntity(
+                    tripId = trip.id,
+                    itemId = null,
+                    fromMemberId = you.id,
+                    toMemberId = them.id,
+                    amountMinor = command.amountMinor,
+                    paidOn = LocalDate.now(),
+                    status = PaybackStatusName.PENDING,
+                    createdByUserId = actor,
+                ),
+            ).toView()
+    }
+
+    /**
+     * A nudge to somebody who owes you. Changes no balance and writes no payback (§7a).
+     *
+     * **It does not yet deliver anything.** Push notifications are explicitly out of phase 1 (§9),
+     * so this validates that the nudge makes sense — they are on the trip, and they really do owe
+     * you — and then returns. The endpoint exists so the button can be wired and the rule lives
+     * somewhere; sending is the part still missing, and no caller should be told otherwise.
+     */
+    @Transactional(readOnly = true)
+    fun remind(tripId: UUID, command: Remind, actor: UUID) {
+        access.visibleTrip(tripId, actor)
+        val snapshot = snapshots.load(tripId)
+        val you = snapshot.memberFor(actor)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
+        val them = snapshot.roster.firstOrNull { it.id == command.memberId }
+            ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "That person is not on this trip")
+
+        if (them.id == you.id) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "You cannot remind yourself")
+        }
+        if (snapshot.owesBetween(them.id, you.id) <= 0) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "They do not owe you anything")
+        }
+    }
+}

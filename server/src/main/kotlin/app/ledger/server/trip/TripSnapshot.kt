@@ -82,6 +82,17 @@ class TripSnapshot(
     /** Every payback filed against one bill, newest last, whatever its status. */
     fun paybacksFor(item: ItemEntity): List<PaybackEntity> = paybacks.filter { it.itemId == item.id }
 
+    /**
+     * What [a] owes [b], netted both ways — one Settle-up row (§7a). Positive means [a] owes [b].
+     *
+     * Not the minimised transfer set: `settle()` computes those and they are property-tested, but
+     * they pair up people who are not party to each other's rows, which is not what this screen
+     * shows.
+     */
+    fun owesBetween(a: UUID, b: UUID): Long =
+        // Qualified: this method's own name would otherwise shadow the engine function it calls.
+        app.ledger.engine.owesBetween(engineTrip, MemberId(a.toString()), MemberId(b.toString()))
+
     private fun PaybackEntity.toEnginePayback() = Payback(
         from = MemberId(fromMemberId.toString()),
         to = MemberId(toMemberId.toString()),
