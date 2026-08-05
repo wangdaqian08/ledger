@@ -553,7 +553,10 @@ Each step ends with something runnable and tested.
    *not* port: Tally's `Amount` takes a major-unit float, and its SplitBar keeps float percentages.
    Both were rebuilt on integer minor units, and the SplitBar asks a TypeScript port of the
    engine's own largest remainder so the amounts shown while dragging are the amounts charged. The
-   client mints the item id to make that possible, since the id is the split's salt.
+   client mints the item id to make that possible, since the id is the split's salt. ✔ Complete:
+   tokens, the presentational set, the forms, the lists, navigation and feedback. A third thing did
+   not port — `GroupCard` decided "all square" with `Math.abs(balance) < 0.005`, a tolerance that
+   only makes sense for floats. In whole cents it is `=== 0`, because four cents is not square.
 9. **`web` screens** — 1–7 above, i18n EN/中文 scaffolding from the first component.
 10. **Google Sign-In** — swap in `GoogleIdentityProvider` behind the same seam.
 11. **Deploy** — Cloud Run + Cloud SQL + Secret Manager.

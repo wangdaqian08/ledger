@@ -105,7 +105,7 @@ add a rule, add the property, not only the case that prompted it.
 ```
 engine/                pure Kotlin business rules: split, settle, item state
 server/                Spring Boot 4 + Flyway + Postgres: auth, trips, items, paybacks, settle-up
-web/                   Vue 3 + TS + Vite. Tokens and core components so far; screens are step 9
+web/                   Vue 3 + TS + Vite. The design system is ported; screens are step 9
 docs/specs/            the design spec — source of truth
 Tally_Design_System/   vendored design reference. See below.
 ```
@@ -141,10 +141,17 @@ write the replacement, leaving the browser with no token and every write rejecte
 design system used to read tokens, spacing and component behaviour from. Do not edit them, do not
 import them, and do not ship them. The frontend is Vue 3; components get ported, not reused.
 
-**Porting is not copying, and `Amount` is the worked example.** Tally's version takes a major-unit
-float and calls `toLocaleString`. `AmountText.vue` takes integer minor units and never computes a
-fraction — `web/src/lib/money.ts` splits with `%` and an exact division instead of `/ 100`. The
-money rule does not stop at the API boundary, and a faithful port would have broken it at the very
+**Read the reference for behaviour and layout, never for arithmetic.** Three components make the
+point, and all three were rebuilt on whole cents:
+
+- `Amount` takes a major-unit float and calls `toLocaleString`. `AmountText.vue` takes integer
+  minor units and never computes a fraction — `money.ts` splits with `%` and an exact division.
+- `SplitBar` keeps float percentages and multiplies them back into amounts. `SplitBar.vue` keeps
+  integer weights and asks `split.ts`, which is pinned to the engine.
+- `GroupCard` calls a balance settled when `Math.abs(balance) < 0.005`. Ours is `=== 0`, because a
+  tolerance means telling somebody they are square while they still owe four cents.
+
+The money rule does not stop at the API boundary. A faithful port would have broken it at the very
 last step, where nobody looks.
 
 Gradle modules are added to `settings.gradle.kts` as they are built; `engine` and `server` are
