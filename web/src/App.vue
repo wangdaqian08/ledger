@@ -10,6 +10,19 @@ import AmountInput from './components/AmountInput.vue'
 import PersonToggleRow from './components/PersonToggleRow.vue'
 import { ref } from 'vue'
 import { saltFor, splitShares } from './lib/split'
+import AppBar from './components/AppBar.vue'
+import BalanceRow from './components/BalanceRow.vue'
+import CategoryPicker from './components/CategoryPicker.vue'
+import EmptyState from './components/EmptyState.vue'
+import ExpenseRow from './components/ExpenseRow.vue'
+import GroupCard from './components/GroupCard.vue'
+import ProgressBar from './components/ProgressBar.vue'
+import SettledBanner from './components/SettledBanner.vue'
+import SheetPanel from './components/SheetPanel.vue'
+import TabBar from './components/TabBar.vue'
+import TallyKeypad from './components/TallyKeypad.vue'
+import TallyStepper from './components/TallyStepper.vue'
+import TextField from './components/TextField.vue'
 
 /**
  * A gallery of what has been ported so far, not a screen.
@@ -29,6 +42,17 @@ const split = ref([
 ])
 
 const onList = ref<Record<string, boolean>>({ '1': true, '2': true, '3': false })
+const sheetOpen = ref(false)
+const tab = ref('groups')
+const weight = ref(2)
+const tripName = ref('')
+const chosenCategory = ref<string | null>('cat-stay')
+
+const categories = [
+  { id: 'cat-food', key: 'food', nameEn: 'Food', nameZh: '餐饮', icon: 'utensils', hue: 2, builtIn: true },
+  { id: 'cat-stay', key: 'stay', nameEn: 'Stay', nameZh: '住宿', icon: 'bed-double', hue: 7, builtIn: true },
+  { id: 'cat-fun', key: 'fun', nameEn: 'Fun', nameZh: '娱乐', icon: 'ticket', hue: 8, builtIn: true },
+]
 
 const previewShares = () =>
   splitShares({
@@ -109,6 +133,83 @@ const people = [
         />
       </p>
     </TallyCard>
+
+    <TallyCard>
+      <h2>A trip in the list</h2>
+      <GroupCard name="Hokkaido" icon="plane" :hue="6" :members="people" :your-net-minor="3410" />
+      <GroupCard name="Flat" icon="house" :hue="4" :members="people.slice(0, 2)" :your-net-minor="0" />
+    </TallyCard>
+
+    <TallyCard>
+      <h2>Expenses and balances</h2>
+      <ExpenseRow
+        title="Hotel deposit"
+        category-key="stay"
+        paid-by="Bob"
+        spent-on="1 Aug"
+        :your-share-minor="-14286"
+      />
+      <ExpenseRow
+        title="Dinner"
+        category-key="food"
+        paid-by="Mei"
+        spent-on="2 Aug"
+        :your-share-minor="0"
+        all-square
+      />
+      <BalanceRow display-name="Mei Lin" :person-hue="3" :owed-minor="-3910" />
+      <BalanceRow display-name="Sam Patel" :person-hue="4" :owed-minor="4230" />
+      <BalanceRow display-name="Jack Bell" :person-hue="5" :owed-minor="0" />
+    </TallyCard>
+
+    <TallyCard>
+      <h2>How much of a bill is back</h2>
+      <ProgressBar :covered-minor="6800" :of-minor="10000" label="Paid back" />
+    </TallyCard>
+
+    <TallyCard>
+      <h2>Choosing and typing</h2>
+      <CategoryPicker v-model="chosenCategory" :categories="categories" />
+      <p>
+        <TextField
+          v-model="tripName"
+          label="Trip name"
+          placeholder="Hokkaido"
+          hint="Anything the group will recognise"
+        />
+      </p>
+      <p>Weight <TallyStepper v-model="weight" :min="1" :max="9" /></p>
+    </TallyCard>
+
+    <TallyCard>
+      <h2>Sheets and navigation</h2>
+      <AppBar title="Hokkaido" back action="share-2" />
+      <p><TallyButton @click="sheetOpen = true">Open a sheet</TallyButton></p>
+      <TabBar
+        v-model="tab"
+        :tabs="[
+          { id: 'groups', label: 'Groups', icon: 'users' },
+          { id: 'activity', label: 'Activity', icon: 'clock' },
+          { id: 'you', label: 'You', icon: 'circle-user' },
+        ]"
+      />
+    </TallyCard>
+
+    <TallyCard>
+      <h2>Nothing here yet</h2>
+      <EmptyState
+        title="No expenses"
+        body="Add the first one and everybody's share appears."
+        action="Add an expense"
+      />
+    </TallyCard>
+
+    <SettledBanner sub="Every row has been confirmed." />
+
+    <SheetPanel :open="sheetOpen" title="Add an expense" @close="sheetOpen = false">
+      <AmountInput v-model="amount" />
+      <TallyKeypad style="margin-top: 16px" />
+    </SheetPanel>
 
     <TallyCard sunk>
       <h2>A settled card sinks</h2>
