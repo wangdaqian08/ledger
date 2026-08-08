@@ -54,4 +54,10 @@ class TripController(private val trips: TripService) {
         @Valid @RequestBody command: ClaimMember,
         @AuthenticationPrincipal principal: LedgerPrincipal,
     ): TripView = trips.claim(tripId, command, principal.userId)
+
+    @PostMapping("/{tripId}/claimable")
+    fun claimable(
+        @PathVariable tripId: UUID,
+        @Valid @RequestBody command: PreviewInvite,
+    ): ClaimableView = trips.claimable(tripId, command.token)
 }

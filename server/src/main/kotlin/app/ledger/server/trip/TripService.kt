@@ -103,6 +103,28 @@ class TripService(
     fun invite(tripId: UUID, actor: UUID): IssuedInvite = inviteTokens.issue(access.creatorOnly(tripId, actor).id)
 
     /**
+     * The share link's landing page: which names are still free. Like [claim], deliberately not
+     * behind [TripAccess.visibleTrip] — the token is the authorisation — and deliberately *only*
+     * the unclaimed names: the link's holder is not yet somebody the trip's numbers belong to.
+     */
+    @Transactional(readOnly = true)
+    fun claimable(tripId: UUID, token: String): ClaimableView {
+        if (inviteTokens.verify(token) != tripId) {
+            throw InvalidInviteToken("This invite link is for a different trip")
+        }
+        val trip = trips.findById(tripId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
+        }
+        return ClaimableView(
+            tripName = trip.name,
+            members = members
+                .findAllByTripIdOrderByCreatedAt(tripId)
+                .filter { it.userId == null }
+                .map { ClaimableMemberView(it.id, it.displayName, it.personHue) },
+        )
+    }
+
+    /**
      * Deliberately not behind [TripAccess.visibleTrip]: the whole point is that the caller is *not*
      * yet a member. The token is the authorisation, which is why it is verified before anything
      * else and why the trip it names must match the one in the path.
