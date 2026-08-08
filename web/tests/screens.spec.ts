@@ -3,9 +3,14 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import SheetPanel from '../src/components/SheetPanel.vue'
 import AddExpenseSheet from '../src/screens/sheets/AddExpenseSheet.vue'
+import ClaimPaybackSheet from '../src/screens/sheets/ClaimPaybackSheet.vue'
+import EditSplitSheet from '../src/screens/sheets/EditSplitSheet.vue'
+import InviteSheet from '../src/screens/sheets/InviteSheet.vue'
 import ItemDetailSheet from '../src/screens/sheets/ItemDetailSheet.vue'
 import SettleUpSheet from '../src/screens/sheets/SettleUpSheet.vue'
+import JoinScreen from '../src/screens/JoinScreen.vue'
 import SignInScreen from '../src/screens/SignInScreen.vue'
 import TripScreen from '../src/screens/TripScreen.vue'
 import TripsScreen from '../src/screens/TripsScreen.vue'
@@ -36,6 +41,7 @@ vi.mock('../src/lib/api', async () => {
       categories: vi.fn(),
       createItem: vi.fn(),
       itemDetail: vi.fn(),
+      patchItem: vi.fn(),
       deleteItem: vi.fn(),
       submitItemPayback: vi.fn(),
       approvePayback: vi.fn(),
@@ -370,6 +376,158 @@ describe('ItemDetailSheet', () => {
 
     expect(sheet.findAll('button').find((b) => b.text() === 'Yes, paid me')).toBeUndefined()
     expect(sheet.findAll('button').find((b) => b.text() === 'Cancel')).toBeTruthy()
+  })
+})
+
+describe('EditSplitSheet', () => {
+  it('previews the re-divided shares with the existing salt, and saves what it showed', async () => {
+    // The hotel case in one sheet: Cara was left off the bill; ticking her on re-divides 9000
+    // three ways. The salt is the item's own id — pinned, so every previewed cent is derivable.
+    const existing = item({
+      id: 'cafebabe-dead-4eef-cafe-babedead4eef',
+      splits: [
+        { memberId: you.id, amountMinor: 4_500, weight: null, exactAmountMinor: null },
+        { memberId: bob.id, amountMinor: 4_500, weight: null, exactAmountMinor: null },
+      ],
+    })
+    mocked.patchItem!.mockResolvedValue(existing)
+
+    const sheet = mount(EditSplitSheet, {
+      props: { open: false, trip: trip(), item: null },
+      global: global(),
+    })
+    await sheet.setProps({ open: true, item: existing })
+    await nextTick()
+
+    const caraRow = sheet.findAll('.row').find((r) => r.text().includes('Cara'))!
+    await caraRow.trigger('click')
+
+    const expected = splitShares({ totalMinor: 9_000, weights: [1, 1, 1], salt: saltFor(existing.id) })
+    for (const share of expected) {
+      expect(sheet.text()).toContain((share / 100).toFixed(2))
+    }
+
+    await sheet
+      .findAll('button')
+      .find((b) => b.text() === 'Save the split')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(mocked.patchItem).toHaveBeenCalledWith(existing.id, {
+      payerMemberId: you.id,
+      splitRule: 'EQUAL',
+      sharedBy: [{ memberId: you.id }, { memberId: bob.id }, { memberId: cara.id }],
+    })
+    expect(sheet.emitted('saved')).toBeTruthy()
+  })
+})
+
+describe('InviteSheet', () => {
+  it('writes a name onto the roster and reports the change', async () => {
+    mocked.addMember!.mockResolvedValue({ ...cara, id: 'm-new', displayName: 'Dana' })
+    const sheet = mount(InviteSheet, { props: { open: true, trip: trip() }, global: global() })
+    await nextTick()
+
+    await sheet.find('input').setValue('Dana')
+    await sheet.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(mocked.addMember).toHaveBeenCalledWith('t-1', 'Dana')
+    expect(sheet.emitted('changed')).toBeTruthy()
+  })
+
+  it('hands out a link with the token in the fragment, never the query string', async () => {
+    mocked.invite!.mockResolvedValue({ token: 'tok-abc', expiresAt: '2026-09-01T00:00:00Z' })
+    const written: string[] = []
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      clipboard: { writeText: (text: string) => (written.push(text), Promise.resolve()) },
+    })
+
+    const sheet = mount(InviteSheet, { props: { open: true, trip: trip() }, global: global() })
+    await nextTick()
+    await sheet
+      .findAll('button')
+      .find((b) => b.text() === 'Copy invite link')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(written[0]).toContain('/join/t-1#token=tok-abc')
+    expect(written[0]).not.toContain('?token')
+    vi.unstubAllGlobals()
+  })
+})
+
+describe('ClaimPaybackSheet', () => {
+  it('pre-fills what is still owed and files the claim against the bill', async () => {
+    mocked.submitItemPayback!.mockResolvedValue({})
+    const sheet = mount(ClaimPaybackSheet, {
+      props: {
+        open: false,
+        itemId: 'i-1',
+        toName: 'Alice',
+        prefillMinor: 2_500,
+        fromMemberId: bob.id,
+        currencyCode: 'AUD',
+        symbol: '$',
+      },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await nextTick()
+
+    expect((sheet.find('input').element as HTMLInputElement).value).toBe('25.00')
+
+    await sheet.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(mocked.submitItemPayback).toHaveBeenCalledWith(
+      'i-1',
+      expect.objectContaining({ fromMemberId: bob.id, amountMinor: 2_500 }),
+    )
+    expect(sheet.emitted('saved')).toBeTruthy()
+  })
+})
+
+describe('JoinScreen', () => {
+  it('reads the token from the fragment, shows the free names, and claims the chosen one', async () => {
+    mocked.claimable!.mockResolvedValue({
+      tripName: 'Osaka',
+      members: [{ id: cara.id, displayName: 'Cara', personHue: 3 }],
+    })
+    mocked.claim!.mockResolvedValue(trip())
+    await router.push('/join/t-1#token=tok-abc')
+
+    const screen = mount(JoinScreen, { props: { tripId: 't-1' }, global: global() })
+    await flushPromises()
+
+    expect(mocked.claimable).toHaveBeenCalledWith('t-1', 'tok-abc')
+    expect(screen.text()).toContain('Cara')
+
+    await screen.find('.join__member').trigger('click')
+    await screen
+      .findAll('button')
+      .find((b) => b.text() === "That's me")!
+      .trigger('click')
+    await flushPromises()
+
+    expect(mocked.claim).toHaveBeenCalledWith('t-1', 'tok-abc', cara.id)
+    expect(router.currentRoute.value.path).toBe('/trips/t-1')
+  })
+})
+
+describe('SheetPanel', () => {
+  it('closes on Escape and on the scrim, and never loses the page behind it', async () => {
+    const sheet = mount(SheetPanel, {
+      props: { open: true, title: 'A sheet' },
+      global: { stubs: { teleport: true } },
+    })
+
+    await sheet.find('.sheet__scrim').trigger('click')
+    expect(sheet.emitted('close')).toHaveLength(1)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(sheet.emitted('close')).toHaveLength(2)
   })
 })
 

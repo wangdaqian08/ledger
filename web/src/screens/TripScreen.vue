@@ -12,6 +12,8 @@ import TallyCard from '@/components/TallyCard.vue'
 import TallyIcon from '@/components/TallyIcon.vue'
 import AddExpenseSheet from '@/screens/sheets/AddExpenseSheet.vue'
 import ClaimPaybackSheet from '@/screens/sheets/ClaimPaybackSheet.vue'
+import EditSplitSheet from '@/screens/sheets/EditSplitSheet.vue'
+import InviteSheet from '@/screens/sheets/InviteSheet.vue'
 import ItemDetailSheet from '@/screens/sheets/ItemDetailSheet.vue'
 import SettleUpSheet from '@/screens/sheets/SettleUpSheet.vue'
 import {
@@ -41,11 +43,12 @@ const trip = ref<TripView | null>(null)
 const settlement = ref<SettlementView | null>(null)
 const categories = ref<CategoryView[]>([])
 const filter = ref<'all' | 'unsettled' | 'youPaid'>('all')
-const inviteNote = ref('')
 
 const addOpen = ref(false)
 const settleOpen = ref(false)
+const inviteOpen = ref(false)
 const detailItemId = ref<string | null>(null)
+const editItem = ref<ItemView | null>(null)
 const claim = ref<{ itemId: string; toName: string; prefillMinor: number } | null>(null)
 
 const symbol = computed(() => currencySymbol(trip.value?.currencyCode ?? 'AUD'))
@@ -121,19 +124,6 @@ onMounted(async () => {
   }
 })
 
-async function invite() {
-  const issued = await api.invite(props.tripId)
-  // The token rides in the fragment: browsers keep fragments out of server logs and Referer
-  // headers, which is where a query-string token would leak.
-  const link = `${location.origin}/join/${props.tripId}#token=${issued.token}`
-  try {
-    await navigator.clipboard.writeText(link)
-    inviteNote.value = t('trip.linkCopied')
-  } catch {
-    inviteNote.value = link
-  }
-}
-
 function openDetail(itemId: string) {
   detailItemId.value = itemId
 }
@@ -155,10 +145,8 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       back
       :action="t('trip.invite')"
       @back="router.push({ name: 'trips' })"
-      @action="invite"
+      @action="inviteOpen = true"
     />
-
-    <p v-if="inviteNote" class="trip__invite-note">{{ inviteNote }}</p>
 
     <template v-if="trip && settlement">
       <TallyCard class="trip__hero">
@@ -311,7 +299,19 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       @close="detailItemId = null"
       @changed="refresh"
       @pay-back="startClaimFor"
+      @edit="(item) => ((detailItemId = null), (editItem = item))"
     />
+
+    <EditSplitSheet
+      v-if="trip"
+      :open="editItem !== null"
+      :trip="trip"
+      :item="editItem"
+      @close="editItem = null"
+      @saved="((editItem = null), refresh())"
+    />
+
+    <InviteSheet v-if="trip" :open="inviteOpen" :trip="trip" @close="inviteOpen = false" @changed="refresh" />
 
     <ClaimPaybackSheet
       v-if="trip && me"

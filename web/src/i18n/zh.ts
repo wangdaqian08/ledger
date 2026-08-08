@@ -106,6 +106,18 @@ export default {
     send: '发送确认',
     disclaimer: 'Tally不经手钱。这会请{name}确认现金确实到手了。',
   },
+  editSplit: {
+    title: '修改分摊',
+    save: '保存分摊',
+  },
+  invite: {
+    title: '成员',
+    claimed: '已加入',
+    unclaimed: '尚未认领',
+    namePlaceholder: '添加名字',
+    add: '添加',
+    copyLink: '复制邀请链接',
+  },
   join: {
     title: '加入{trip}',
     pickYourName: '认领你的名字',

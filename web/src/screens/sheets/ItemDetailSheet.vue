@@ -27,6 +27,7 @@ const emit = defineEmits<{
   close: []
   changed: []
   payBack: [itemId: string, toName: string, prefillMinor: number]
+  edit: [item: ItemDetail]
 }>()
 
 const { t } = useI18n()
@@ -203,10 +204,11 @@ async function remove() {
 
           <p v-if="payback.rejectReason" class="detail__reason">{{ payback.rejectReason }}</p>
 
-          <!-- The person owed decides; the claimant can withdraw. The server holds the real rule
-               (owed party or trip creator) — these buttons only appear where they will succeed. -->
-          <div v-if="payback.status === 'PENDING'" class="detail__decide">
-            <template v-if="iAmPayer">
+          <!-- The person owed decides; either side can undo before or after approval (§7a) — a
+               settled bill can un-settle, the accepted cost of never trapping a wrong record.
+               The server holds the real rule; these buttons only appear where they will succeed. -->
+          <div v-if="payback.status !== 'REJECTED'" class="detail__decide">
+            <template v-if="iAmPayer && payback.status === 'PENDING'">
               <TallyButton size="sm" variant="secondary" @click="rejecting = payback.id">
                 {{ t('itemDetail.reject') }}
               </TallyButton>
@@ -214,8 +216,10 @@ async function remove() {
                 {{ t('itemDetail.approve') }}
               </TallyButton>
             </template>
+            <!-- The claimant can always withdraw; the person owed un-does an *approved* one
+                 (a pending claim they disagree with has Reject, which says why). -->
             <TallyButton
-              v-if="payback.fromMemberId === me?.id"
+              v-if="payback.fromMemberId === me?.id || (iAmPayer && payback.status === 'APPROVED')"
               size="sm"
               variant="ghost"
               @click="undo(payback.id)"
@@ -242,6 +246,17 @@ async function remove() {
       <p v-if="error" class="detail__error" role="alert">{{ error }}</p>
 
       <div class="detail__actions">
+        <!-- The people list is the whole fix for the hotel case; the payer (the server also lets
+             the creator) corrects it. EXACT bills stay out: their people change means retyping
+             amounts, a different conversation. -->
+        <TallyButton
+          v-if="iAmPayer && detail.splitRule !== 'EXACT'"
+          variant="secondary"
+          size="sm"
+          @click="emit('edit', detail)"
+        >
+          {{ t('editSplit.title') }}
+        </TallyButton>
         <TallyButton v-if="iAmPayer" variant="danger" size="sm" @click="remove">
           {{ t('itemDetail.delete') }}
         </TallyButton>
