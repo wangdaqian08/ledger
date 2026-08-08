@@ -184,10 +184,15 @@ there, and `web` never will be.
 npm --prefix web test     # Vitest
 npm --prefix web run lint # ESLint + Prettier
 npm --prefix web run build  # typechecks with vue-tsc, then bundles
+npm --prefix web run e2e  # Playwright drives the real app against the seeded backend — needs Docker;
+                          # boots the server (Testcontainers) and Vite itself, so nothing else
+                          # should be holding ports 8080 or 5173
 ```
 
-CI (`.github/workflows/ci.yml`) runs `spotlessCheck`, then both suites, on every push to `main` and
-every PR. Needs JDK 25; Gradle comes from the wrapper.
+CI (`.github/workflows/ci.yml`) runs five parallel jobs — formatting, engine, server, web unit,
+and the Playwright e2e — behind a single aggregate check, `CI green`, which is the one branch
+protection requires. Every push to `main` and every PR. Needs JDK 25; Gradle comes from the
+wrapper.
 
 `server` tests use Testcontainers, never H2. The CHECK constraints, the partial unique indexes and
 Hibernate's schema validation are precisely what an in-memory substitute would silently not have,

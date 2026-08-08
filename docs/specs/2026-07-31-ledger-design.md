@@ -565,7 +565,17 @@ Each step ends with something runnable and tested.
    tokens, the presentational set, the forms, the lists, navigation and feedback. A third thing did
    not port — `GroupCard` decided "all square" with `Math.abs(balance) < 0.005`, a tolerance that
    only makes sense for floats. In whole cents it is `=== 0`, because four cents is not square.
-9. **`web` screens** — 1–7 above, i18n EN/中文 scaffolding from the first component.
+9. **`web` screens** — 1–7 above, i18n EN/中文 scaffolding from the first component. ✔ Plus the
+   share link's landing page, roster additions from the invite sheet, and fixing a bill's people
+   list from its detail sheet — so the hotel case is performable end to end, which the first
+   build of this step had quietly left impossible.
+9a. **End-to-end suite.** ✔ Playwright drives the built app against the seeded backend (real
+   Postgres, real HTTP): the hotel case through the glass, preview-equals-landed with the odd
+   cent, the §7a round trip across two real browsers (pending moves nothing → reject with a
+   reason → try again → approve → undo un-settles), double-save idempotency, the share link
+   bounced through sign-in with its fragment intact, and a 中文 browser getting the whole app in
+   Chinese. `Σ rows == hero` is asserted off the screen after every mutation — invariant 2 at
+   the last boundary there is.
 10. **Google Sign-In** — swap in `GoogleIdentityProvider` behind the same seam.
 11. **Deploy** — Cloud Run + Cloud SQL + Secret Manager.
 12. **Motion pass** — Tally's spring curve on every state change, once behaviour is settled.
