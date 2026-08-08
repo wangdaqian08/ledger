@@ -39,3 +39,9 @@ data class ClaimMember(
     val token: String,
     val memberId: UUID,
 )
+
+/** The share link asking which names are still free, before its holder is on the trip. */
+data class PreviewInvite(
+    @field:NotBlank
+    val token: String,
+)

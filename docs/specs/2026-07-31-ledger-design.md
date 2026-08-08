@@ -328,6 +328,7 @@ POST   /api/trips                   "New group" chip on GroupsHome
 GET    /api/trips/{id}              the whole group detail screen in one call
 POST   /api/trips/{id}/members
 POST   /api/trips/{id}/invite       → signed share-link token
+POST   /api/trips/{id}/claimable    { token } — the link's landing page: trip name + unclaimed names
 POST   /api/trips/{id}/claim        { token, memberId }
 GET    /api/trips/{id}/categories   eight built-ins + this trip's custom ones
 POST   /api/trips/{id}/categories   { name, icon, hue }
@@ -365,6 +366,13 @@ GET    /api/activity                Activity tab — cross-group feed
   used on a phone during a trip. Without server-side revocation that also means a lost handset
   stays signed in long after the trip ends, and the money it can move is real. Sessions live in
   Postgres, so ending all of a user's is a lookup on the indexed `PRINCIPAL_NAME` column.
+- **`POST /api/trips/{id}/claimable`** — added with the screens (step 9). The claim flow's
+  landing page has to show a friend which names are still free, and the friend is by definition
+  not yet on the trip, so `GET /api/trips/{id}` correctly 404s for them. Like `claim`, the token
+  is the authorisation; unlike `claim`, it answers with the trip's name and unclaimed names only —
+  no items, no balances, no claimed members. The token travels in the request body (and in the
+  share link's URL *fragment*), never a query string, which would copy it into access logs and
+  Referer headers.
 
 ### Removed, because nothing needs them
 

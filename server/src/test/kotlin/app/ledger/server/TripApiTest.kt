@@ -211,6 +211,28 @@ class TripApiTest : ApiTest() {
     }
 
     @Test
+    fun `a link's landing page shows the names still free, and nothing else`() {
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip("Hokkaido")
+        alice.addMember(tripId, "Bob")
+        val invite = alice.invite(tripId)
+        val friend = signedIn("Friend")
+
+        val preview = friend.post("/api/trips/$tripId/claimable", mapOf("token" to invite))
+
+        assertEquals(HttpStatus.OK, preview.statusCode)
+        val body = preview.json()
+        assertEquals("Hokkaido", body["tripName"].asText())
+        // Alice claimed her slot by creating the trip, so only Bob's name is on offer — and the
+        // payload carries no items, no balances and no claimed members for a stranger to read.
+        assertEquals(listOf("Bob"), body["members"].map { it["displayName"].asText() })
+        assertFalse(body.has("items"), "a link preview must not carry the trip's numbers")
+
+        val tampered = friend.post("/api/trips/$tripId/claimable", mapOf("token" to invite.dropLast(4) + "aaaa"))
+        assertEquals(HttpStatus.BAD_REQUEST, tampered.statusCode)
+    }
+
+    @Test
     fun `a tampered link is refused`() {
         val alice = signedIn("Alice")
         val tripId = alice.createTrip("Hokkaido")
