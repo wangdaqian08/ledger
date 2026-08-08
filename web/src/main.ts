@@ -2,6 +2,7 @@ import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 import App from './App.vue'
 import { i18n } from './i18n'
+import { router } from './router'
 
 // Tokens first: every component below reads its colours and spacing from these custom properties.
 import './tokens/fonts.css'
@@ -13,4 +14,4 @@ import './tokens/elevation.css'
 import './tokens/motion.css'
 import './tokens/base.css'
 
-createApp(App).use(createPinia()).use(i18n).mount('#app')
+createApp(App).use(createPinia()).use(i18n).use(router).mount('#app')
