@@ -53,18 +53,17 @@ defineEmits<{ 'update:modelValue': [string] }>()
 
 <style scoped>
 .picker {
-  display: flex;
-  gap: var(--space-3);
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
 }
 
 .picker__item {
-  display: inline-flex;
+  display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
   padding: var(--space-2);
-  width: 72px;
   background: transparent;
   border: 2px solid transparent;
   border-radius: var(--radius-md);
@@ -91,9 +90,10 @@ defineEmits<{ 'update:modelValue': [string] }>()
   font-weight: var(--weight-semibold);
   color: var(--text-body);
   text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: var(--lh-caption);
+  /* Whole words, always: "Transport" must never read as "Trans…". A long custom name takes a
+     second line rather than losing its ending. */
+  overflow-wrap: break-word;
   max-width: 100%;
 }
 </style>

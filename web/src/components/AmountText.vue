@@ -66,6 +66,9 @@ const text = computed(() =>
   font-size: var(--text-money-hero);
   font-weight: var(--weight-bold);
   letter-spacing: -0.03em;
+  /* The tokens' own hero leading, not 1: at 48px a line box the size of the em leaves the
+     digits' ink touching its very top edge, and the apex of a 1 reads as cut off. */
+  line-height: var(--lh-hero);
 }
 
 .amount--neutral {

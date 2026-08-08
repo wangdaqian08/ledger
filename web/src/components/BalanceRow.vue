@@ -6,8 +6,10 @@ import TallyButton from './TallyButton.vue'
 /**
  * One Settle-up row: your position with one person, and the one action it affords.
  *
- * [owedMinor] is positive when they owe you and negative when you owe them, matching the API's
- * row. Zero is *all square* on the nose — an integer comparison, not a tolerance. Tally compared
+ * [owedMinor] is positive when they owe you and negative when you owe them — the viewer's own
+ * frame. Note the API's settlement row states the same figure the other way round (positive =
+ * you owe them), so a caller wiring one to the other negates it, once, at the call site.
+ * Zero is *all square* on the nose — an integer comparison, not a tolerance. Tally compared
  * a float against 0.005; there is nothing to be tolerant of when the number is whole cents.
  *
  * The action follows the direction: you can only nudge somebody who owes you, and only pay
@@ -36,6 +38,8 @@ defineEmits<{ pay: []; remind: [] }>()
 
     <div class="row__body">
       <div class="row__name">{{ displayName }}</div>
+      <!-- The state is two short words and must stay on one line: "Owes / you" split across
+           two reads like a different sentence. Names may wrap; the caption may not. -->
       <div class="row__state">
         <template v-if="pending">Waiting for confirmation</template>
         <template v-else-if="owedMinor === 0">All square</template>
@@ -88,5 +92,6 @@ defineEmits<{ pay: []; remind: [] }>()
   font-size: var(--text-caption);
   color: var(--text-muted);
   margin-top: 2px;
+  white-space: nowrap;
 }
 </style>
