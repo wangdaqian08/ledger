@@ -105,6 +105,18 @@ export default {
     send: 'Send for confirmation',
     disclaimer: "Tally doesn't move money. This asks {name} to confirm cash really changed hands.",
   },
+  editSplit: {
+    title: 'Fix the split',
+    save: 'Save the split',
+  },
+  invite: {
+    title: 'People',
+    claimed: 'On the trip',
+    unclaimed: 'Not claimed yet',
+    namePlaceholder: 'Add a name',
+    add: 'Add',
+    copyLink: 'Copy invite link',
+  },
   join: {
     title: 'Join {trip}',
     pickYourName: 'Pick your name',

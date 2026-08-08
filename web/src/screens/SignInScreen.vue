@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import TallyButton from '@/components/TallyButton.vue'
@@ -19,6 +19,17 @@ const session = useSession()
 const name = ref('')
 const busy = ref(false)
 const error = ref('')
+
+onMounted(async () => {
+  // Asking "who am I" does two jobs when this is the first page someone opens: the answer sends a
+  // signed-in visitor straight through, and the *refusal* carries the CSRF cookie — without which
+  // the sign-in POST below would itself be turned away.
+  if (!session.checked) await session.load()
+  if (session.me) {
+    const next = typeof route.query.next === 'string' ? route.query.next : '/'
+    await router.replace(next)
+  }
+})
 
 async function submit() {
   if (!name.value.trim() || busy.value) return

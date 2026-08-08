@@ -193,6 +193,17 @@ export interface CreateItemBody {
   sharedBy: ShareInput[]
 }
 
+export interface PatchItemBody {
+  title?: string
+  categoryId?: string
+  amountMinor?: number
+  splitRule?: SplitRule
+  payerMemberId?: string
+  spentOn?: string
+  note?: string
+  sharedBy?: ShareInput[]
+}
+
 // ---- Calls, one per endpoint the seven screens use. ----
 
 export const api = {
@@ -216,6 +227,10 @@ export const api = {
   createItem: (tripId: string, body: CreateItemBody) =>
     request<ItemView>('POST', `/api/trips/${tripId}/items`, body),
   itemDetail: (itemId: string) => request<ItemDetail>('GET', `/api/items/${itemId}`),
+  // Partial on purpose: a field left out is a field left alone. This is where the people list
+  // gets fixed — the hotel case's whole mechanism (spec §6).
+  patchItem: (itemId: string, body: PatchItemBody) =>
+    request<ItemView>('PATCH', `/api/items/${itemId}`, body),
   deleteItem: (itemId: string) => request<void>('DELETE', `/api/items/${itemId}`),
 
   submitItemPayback: (
