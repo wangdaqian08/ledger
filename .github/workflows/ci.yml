@@ -126,10 +126,19 @@ jobs:
   # The whole product in one piece: Playwright drives the built screens against the seeded
   # backend — Gradle boots Postgres through Testcontainers, Vite serves the app, and the tests
   # walk the money flows a mocked API cannot vouch for. Needs both toolchains and Docker.
+  #
+  # Sharded across runners: each shard boots its own backend and database, so the shards share
+  # nothing and the wall clock is the slowest shard. Grow the matrix as the suite grows —
+  # nothing else needs touching, because "CI green" waits for every job of this matrix.
   e2e:
     name: Web e2e
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2]
+        shardTotal: [2]
     steps:
       - uses: actions/checkout@v7
 
@@ -152,14 +161,14 @@ jobs:
       - name: Install Playwright browser
         run: npm --prefix web exec playwright install --with-deps chromium
 
-      - name: Run e2e suite
-        run: npm --prefix web run e2e
+      - name: Run e2e shard
+        run: npm --prefix web run e2e -- --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
 
       - name: Upload e2e report
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-report
+          name: e2e-report-${{ matrix.shardIndex }}
           path: |
             web/playwright-report/
             web/test-results/
