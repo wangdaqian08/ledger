@@ -19,8 +19,10 @@ const props = withDefaults(
     symbol?: string
     placeholder?: string
     disabled?: boolean
+    /** Lands on the input itself, where tests type. */
+    testId?: string
   }>(),
-  { currencyCode: 'AUD', symbol: '$', placeholder: '', disabled: false },
+  { currencyCode: 'AUD', symbol: '$', placeholder: '', disabled: false, testId: undefined },
 )
 
 const emit = defineEmits<{ 'update:modelValue': [number] }>()
@@ -83,6 +85,7 @@ function onInput(event: Event) {
       :value="text"
       :placeholder="placeholder"
       :disabled="disabled"
+      :data-testid="testId"
       @input="onInput"
     />
   </label>

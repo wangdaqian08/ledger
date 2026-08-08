@@ -16,12 +16,12 @@ test('the shares previewed while ticking people are exactly the shares that land
   await addMembers(page, ['Bob', 'Cara'])
 
   // $100.01 over three: the largest remainder hands two people 33.34 and one 33.33.
-  await page.getByRole('button', { name: 'Add expense' }).click()
+  await page.getByTestId('add-expense').click()
   await typeAmount(page, '10001')
-  await page.getByLabel('What was it?').fill('Odd dinner')
-  await page.getByRole('button', { name: 'Next' }).click()
+  await page.getByTestId('expense-title').fill('Odd dinner')
+  await page.getByTestId('next-step').click()
 
-  const previewRows = page.locator('.add__people .row')
+  const previewRows = page.getByTestId('person-toggle')
   await expect(previewRows).toHaveCount(3)
   const previewed: number[] = []
   for (let index = 0; index < 3; index += 1) {
@@ -29,18 +29,18 @@ test('the shares previewed while ticking people are exactly the shares that land
   }
   expect(previewed.reduce((a, b) => a + b, 0)).toBe(10_001)
 
-  await page.getByRole('button', { name: 'Save expense' }).click()
-  await expect(page.getByRole('button', { name: /Odd dinner/ })).toBeVisible()
+  await page.getByTestId('save-expense').click()
+  await expect(page.getByTestId('expense-row').filter({ hasText: 'Odd dinner' })).toBeVisible()
 
   // The saved bill's splits, person for person, are the numbers the sheet promised.
-  await page.getByRole('button', { name: /Odd dinner/ }).click()
-  const savedRows = page.locator('.detail__section', { hasText: 'How it was split' }).locator('.detail__row')
+  await page.getByTestId('expense-row').filter({ hasText: 'Odd dinner' }).click()
+  const savedRows = page.getByTestId('split-row')
   await expect(savedRows).toHaveCount(3)
   for (let index = 0; index < 3; index += 1) {
     const saved = parseCents(await savedRows.nth(index).innerText())
     expect(saved, `person ${index} must be charged what the preview showed`).toBe(previewed[index])
   }
-  await page.getByRole('button', { name: 'Close' }).click()
+  await page.getByTestId('sheet-close').click()
   await expectRowsToSumToHero(page)
 })
 
@@ -49,18 +49,18 @@ test('saving twice cannot double an expense', async ({ page }) => {
   await createTrip(page, 'Retry weekend')
   await addMembers(page, ['Bob'])
 
-  await page.getByRole('button', { name: 'Add expense' }).click()
+  await page.getByTestId('add-expense').click()
   await typeAmount(page, '5000')
-  await page.getByLabel('What was it?').fill('Taxi')
-  await page.getByRole('button', { name: 'Next' }).click()
+  await page.getByTestId('expense-title').fill('Taxi')
+  await page.getByTestId('next-step').click()
 
   // A double-tap on Save, as raw DOM events — a normal click would wait politely for the first
   // one's re-render, which is exactly what a double-tapping thumb does not do. The busy guard
   // and the client-minted id both stand in the way of a second expense.
-  const save = page.getByRole('button', { name: 'Save expense' })
+  const save = page.getByTestId('save-expense')
   await save.dispatchEvent('click')
   await save.dispatchEvent('click')
 
-  await expect(page.getByRole('button', { name: /Taxi/ })).toHaveCount(1)
+  await expect(page.getByTestId('expense-row').filter({ hasText: 'Taxi' })).toHaveCount(1)
   await expectRowsToSumToHero(page)
 })

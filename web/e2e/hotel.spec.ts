@@ -12,28 +12,28 @@ test('the hotel case: ticking a late arrival onto the bill re-divides it for eve
   await addMembers(page, ['Bob', 'Cara'])
 
   // $100.00 over three people: 33.34 + 33.33 + 33.33 — somebody carries the odd cent.
-  await page.getByRole('button', { name: 'Add expense' }).click()
+  await page.getByTestId('add-expense').click()
   await typeAmount(page, '10000')
-  await page.getByLabel('What was it?').fill('Hotel deposit')
-  await page.getByRole('button', { name: 'Next' }).click()
-  await page.getByRole('button', { name: 'Save expense' }).click()
-  await expect(page.getByRole('button', { name: /Hotel deposit/ })).toBeVisible()
+  await page.getByTestId('expense-title').fill('Hotel deposit')
+  await page.getByTestId('next-step').click()
+  await page.getByTestId('save-expense').click()
+  await expect(page.getByTestId('expense-row').filter({ hasText: 'Hotel deposit' })).toBeVisible()
   await expectRowsToSumToHero(page)
 
   // Dana arrives late: written onto the roster, then ticked onto the existing bill.
   await addMembers(page, ['Dana'])
-  await page.getByRole('button', { name: /Hotel deposit/ }).click()
-  await page.getByRole('button', { name: 'Fix the split' }).click()
-  await page.locator('.edit__people .row', { hasText: 'Dana' }).click()
-  await page.getByRole('button', { name: 'Save the split' }).click()
+  await page.getByTestId('expense-row').filter({ hasText: 'Hotel deposit' }).click()
+  await page.getByTestId('edit-split-open').click()
+  await page.getByTestId('person-toggle').filter({ hasText: 'Dana' }).click()
+  await page.getByTestId('save-split').click()
 
   // 100.00 over four is 25.00 exactly — the corrected list flowed through to every share.
-  await page.getByRole('button', { name: /Hotel deposit/ }).click()
-  const shares = page.locator('.detail__section', { hasText: 'How it was split' }).locator('.detail__row')
+  await page.getByTestId('expense-row').filter({ hasText: 'Hotel deposit' }).click()
+  const shares = page.getByTestId('split-row')
   await expect(shares).toHaveCount(4)
   for (let index = 0; index < 4; index += 1) {
     await expect(shares.nth(index)).toContainText('$25.00')
   }
-  await page.getByRole('button', { name: 'Close' }).click()
+  await page.getByTestId('sheet-close').click()
   await expectRowsToSumToHero(page)
 })

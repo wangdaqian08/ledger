@@ -15,37 +15,37 @@ export function uniquePerson(base: string): string {
 
 export async function signIn(page: Page, name: string) {
   await page.goto('/signin')
-  await page.getByPlaceholder('Your name').fill(name)
-  await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.getByTestId('signin-name').fill(name)
+  await page.getByTestId('signin-submit').click()
   await expect(page).toHaveURL(/\/$|\?/)
 }
 
 /** Creates a trip from the home screen and lands on it. Returns the trip's URL. */
 export async function createTrip(page: Page, name: string): Promise<string> {
   await page.goto('/')
-  await page.getByRole('button', { name: 'New group' }).first().click()
-  await page.getByLabel('Group name').fill(name)
-  await page.getByRole('button', { name: 'Create group' }).click()
+  await page.getByTestId('new-group').first().click()
+  await page.getByTestId('group-name').fill(name)
+  await page.getByTestId('create-group').click()
   await expect(page).toHaveURL(/\/trips\//)
   return page.url()
 }
 
 /** Writes names onto the roster through the invite sheet, then closes it. */
 export async function addMembers(page: Page, names: string[]) {
-  await page.getByRole('button', { name: 'Invite' }).click()
+  await page.getByTestId('appbar-action').click()
   for (const name of names) {
-    await page.getByPlaceholder('Add a name').fill(name)
-    await page.getByRole('button', { name: 'Add', exact: true }).click()
+    await page.getByTestId('member-name').fill(name)
+    await page.getByTestId('add-member').click()
     // The row appearing is the write confirmed — no timing guesswork.
-    await expect(page.locator('.invite__member', { hasText: name })).toBeVisible()
+    await expect(page.getByTestId('invite-member').filter({ hasText: name })).toBeVisible()
   }
-  await page.getByRole('button', { name: 'Close' }).click()
+  await page.getByTestId('sheet-close').click()
 }
 
 /** Types an amount on the keypad digit by digit, like a thumb would. */
 export async function typeAmount(page: Page, digits: string) {
   for (const digit of digits) {
-    await page.getByRole('button', { name: digit, exact: true }).click()
+    await page.getByTestId(`key-${digit}`).click()
   }
 }
 
@@ -55,14 +55,14 @@ export async function typeAmount(page: Page, digits: string) {
  * survive — so every flow test calls it after every mutation.
  */
 export async function expectRowsToSumToHero(page: Page) {
-  const heroText = await page.locator('.trip__hero-position').innerText()
+  const heroText = await page.getByTestId('trip-position').innerText()
   const heroAmount = parseCents(heroText)
   // The label reaches the DOM uppercased by CSS; "ARE OWED" is checked first because
   // "YOU OWE" would otherwise never be reached.
   const upper = heroText.toUpperCase()
   const heroSign = upper.includes('ARE OWED') ? 1 : upper.includes('YOU OWE') ? -1 : 0
 
-  const rows = page.locator('.trip__owes .row')
+  const rows = page.getByTestId('who-owes').getByTestId('balance-row')
   const count = await rows.count()
   let sum = 0
   for (let index = 0; index < count; index += 1) {

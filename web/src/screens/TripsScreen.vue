@@ -91,10 +91,12 @@ async function signOut() {
   <main class="trips">
     <header class="trips__bar">
       <h1 class="trips__brand">{{ t('signin.title') }}</h1>
-      <TallyButton variant="ghost" size="sm" @click="signOut">{{ t('trips.signOut') }}</TallyButton>
+      <TallyButton variant="ghost" size="sm" data-testid="sign-out" @click="signOut">{{
+        t('trips.signOut')
+      }}</TallyButton>
     </header>
 
-    <TallyCard v-if="overview" class="trips__hero">
+    <TallyCard v-if="overview" class="trips__hero" data-testid="overall-hero">
       <p class="trips__hero-label">{{ overallLabel }}</p>
       <AmountText
         :amount-minor="Math.abs(overview.overallNetMinor)"
@@ -114,7 +116,7 @@ async function signOut() {
     <section class="trips__list">
       <div class="trips__list-head">
         <h2 class="trips__title">{{ t('trips.title') }}</h2>
-        <TallyButton variant="secondary" size="sm" @click="creating = true">
+        <TallyButton variant="secondary" size="sm" data-testid="new-group" @click="creating = true">
           {{ t('trips.newGroup') }}
         </TallyButton>
       </div>
@@ -131,6 +133,7 @@ async function signOut() {
       <GroupCard
         v-for="trip in overview?.trips ?? []"
         :key="trip.id"
+        data-testid="group-card"
         :name="trip.name"
         :icon="trip.icon"
         :hue="trip.hue"
@@ -144,7 +147,7 @@ async function signOut() {
 
     <SheetPanel :open="creating" :title="t('trips.newGroup')" @close="creating = false">
       <form class="trips__create" @submit.prevent="create">
-        <TextField v-model="newName" :label="t('trips.name')" :disabled="busy" />
+        <TextField v-model="newName" test-id="group-name" :label="t('trips.name')" :disabled="busy" />
         <fieldset class="trips__currencies">
           <legend class="trips__legend">{{ t('trips.currency') }}</legend>
           <button
@@ -164,6 +167,7 @@ async function signOut() {
           type="submit"
           variant="primary"
           full-width
+          data-testid="create-group"
           :disabled="!newName.trim() || busy"
           @click="create"
         >

@@ -11,19 +11,19 @@ test('the custom split bar is draggable, and the amounts follow the handle', asy
   await createTrip(page, 'Drag lab')
   await addMembers(page, ['Bo'])
 
-  await page.getByRole('button', { name: 'Add expense' }).click()
+  await page.getByTestId('add-expense').click()
   await typeAmount(page, '10000')
-  await page.getByLabel('What was it?').fill('Weighted thing')
-  await page.getByRole('button', { name: 'Next' }).click()
-  await page.getByRole('button', { name: 'Custom' }).click()
+  await page.getByTestId('expense-title').fill('Weighted thing')
+  await page.getByTestId('next-step').click()
+  await page.getByTestId('mode-custom').click()
 
-  const bar = page.locator('.split__bar')
+  const bar = page.getByTestId('split-bar')
   await expect(bar).toBeVisible()
-  const legendBefore = await page.locator('.split__legend').innerText()
+  const legendBefore = await page.getByTestId('split-legend').innerText()
   expect(legendBefore).toContain('50.00') // two people, weight 1:1, $100.00
 
   // A real drag: press on the handle, pull right in steps, release.
-  const handle = page.locator('.split__handle-hit')
+  const handle = page.getByTestId('split-handle')
   const box = (await handle.boundingBox())!
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down()
@@ -32,7 +32,7 @@ test('the custom split bar is draggable, and the amounts follow the handle', asy
   }
   await page.mouse.up()
 
-  const legendAfter = await page.locator('.split__legend').innerText()
+  const legendAfter = await page.getByTestId('split-legend').innerText()
   expect(legendAfter, 'dragging the handle must move the split').not.toBe(legendBefore)
 
   // And the moved amounts still account for every cent between the two of them.

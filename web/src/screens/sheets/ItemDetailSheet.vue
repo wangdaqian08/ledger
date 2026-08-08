@@ -153,8 +153,10 @@ async function remove() {
       <section class="detail__section">
         <!-- The count matters when the list is long: thirteen people is a scroll, and knowing the
              money went thirteen ways is the fact the heading owes you up front. -->
-        <h3 class="detail__label">{{ t('itemDetail.howSplit', { count: detail.splits.length }) }}</h3>
-        <div v-for="split in detail.splits" :key="split.memberId" class="detail__row">
+        <h3 class="detail__label" data-testid="how-split">
+          {{ t('itemDetail.howSplit', { count: detail.splits.length }) }}
+        </h3>
+        <div v-for="split in detail.splits" :key="split.memberId" class="detail__row" data-testid="split-row">
           <PersonAvatar
             :name="memberName(split.memberId)"
             :hue="trip.members.find((m) => m.id === split.memberId)?.personHue ?? 1"
@@ -175,7 +177,12 @@ async function remove() {
         <h3 class="detail__label">{{ t('itemDetail.paybacks') }}</h3>
         <p v-if="detail.paybacks.length === 0" class="detail__hint">{{ t('itemDetail.noPaybacks') }}</p>
 
-        <div v-for="payback in detail.paybacks" :key="payback.id" class="detail__payback">
+        <div
+          v-for="payback in detail.paybacks"
+          :key="payback.id"
+          class="detail__payback"
+          data-testid="payback-row"
+        >
           <div class="detail__row">
             <PersonAvatar
               :name="memberName(payback.fromMemberId)"
@@ -211,10 +218,15 @@ async function remove() {
                The server holds the real rule; these buttons only appear where they will succeed. -->
           <div v-if="payback.status !== 'REJECTED'" class="detail__decide">
             <template v-if="iAmPayer && payback.status === 'PENDING'">
-              <TallyButton size="sm" variant="secondary" @click="rejecting = payback.id">
+              <TallyButton
+                size="sm"
+                variant="secondary"
+                data-testid="reject-open"
+                @click="rejecting = payback.id"
+              >
                 {{ t('itemDetail.reject') }}
               </TallyButton>
-              <TallyButton size="sm" variant="primary" @click="approve(payback.id)">
+              <TallyButton size="sm" variant="primary" data-testid="approve" @click="approve(payback.id)">
                 {{ t('itemDetail.approve') }}
               </TallyButton>
             </template>
@@ -224,6 +236,7 @@ async function remove() {
               v-if="payback.fromMemberId === me?.id || (iAmPayer && payback.status === 'APPROVED')"
               size="sm"
               variant="ghost"
+              data-testid="undo-claim"
               @click="undo(payback.id)"
             >
               {{ t('common.cancel') }}
@@ -231,10 +244,15 @@ async function remove() {
           </div>
 
           <form v-if="rejecting === payback.id" class="detail__reject" @submit.prevent="reject(payback.id)">
-            <TextField v-model="rejectReason" :placeholder="t('itemDetail.rejectReason')" />
+            <TextField
+              v-model="rejectReason"
+              test-id="reject-reason"
+              :placeholder="t('itemDetail.rejectReason')"
+            />
             <TallyButton
               size="sm"
               variant="danger"
+              data-testid="reject-send"
               :disabled="!rejectReason.trim()"
               @click="reject(payback.id)"
             >
@@ -255,11 +273,12 @@ async function remove() {
           v-if="iAmPayer && detail.splitRule !== 'EXACT'"
           variant="secondary"
           size="sm"
+          data-testid="edit-split-open"
           @click="emit('edit', detail)"
         >
           {{ t('editSplit.title') }}
         </TallyButton>
-        <TallyButton v-if="iAmPayer" variant="danger" size="sm" @click="remove">
+        <TallyButton v-if="iAmPayer" variant="danger" size="sm" data-testid="delete-item" @click="remove">
           {{ t('itemDetail.delete') }}
         </TallyButton>
         <!-- Never for the payer: their own share is not a debt, and the server refuses a
@@ -268,6 +287,7 @@ async function remove() {
           v-if="myRemaining > 0 && !iAmPayer"
           variant="primary"
           full-width
+          data-testid="pay-back-open"
           @click="emit('payBack', detail.id, payerName, myRemaining)"
         >
           {{ t('itemDetail.payBack') }}

@@ -35,7 +35,7 @@ defineEmits<{ pay: []; remind: [] }>()
 </script>
 
 <template>
-  <div class="row" :class="{ 'row--divided': divider }">
+  <div class="row" :class="{ 'row--divided': divider }" data-testid="balance-row">
     <PersonAvatar :name="displayName" :hue="personHue" :size="40" />
 
     <div class="row__body">
@@ -63,11 +63,14 @@ defineEmits<{ pay: []; remind: [] }>()
       size="sm"
       variant="secondary"
       :disabled="reminded"
+      data-testid="row-remind"
       @click="$emit('remind')"
     >
       {{ reminded ? 'Reminded ✓' : 'Remind' }}
     </TallyButton>
-    <TallyButton v-else-if="owedMinor < 0 && !pending" size="sm" @click="$emit('pay')">Pay</TallyButton>
+    <TallyButton v-else-if="owedMinor < 0 && !pending" size="sm" data-testid="row-pay" @click="$emit('pay')"
+      >Pay</TallyButton
+    >
   </div>
 </template>
 

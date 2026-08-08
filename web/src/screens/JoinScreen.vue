@@ -71,6 +71,7 @@ async function claim() {
             :key="member.id"
             type="button"
             class="join__member"
+            data-testid="join-member"
             :class="{ 'join__member--on': chosen === member.id }"
             :aria-pressed="chosen === member.id"
             @click="chosen = member.id"
@@ -79,7 +80,13 @@ async function claim() {
             <span class="join__name">{{ member.displayName }}</span>
           </button>
 
-          <TallyButton variant="primary" full-width :disabled="!chosen || busy" @click="claim">
+          <TallyButton
+            variant="primary"
+            full-width
+            data-testid="join-claim"
+            :disabled="!chosen || busy"
+            @click="claim"
+          >
             {{ t('join.claim') }}
           </TallyButton>
         </template>

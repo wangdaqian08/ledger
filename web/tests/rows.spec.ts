@@ -7,6 +7,7 @@ import ProgressBar from '../src/components/ProgressBar.vue'
 import TallyIcon from '../src/components/TallyIcon.vue'
 import TallyStepper from '../src/components/TallyStepper.vue'
 import TallyKeypad from '../src/components/TallyKeypad.vue'
+import { findByTestId } from './testids'
 
 describe('ExpenseRow', () => {
   const base = { title: 'Hotel', yourShareMinor: -14286, categoryKey: 'stay' }
@@ -49,7 +50,7 @@ describe('BalanceRow', () => {
     // A sent nudge changes the button itself — no extra row appears anywhere.
     const nudged = mount(BalanceRow, { props: { ...base, owedMinor: 4230, reminded: true } })
     expect(nudged.text()).toContain('Reminded ✓')
-    expect(nudged.find('button').attributes('disabled')).toBeDefined()
+    expect(findByTestId(nudged, 'row-remind').attributes('disabled')).toBeDefined()
   })
 
   it('offers nothing at all when the row is clear', () => {

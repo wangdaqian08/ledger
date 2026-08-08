@@ -147,7 +147,7 @@ async function save() {
     @close="emit('close')"
   >
     <div v-if="step === 1" class="add">
-      <p class="add__amount">
+      <p class="add__amount" data-testid="amount-display">
         <span class="add__symbol">{{ symbol }}</span>
         <span class="add__digits">{{ amountMinor === 0 ? '0' : shown }}</span>
       </p>
@@ -160,13 +160,20 @@ async function save() {
 
       <TextField
         v-model="title"
+        test-id="expense-title"
         :label="t('addExpense.whatWasIt')"
         :placeholder="t('addExpense.titlePlaceholder')"
       />
 
       <TallyKeypad @key="onKey" />
 
-      <TallyButton variant="primary" full-width :disabled="amountMinor === 0" @click="step = 2">
+      <TallyButton
+        variant="primary"
+        full-width
+        data-testid="next-step"
+        :disabled="amountMinor === 0"
+        @click="step = 2"
+      >
         {{ t('addExpense.next') }}
       </TallyButton>
     </div>
@@ -180,6 +187,7 @@ async function save() {
             :key="member.id"
             type="button"
             class="add__payer"
+            data-testid="payer-chip"
             :class="{ 'add__payer--on': payerId === member.id }"
             :aria-pressed="payerId === member.id"
             @click="payerId = member.id"
@@ -204,7 +212,7 @@ async function save() {
             @update:selected="(on) => (ticked[member.id] = on)"
           />
         </div>
-        <p v-if="!custom && evenEach && amountMinor > 0" class="add__each">
+        <p v-if="!custom && evenEach && amountMinor > 0" class="add__each" data-testid="even-each">
           {{ t('addExpense.each', { amount: evenEach }) }}
         </p>
       </section>
@@ -216,6 +224,7 @@ async function save() {
             <button
               type="button"
               class="add__mode"
+              data-testid="mode-evenly"
               :class="{ 'add__mode--on': !custom }"
               :aria-pressed="!custom"
               @click="custom = false"
@@ -225,6 +234,7 @@ async function save() {
             <button
               type="button"
               class="add__mode"
+              data-testid="mode-custom"
               :class="{ 'add__mode--on': custom }"
               :aria-pressed="custom"
               @click="custom = true"
@@ -247,8 +257,15 @@ async function save() {
       <p v-if="error" class="add__error" role="alert">{{ error }}</p>
 
       <div class="add__actions">
-        <TallyButton variant="secondary" @click="step = 1">{{ t('addExpense.back') }}</TallyButton>
-        <TallyButton variant="primary" :disabled="busy || sharers.length === 0" @click="save">
+        <TallyButton variant="secondary" data-testid="back-step" @click="step = 1">{{
+          t('addExpense.back')
+        }}</TallyButton>
+        <TallyButton
+          variant="primary"
+          data-testid="save-expense"
+          :disabled="busy || sharers.length === 0"
+          @click="save"
+        >
           {{ t('addExpense.save') }}
         </TallyButton>
       </div>

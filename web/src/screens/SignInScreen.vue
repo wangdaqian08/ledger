@@ -55,11 +55,17 @@ async function submit() {
     </div>
 
     <form class="signin__form" @submit.prevent="submit">
-      <TextField v-model="name" :placeholder="t('signin.namePlaceholder')" :disabled="busy" />
+      <TextField
+        v-model="name"
+        test-id="signin-name"
+        :placeholder="t('signin.namePlaceholder')"
+        :disabled="busy"
+      />
       <TallyButton
         type="submit"
         variant="primary"
         full-width
+        data-testid="signin-submit"
         :disabled="!name.trim() || busy"
         @click="submit"
       >

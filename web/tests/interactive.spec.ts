@@ -4,6 +4,7 @@ import AmountInput from '../src/components/AmountInput.vue'
 import PersonToggleRow from '../src/components/PersonToggleRow.vue'
 import SplitBar from '../src/components/SplitBar.vue'
 import { saltFor, splitShares } from '../src/lib/split'
+import { findAllByTestId, findByTestId } from './testids'
 
 const people = [
   { memberId: 'a', displayName: 'Bob', personHue: 1, weight: 2 },
@@ -34,11 +35,11 @@ describe('SplitBar', () => {
     ]
     const bar = mount(SplitBar, { props: { people: scaled, totalMinor: 10_000, salt: 0n } })
     // happy-dom boxes are zero-sized; the drag arithmetic needs a real-shaped bar.
-    const barBox = bar.find('.split__bar').element as HTMLElement
+    const barBox = findByTestId(bar, 'split-bar').element as HTMLElement
     barBox.getBoundingClientRect = () =>
       ({ left: 0, width: 300, top: 0, height: 56, right: 300, bottom: 56, x: 0, y: 0 }) as DOMRect
 
-    await bar.find('.split__handle-hit').trigger('pointerdown')
+    await findByTestId(bar, 'split-handle').trigger('pointerdown')
     // A third of the way across a 60-weight bar: the pair re-divides to 20:40.
     await bar.find('.split').trigger('pointermove', { clientX: 100 })
 
@@ -57,7 +58,7 @@ describe('SplitBar', () => {
   it('renders one handle fewer than there are people', () => {
     const three = [...people, { memberId: 'c', displayName: 'Carol', personHue: 3, weight: 1 }]
     const bar = mount(SplitBar, { props: { people: three, totalMinor: 9_000, salt: 0n } })
-    expect(bar.findAll('.split__handle-hit')).toHaveLength(2)
+    expect(findAllByTestId(bar, 'split-handle')).toHaveLength(2)
   })
 
   it('holds still beside a zero-weight person instead of snatching the whole weight across', async () => {
@@ -70,7 +71,7 @@ describe('SplitBar', () => {
     ]
     const bar = mount(SplitBar, { props: { people: zeroNeighbour, totalMinor: 10_000, salt: 0n } })
 
-    await bar.find('.split__handle-hit').trigger('pointerdown')
+    await findByTestId(bar, 'split-handle').trigger('pointerdown')
     await bar.find('.split').trigger('pointermove', { clientX: 1 })
 
     expect(bar.emitted('update:people')).toBeUndefined()
