@@ -11,6 +11,7 @@ import TextField from '@/components/TextField.vue'
 import { api, type CategoryView, type TripView } from '@/lib/api'
 import { currencySymbol, formatMinor } from '@/lib/money'
 import { newItemId, saltFor, splitShares } from '@/lib/split'
+import { DRAG_SCALE, normalizedWeights } from '@/lib/weights'
 
 /**
  * Screen 4 — the two-step add sheet: how much, then who.
@@ -52,7 +53,8 @@ watch(
     categoryId.value = props.categories.find((c) => c.key === 'food')?.id ?? props.categories[0]?.id ?? null
     payerId.value = props.trip.members.find((m) => m.isYou)?.id ?? props.trip.members[0]?.id ?? null
     ticked.value = Object.fromEntries(props.trip.members.map((m) => [m.id, true]))
-    weights.value = Object.fromEntries(props.trip.members.map((m) => [m.id, 1]))
+    // Scaled up so the bar has room to move (see weights.ts); saved weights normalise back down.
+    weights.value = Object.fromEntries(props.trip.members.map((m) => [m.id, DRAG_SCALE]))
   },
 )
 
@@ -115,6 +117,8 @@ async function save() {
   busy.value = true
   error.value = ''
   try {
+    // A bar dragged to 40:20 means 2:1 — the drag scale divides back out before saving.
+    const saved = normalizedWeights(sharers.value.map((m) => weights.value[m.id] ?? DRAG_SCALE))
     await api.createItem(props.trip.id, {
       id: itemId.value,
       title: title.value.trim() || t('addExpense.titlePlaceholder'),
@@ -123,8 +127,8 @@ async function save() {
       splitRule: custom.value ? 'WEIGHTED' : 'EQUAL',
       payerMemberId: payerId.value,
       spentOn: new Date().toISOString().slice(0, 10),
-      sharedBy: sharers.value.map((m) =>
-        custom.value ? { memberId: m.id, weight: weights.value[m.id] ?? 1 } : { memberId: m.id },
+      sharedBy: sharers.value.map((m, index) =>
+        custom.value ? { memberId: m.id, weight: saved[index] } : { memberId: m.id },
       ),
     })
     emit('saved')

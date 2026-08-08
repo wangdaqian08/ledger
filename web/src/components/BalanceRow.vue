@@ -24,9 +24,11 @@ withDefaults(
     symbol?: string
     /** A claim already sent between the two of you and waiting on somebody. */
     pending?: boolean
+    /** A nudge already sent this sitting: the button itself says so, in place. */
+    reminded?: boolean
     divider?: boolean
   }>(),
-  { currencyCode: 'AUD', symbol: '$', pending: false, divider: true },
+  { currencyCode: 'AUD', symbol: '$', pending: false, reminded: false, divider: true },
 )
 
 defineEmits<{ pay: []; remind: [] }>()
@@ -56,8 +58,14 @@ defineEmits<{ pay: []; remind: [] }>()
       :tone="owedMinor === 0 ? 'settled' : owedMinor > 0 ? 'owed' : 'owe'"
     />
 
-    <TallyButton v-if="owedMinor > 0 && !pending" size="sm" variant="secondary" @click="$emit('remind')">
-      Remind
+    <TallyButton
+      v-if="owedMinor > 0 && !pending"
+      size="sm"
+      variant="secondary"
+      :disabled="reminded"
+      @click="$emit('remind')"
+    >
+      {{ reminded ? 'Reminded ✓' : 'Remind' }}
     </TallyButton>
     <TallyButton v-else-if="owedMinor < 0 && !pending" size="sm" @click="$emit('pay')">Pay</TallyButton>
   </div>

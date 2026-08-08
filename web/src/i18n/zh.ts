@@ -87,7 +87,7 @@ export default {
     yourShare: '你应付',
     paidBy: '付款人',
     frontedTheBill: '垫付了整单',
-    howSplit: '分摊方式',
+    howSplit: '分摊方式 · {count}人',
     paybacks: '已还款',
     noPaybacks: '还没有人还款',
     approve: '对，收到了',

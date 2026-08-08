@@ -45,6 +45,11 @@ describe('BalanceRow', () => {
     const theyOwe = mount(BalanceRow, { props: { ...base, owedMinor: 4230 } })
     expect(theyOwe.text()).toContain('Owes you')
     expect(theyOwe.text()).toContain('Remind')
+
+    // A sent nudge changes the button itself — no extra row appears anywhere.
+    const nudged = mount(BalanceRow, { props: { ...base, owedMinor: 4230, reminded: true } })
+    expect(nudged.text()).toContain('Reminded ✓')
+    expect(nudged.find('button').attributes('disabled')).toBeDefined()
   })
 
   it('offers nothing at all when the row is clear', () => {
