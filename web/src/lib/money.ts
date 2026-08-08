@@ -73,6 +73,21 @@ export interface FormatOptions {
   locale?: string
 }
 
+/** The glyph for a currency the app knows; the bare code, spaced, for one it does not. */
+export function currencySymbol(currencyCode: string): string {
+  const known: Record<string, string> = {
+    AUD: '$',
+    USD: '$',
+    NZD: '$',
+    CAD: '$',
+    EUR: '€',
+    GBP: '£',
+    JPY: '¥',
+    CNY: '¥',
+  }
+  return known[currencyCode.toUpperCase()] ?? `${currencyCode.toUpperCase()} `
+}
+
 /** The whole thing as one string: `−$1,234.05`. Uses a real minus sign, not a hyphen. */
 export function formatMinor(amountMinor: number, options: FormatOptions = {}): string {
   const { currencyCode = 'AUD', symbol = '$', showSign = false, locale = 'en-US' } = options
