@@ -167,15 +167,17 @@ async function save() {
 
       <TallyKeypad @key="onKey" />
 
-      <TallyButton
-        variant="primary"
-        full-width
-        data-testid="next-step"
-        :disabled="amountMinor === 0"
-        @click="step = 2"
-      >
-        {{ t('addExpense.next') }}
-      </TallyButton>
+      <div class="add__footer">
+        <TallyButton
+          variant="primary"
+          full-width
+          data-testid="next-step"
+          :disabled="amountMinor === 0"
+          @click="step = 2"
+        >
+          {{ t('addExpense.next') }}
+        </TallyButton>
+      </div>
     </div>
 
     <div v-else class="add">
@@ -256,7 +258,7 @@ async function save() {
 
       <p v-if="error" class="add__error" role="alert">{{ error }}</p>
 
-      <div class="add__actions">
+      <div class="add__actions add__footer">
         <TallyButton variant="secondary" data-testid="back-step" @click="step = 1">{{
           t('addExpense.back')
         }}</TallyButton>
@@ -285,7 +287,16 @@ async function save() {
   align-items: baseline;
   justify-content: center;
   gap: var(--space-2);
-  padding: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  /* Pinned while the rest scrolls: the number being typed is the whole point of the screen,
+     and a till with the display on the back is no till. Negative margins let the wash span the
+     sheet's full width across the body's padding. */
+  position: sticky;
+  top: calc(-1 * var(--space-4));
+  z-index: 2;
+  margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
+  background: var(--bg-app);
+  border-bottom: 1.5px solid var(--hairline);
 }
 
 .add__symbol {
@@ -393,5 +404,17 @@ async function save() {
   display: grid;
   grid-template-columns: 1fr 2fr;
   gap: var(--space-3);
+}
+
+/* The way onward never needs scrolling for: pinned to the sheet's bottom edge, over the body's
+   padding, with its own background so content slides beneath it. */
+.add__footer {
+  position: sticky;
+  bottom: calc(-1 * var(--space-4));
+  z-index: 2;
+  margin: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-app);
+  border-top: 1.5px solid var(--hairline);
 }
 </style>

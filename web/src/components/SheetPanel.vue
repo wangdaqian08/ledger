@@ -142,5 +142,11 @@ onBeforeUnmount(() => {
 .sheet__body {
   overflow-y: auto;
   padding: var(--space-4);
+  /* A flex child's default min-height is its content, which quietly disables the max-height
+     above: tall content poured out below the fold instead of scrolling in here. The amount
+     display on "How much?" rendered 104px under the bottom of a phone because of this line
+     being absent. */
+  min-height: 0;
+  flex: 1;
 }
 </style>

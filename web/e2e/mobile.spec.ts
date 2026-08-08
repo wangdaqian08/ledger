@@ -15,10 +15,22 @@ async function expectNoSidewaysScroll(page: Page, moment: string) {
   // viewport inside an overflow-hidden ancestor is content the phone user simply cannot see.
   const poking = await page.evaluate(() => {
     const vw = document.documentElement.clientWidth
+    const insideDeliberateScroller = (el: Element): boolean => {
+      // A swipeable strip (category pages) legitimately keeps content off-screen; anything whose
+      // ancestor scrolls sideways on purpose is that ancestor's business, not an overflow bug.
+      for (let node = el.parentElement; node; node = node.parentElement) {
+        const overflowX = getComputedStyle(node).overflowX
+        if ((overflowX === 'auto' || overflowX === 'scroll') && node.scrollWidth > node.clientWidth) {
+          return true
+        }
+      }
+      return false
+    }
     let worst: { right: number; what: string } | null = null
     for (const el of document.querySelectorAll('body *')) {
       const r = el.getBoundingClientRect()
       if (r.width > 0 && r.right > vw + 1 && (!worst || r.right > worst.right)) {
+        if (insideDeliberateScroller(el)) continue
         worst = { right: Math.round(r.right), what: `${el.tagName}.${String(el.className).slice(0, 60)}` }
       }
     }

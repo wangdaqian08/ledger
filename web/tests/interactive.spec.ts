@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import AmountInput from '../src/components/AmountInput.vue'
+import CategoryPicker from '../src/components/CategoryPicker.vue'
 import PersonToggleRow from '../src/components/PersonToggleRow.vue'
 import SplitBar from '../src/components/SplitBar.vue'
 import { saltFor, splitShares } from '../src/lib/split'
@@ -141,6 +142,48 @@ describe('AmountInput', () => {
 
     // Same digits, different currency: 1999 minor units of yen are ¥1999, not ¥19.99.
     expect((input.find('input').element as HTMLInputElement).value).toBe('1999')
+  })
+})
+
+describe('CategoryPicker', () => {
+  const category = (n: number) => ({
+    id: `c-${n}`,
+    key: `k${n}`,
+    nameEn: `Cat ${n}`,
+    nameZh: `类${n}`,
+    icon: 'utensils',
+    hue: ((n - 1) % 8) + 1,
+    builtIn: true,
+  })
+
+  it('keeps eight tiles on one page with no dots at all', () => {
+    const picker = mount(CategoryPicker, {
+      props: { categories: Array.from({ length: 8 }, (_, i) => category(i + 1)), modelValue: null },
+    })
+    expect(findAllByTestId(picker, 'category-item')).toHaveLength(8)
+    expect(findByTestId(picker, 'category-dots').exists()).toBe(false)
+  })
+
+  it('pages past eight, with a dot per page that reports and steers', async () => {
+    const picker = mount(CategoryPicker, {
+      props: { categories: Array.from({ length: 9 }, (_, i) => category(i + 1)), modelValue: null },
+    })
+
+    const dots = findAllByTestId(picker, 'category-dot')
+    expect(dots).toHaveLength(2)
+    expect(dots[0]!.attributes('aria-current')).toBe('true')
+
+    await dots[1]!.trigger('click')
+    expect(findAllByTestId(picker, 'category-dot')[1]!.attributes('aria-current')).toBe('true')
+  })
+
+  it('marks the chosen tile with the grape wash', async () => {
+    const picker = mount(CategoryPicker, {
+      props: { categories: [category(1), category(2)], modelValue: 'c-2' },
+    })
+    const chosen = findAllByTestId(picker, 'category-item')[1]!
+    expect(chosen.classes()).toContain('picker__item--on')
+    expect(chosen.attributes('aria-checked')).toBe('true')
   })
 })
 
