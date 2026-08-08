@@ -34,6 +34,7 @@ function toggle(current: boolean) {
     type="button"
     class="row"
     :class="{ 'row--on': selected }"
+    data-testid="person-toggle"
     :disabled="disabled"
     :aria-pressed="selected"
     @click="toggle(selected)"

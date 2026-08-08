@@ -51,7 +51,13 @@ const subtitle = () => [props.paidBy && `${props.paidBy} paid`, props.spentOn].f
 </script>
 
 <template>
-  <button type="button" class="row" :class="{ 'row--divided': divider }" @click="$emit('click')">
+  <button
+    type="button"
+    class="row"
+    :class="{ 'row--divided': divider }"
+    data-testid="expense-row"
+    @click="$emit('click')"
+  >
     <span
       class="row__disc"
       :style="{

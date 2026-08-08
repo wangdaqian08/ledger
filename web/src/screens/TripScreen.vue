@@ -145,7 +145,8 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
     <AppBar
       :title="trip?.name ?? ''"
       back
-      :action="t('trip.invite')"
+      action="user-plus"
+      :action-label="t('trip.invite')"
       @back="router.push({ name: 'trips' })"
       @action="inviteOpen = true"
     />
@@ -153,7 +154,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
     <template v-if="trip && settlement">
       <TallyCard class="trip__hero">
         <div class="trip__hero-top">
-          <div class="trip__hero-position">
+          <div class="trip__hero-position" data-testid="trip-position">
             <p class="trip__label">{{ heroLabel }}</p>
             <AmountText
               :amount-minor="Math.abs(trip.yourNetMinor)"
@@ -163,7 +164,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
               :symbol="symbol"
             />
           </div>
-          <TallyButton variant="primary" size="sm" @click="settleOpen = true">
+          <TallyButton variant="primary" size="sm" data-testid="settle-up" @click="settleOpen = true">
             {{ t('trip.settleUp') }}
           </TallyButton>
         </div>
@@ -204,7 +205,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
         </dl>
       </TallyCard>
 
-      <TallyCard v-if="settlement.rows.length > 0" class="trip__owes">
+      <TallyCard v-if="settlement.rows.length > 0" class="trip__owes" data-testid="who-owes">
         <h2 class="trip__section-title">{{ t('trip.whoOwesWho') }}</h2>
         <!-- The API row is "positive = you owe them"; BalanceRow speaks the viewer's frame,
              so the sign flips exactly once, here. -->
@@ -233,6 +234,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
               :key="option"
               type="button"
               class="trip__filter"
+              :data-testid="`filter-${option}`"
               :class="{ 'trip__filter--on': filter === option }"
               :aria-pressed="filter === option"
               @click="filter = option"
@@ -257,7 +259,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
 
         <!-- ExpenseRow's amount is the viewer's signed delta on the bill — the demo's own
              convention: the payer gets amount − share back, everybody else owes their share. -->
-        <div v-for="group in days" :key="group.day" class="trip__day">
+        <div v-for="group in days" :key="group.day" class="trip__day" data-testid="expense-day">
           <h3 class="trip__day-label">{{ dayLabel(group.day) }}</h3>
           <TallyCard>
             <ExpenseRow
@@ -280,7 +282,13 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       </section>
     </template>
 
-    <button class="trip__add" type="button" :aria-label="t('trip.addExpense')" @click="addOpen = true">
+    <button
+      class="trip__add"
+      type="button"
+      data-testid="add-expense"
+      :aria-label="t('trip.addExpense')"
+      @click="addOpen = true"
+    >
       <TallyIcon name="plus" :size="26" />
     </button>
 

@@ -107,7 +107,7 @@ function onMove(event: PointerEvent) {
 
 <template>
   <div class="split" @pointermove="onMove" @pointerup="endDrag" @pointercancel="endDrag">
-    <div ref="bar" class="split__bar" :style="{ height: `${height}px` }">
+    <div ref="bar" class="split__bar" data-testid="split-bar" :style="{ height: `${height}px` }">
       <div
         v-for="(person, i) in people"
         :key="person.memberId"
@@ -126,6 +126,7 @@ function onMove(event: PointerEvent) {
         v-for="(edge, i) in edges"
         :key="`edge-${i}`"
         class="split__handle-hit"
+        data-testid="split-handle"
         :style="{ left: `calc(${edge}% - 13px)` }"
         role="separator"
         :aria-label="`Adjust the split between ${people[i]?.displayName} and ${people[i + 1]?.displayName}`"
@@ -135,7 +136,7 @@ function onMove(event: PointerEvent) {
       </span>
     </div>
 
-    <div class="split__legend">
+    <div class="split__legend" data-testid="split-legend">
       <span v-for="(person, i) in people" :key="person.memberId" class="split__entry">
         <span
           class="split__dot"

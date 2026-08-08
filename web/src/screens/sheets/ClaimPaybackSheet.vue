@@ -67,9 +67,14 @@ async function send() {
   <SheetPanel :open="open" :title="t('claim.title')" @close="emit('close')">
     <form class="claim" @submit.prevent="send">
       <label class="claim__label">{{ t('claim.amount') }}</label>
-      <AmountInput v-model="amountMinor" :currency-code="currencyCode" :symbol="symbol" />
+      <AmountInput
+        v-model="amountMinor"
+        test-id="claim-amount"
+        :currency-code="currencyCode"
+        :symbol="symbol"
+      />
 
-      <TextField v-model="paidOn" type="date" :label="t('claim.date')" />
+      <TextField v-model="paidOn" test-id="claim-date" type="date" :label="t('claim.date')" />
       <TextField v-model="note" :label="t('claim.note')" :placeholder="t('claim.notePlaceholder')" />
 
       <p class="claim__disclaimer">{{ t('claim.disclaimer', { name: toName }) }}</p>
@@ -79,6 +84,7 @@ async function send() {
         type="submit"
         variant="primary"
         full-width
+        data-testid="claim-send"
         :disabled="amountMinor <= 0 || busy"
         @click="send"
       >

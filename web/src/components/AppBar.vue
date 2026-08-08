@@ -1,21 +1,45 @@
 <script setup lang="ts">
 import TallyIcon from './TallyIcon.vue'
 
-withDefaults(defineProps<{ title: string; back?: boolean; action?: string }>(), {
-  back: false,
-  action: undefined,
-})
+withDefaults(
+  defineProps<{
+    title: string
+    back?: boolean
+    /** A Lucide slug for the trailing action button. */
+    action?: string
+    /** What the action means to a human — the aria-label. Falls back to the slug. */
+    actionLabel?: string
+  }>(),
+  {
+    back: false,
+    action: undefined,
+  },
+)
 
 defineEmits<{ back: []; action: [] }>()
 </script>
 
 <template>
   <header class="bar">
-    <button v-if="back" type="button" class="bar__icon" aria-label="Back" @click="$emit('back')">
+    <button
+      v-if="back"
+      type="button"
+      class="bar__icon"
+      data-testid="appbar-back"
+      aria-label="Back"
+      @click="$emit('back')"
+    >
       <TallyIcon name="arrow-left" :size="22" />
     </button>
     <h1 class="bar__title">{{ title }}</h1>
-    <button v-if="action" type="button" class="bar__icon" :aria-label="action" @click="$emit('action')">
+    <button
+      v-if="action"
+      type="button"
+      class="bar__icon"
+      data-testid="appbar-action"
+      :aria-label="actionLabel ?? action"
+      @click="$emit('action')"
+    >
       <TallyIcon :name="action" :size="22" />
     </button>
   </header>

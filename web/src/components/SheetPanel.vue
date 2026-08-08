@@ -34,11 +34,23 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div v-if="open" class="sheet">
       <div class="sheet__scrim" @click="emit('close')" />
-      <section class="sheet__panel" role="dialog" aria-modal="true" :aria-label="title">
+      <section
+        class="sheet__panel"
+        role="dialog"
+        data-testid="sheet-panel"
+        aria-modal="true"
+        :aria-label="title"
+      >
         <header class="sheet__head">
           <span class="sheet__grip" aria-hidden="true" />
           <h2 v-if="title" class="sheet__title">{{ title }}</h2>
-          <button type="button" class="sheet__close" aria-label="Close" @click="emit('close')">
+          <button
+            type="button"
+            class="sheet__close"
+            data-testid="sheet-close"
+            aria-label="Close"
+            @click="emit('close')"
+          >
             <TallyIcon name="x" :size="20" />
           </button>
         </header>

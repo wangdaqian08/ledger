@@ -99,7 +99,12 @@ const undoClaim = (paybackId: string) => act(() => api.undoPayback(paybackId))
           @remind="remind(row)"
         />
 
-        <div v-for="claim in pendingOf(row)" :key="claim.id" class="settle__pending">
+        <div
+          v-for="claim in pendingOf(row)"
+          :key="claim.id"
+          class="settle__pending"
+          data-testid="pending-claim"
+        >
           <span class="settle__pending-text">
             {{
               t('settle.sentForConfirmation', {
@@ -111,18 +116,30 @@ const undoClaim = (paybackId: string) => act(() => api.undoPayback(paybackId))
             v-if="claim.fromMemberId === myMemberId"
             size="sm"
             variant="ghost"
+            data-testid="pending-undo"
             @click="undoClaim(claim.id)"
           >
             {{ t('common.cancel') }}
           </TallyButton>
         </div>
 
-        <form v-if="paying?.memberId === row.memberId" class="settle__pay" @submit.prevent="pay">
-          <AmountInput v-model="amountMinor" :currency-code="currencyCode" :symbol="symbol" />
+        <form
+          v-if="paying?.memberId === row.memberId"
+          class="settle__pay"
+          data-testid="pay-form"
+          @submit.prevent="pay"
+        >
+          <AmountInput
+            v-model="amountMinor"
+            test-id="pay-amount"
+            :currency-code="currencyCode"
+            :symbol="symbol"
+          />
           <TallyButton
             type="submit"
             variant="primary"
             size="sm"
+            data-testid="pay-send"
             :disabled="amountMinor <= 0 || busy"
             @click="pay"
           >
@@ -133,7 +150,9 @@ const undoClaim = (paybackId: string) => act(() => api.undoPayback(paybackId))
 
       <p v-if="error" class="settle__error" role="alert">{{ error }}</p>
 
-      <TallyButton variant="secondary" full-width @click="emit('close')">{{ t('common.done') }}</TallyButton>
+      <TallyButton variant="secondary" full-width data-testid="settle-done" @click="emit('close')">{{
+        t('common.done')
+      }}</TallyButton>
     </div>
   </SheetPanel>
 </template>

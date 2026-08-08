@@ -21,6 +21,7 @@ defineEmits<{ key: [KeypadKey] }>()
       v-for="key in KEYS"
       :key="key"
       type="button"
+      :data-testid="`key-${key}`"
       class="pad__key"
       :aria-label="key === 'del' ? 'Delete' : key"
       @click="$emit('key', key)"

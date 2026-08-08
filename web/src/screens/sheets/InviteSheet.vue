@@ -71,7 +71,12 @@ async function copyLink() {
   <SheetPanel :open="open" :title="t('invite.title')" @close="emit('close')">
     <div class="invite">
       <section class="invite__section">
-        <div v-for="member in trip.members" :key="member.id" class="invite__member">
+        <div
+          v-for="member in trip.members"
+          :key="member.id"
+          class="invite__member"
+          data-testid="invite-member"
+        >
           <PersonAvatar :name="member.displayName" :hue="member.personHue" :size="36" />
           <span class="invite__name">{{ member.isYou ? 'You' : member.displayName }}</span>
           <TallyBadge :tone="member.claimed ? 'settled' : 'pending'">
@@ -81,17 +86,28 @@ async function copyLink() {
       </section>
 
       <form class="invite__add" @submit.prevent="addName">
-        <TextField v-model="newName" :placeholder="t('invite.namePlaceholder')" :disabled="busy" />
-        <TallyButton type="submit" variant="secondary" :disabled="!newName.trim() || busy" @click="addName">
+        <TextField
+          v-model="newName"
+          test-id="member-name"
+          :placeholder="t('invite.namePlaceholder')"
+          :disabled="busy"
+        />
+        <TallyButton
+          type="submit"
+          variant="secondary"
+          data-testid="add-member"
+          :disabled="!newName.trim() || busy"
+          @click="addName"
+        >
           {{ t('invite.add') }}
         </TallyButton>
       </form>
 
-      <TallyButton variant="primary" full-width @click="copyLink">
+      <TallyButton variant="primary" full-width data-testid="copy-link" @click="copyLink">
         {{ t('invite.copyLink') }}
       </TallyButton>
 
-      <p v-if="linkNote" class="invite__note">{{ linkNote }}</p>
+      <p v-if="linkNote" class="invite__note" data-testid="invite-note">{{ linkNote }}</p>
       <p v-if="error" class="invite__error" role="alert">{{ error }}</p>
     </div>
   </SheetPanel>

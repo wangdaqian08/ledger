@@ -15,6 +15,7 @@ import SignInScreen from '../src/screens/SignInScreen.vue'
 import TripScreen from '../src/screens/TripScreen.vue'
 import TripsScreen from '../src/screens/TripsScreen.vue'
 import { i18n } from '../src/i18n'
+import { findAllByTestId, findByTestId } from './testids'
 import { saltFor, splitShares } from '../src/lib/split'
 import type { ItemView, MemberView, SettlementView, TripView } from '../src/lib/api'
 
@@ -140,7 +141,7 @@ describe('SignInScreen', () => {
     await router.push('/signin')
 
     const screen = mount(SignInScreen, { global: global() })
-    await screen.find('input').setValue('  Alice  ')
+    await findByTestId(screen, 'signin-name').setValue('  Alice  ')
     await screen.find('form').trigger('submit')
     await flushPromises()
 
@@ -210,7 +211,7 @@ describe('TripScreen', () => {
     expect(screen.text()).toContain('40.00') //  your share 3000 + 1000
     expect(screen.text()).toContain('90.00') //  you fronted item i-1 only
     // Two different days, two day headers.
-    expect(screen.findAll('.trip__day')).toHaveLength(2)
+    expect(findAllByTestId(screen, 'expense-day')).toHaveLength(2)
 
     // The feed speaks the signed delta, both ways round: the bill you paid is money coming back
     // (total − your share), the bill Bob paid is your share going out.
@@ -250,7 +251,7 @@ describe('TripScreen', () => {
     await flushPromises()
 
     expect(screen.text()).toContain('Paid off')
-    await screen.findAll('.trip__filter')[1]!.trigger('click')
+    await findByTestId(screen, 'filter-unsettled').trigger('click')
 
     expect(screen.text()).not.toContain('Paid off')
     expect(screen.text()).toContain('Still open')
@@ -287,17 +288,13 @@ describe('AddExpenseSheet', () => {
 
     // 100.01 typed on the keypad: 1 0 0 0 1.
     for (const key of ['1', '0', '0', '0', '1']) {
-      const button = sheet.findAll('button').find((b) => b.text() === key)!
-      await button.trigger('click')
+      await findByTestId(sheet, `key-${key}`).trigger('click')
     }
     expect(sheet.text()).toContain('100.01')
 
     // On to step two; untick Cara, so two people share 10001.
-    await sheet
-      .findAll('button')
-      .find((b) => b.text() === 'Next')!
-      .trigger('click')
-    const caraRow = sheet.findAll('.row').find((r) => r.text().includes('Cara'))!
+    await findByTestId(sheet, 'next-step').trigger('click')
+    const caraRow = findAllByTestId(sheet, 'person-toggle').find((r) => r.text().includes('Cara'))!
     await caraRow.trigger('click')
 
     const expected = splitShares({ totalMinor: 10_001, weights: [1, 1], salt: saltFor(pinned) })
@@ -306,10 +303,7 @@ describe('AddExpenseSheet', () => {
       expect(sheet.text()).toContain((share / 100).toFixed(2))
     }
 
-    await sheet
-      .findAll('button')
-      .find((b) => b.text() === 'Save expense')!
-      .trigger('click')
+    await findByTestId(sheet, 'save-expense').trigger('click')
     await flushPromises()
 
     expect(mocked.createItem).toHaveBeenCalledWith(
@@ -351,22 +345,10 @@ describe('AddExpenseSheet custom weights', () => {
     await sheet.setProps({ open: true })
     await nextTick()
 
-    await sheet
-      .findAll('button')
-      .find((b) => b.text() === '5')!
-      .trigger('click')
-    await sheet
-      .findAll('button')
-      .find((b) => b.text() === 'Next')!
-      .trigger('click')
-    await sheet
-      .findAll('button')
-      .find((b) => b.text() === 'Custom')!
-      .trigger('click')
-    await sheet
-      .findAll('button')
-      .find((b) => b.text() === 'Save expense')!
-      .trigger('click')
+    await findByTestId(sheet, 'key-5').trigger('click')
+    await findByTestId(sheet, 'next-step').trigger('click')
+    await findByTestId(sheet, 'mode-custom').trigger('click')
+    await findByTestId(sheet, 'save-expense').trigger('click')
     await flushPromises()
 
     expect(mocked.createItem).toHaveBeenCalledWith(
@@ -409,9 +391,9 @@ describe('ItemDetailSheet', () => {
     await sheet.setProps({ open: true })
     await flushPromises()
 
-    const approve = sheet.findAll('button').find((b) => b.text() === 'Yes, paid me')
-    expect(approve).toBeTruthy()
-    await approve!.trigger('click')
+    const approve = findByTestId(sheet, 'approve')
+    expect(approve.exists()).toBe(true)
+    await approve.trigger('click')
     await flushPromises()
 
     expect(mocked.approvePayback).toHaveBeenCalledWith('p-1')
@@ -433,8 +415,8 @@ describe('ItemDetailSheet', () => {
     await sheet.setProps({ open: true })
     await flushPromises()
 
-    expect(sheet.findAll('button').find((b) => b.text() === 'Yes, paid me')).toBeUndefined()
-    expect(sheet.findAll('button').find((b) => b.text() === 'Cancel')).toBeTruthy()
+    expect(findByTestId(sheet, 'approve').exists()).toBe(false)
+    expect(findByTestId(sheet, 'undo-claim').exists()).toBe(true)
   })
 })
 
@@ -458,7 +440,7 @@ describe('EditSplitSheet', () => {
     await sheet.setProps({ open: true, item: existing })
     await nextTick()
 
-    const caraRow = sheet.findAll('.row').find((r) => r.text().includes('Cara'))!
+    const caraRow = findAllByTestId(sheet, 'person-toggle').find((r) => r.text().includes('Cara'))!
     await caraRow.trigger('click')
 
     const expected = splitShares({ totalMinor: 9_000, weights: [1, 1, 1], salt: saltFor(existing.id) })
@@ -466,10 +448,7 @@ describe('EditSplitSheet', () => {
       expect(sheet.text()).toContain((share / 100).toFixed(2))
     }
 
-    await sheet
-      .findAll('button')
-      .find((b) => b.text() === 'Save the split')!
-      .trigger('click')
+    await findByTestId(sheet, 'save-split').trigger('click')
     await flushPromises()
 
     expect(mocked.patchItem).toHaveBeenCalledWith(existing.id, {
@@ -487,7 +466,7 @@ describe('InviteSheet', () => {
     const sheet = mount(InviteSheet, { props: { open: true, trip: trip() }, global: global() })
     await nextTick()
 
-    await sheet.find('input').setValue('Dana')
+    await findByTestId(sheet, 'member-name').setValue('Dana')
     await sheet.find('form').trigger('submit')
     await flushPromises()
 
@@ -505,10 +484,7 @@ describe('InviteSheet', () => {
 
     const sheet = mount(InviteSheet, { props: { open: true, trip: trip() }, global: global() })
     await nextTick()
-    await sheet
-      .findAll('button')
-      .find((b) => b.text() === 'Copy invite link')!
-      .trigger('click')
+    await findByTestId(sheet, 'copy-link').trigger('click')
     await flushPromises()
 
     expect(written[0]).toContain('/join/t-1#token=tok-abc')
@@ -535,7 +511,7 @@ describe('ClaimPaybackSheet', () => {
     await sheet.setProps({ open: true })
     await nextTick()
 
-    expect((sheet.find('input').element as HTMLInputElement).value).toBe('25.00')
+    expect((findByTestId(sheet, 'claim-amount').element as HTMLInputElement).value).toBe('25.00')
 
     await sheet.find('form').trigger('submit')
     await flushPromises()
@@ -563,11 +539,8 @@ describe('JoinScreen', () => {
     expect(mocked.claimable).toHaveBeenCalledWith('t-1', 'tok-abc')
     expect(screen.text()).toContain('Cara')
 
-    await screen.find('.join__member').trigger('click')
-    await screen
-      .findAll('button')
-      .find((b) => b.text() === "That's me")!
-      .trigger('click')
+    await findByTestId(screen, 'join-member').trigger('click')
+    await findByTestId(screen, 'join-claim').trigger('click')
     await flushPromises()
 
     expect(mocked.claim).toHaveBeenCalledWith('t-1', 'tok-abc', cara.id)
@@ -606,11 +579,8 @@ describe('SettleUpSheet', () => {
     })
     await nextTick()
 
-    await sheet
-      .findAll('button')
-      .find((b) => b.text() === 'Pay')!
-      .trigger('click')
-    const input = sheet.find('input')
+    await findByTestId(sheet, 'row-pay').trigger('click')
+    const input = findByTestId(sheet, 'pay-amount')
     expect((input.element as HTMLInputElement).value).toBe('60.00')
 
     await sheet.find('form').trigger('submit')
@@ -635,10 +605,7 @@ describe('SettleUpSheet', () => {
     })
     await nextTick()
 
-    await sheet
-      .findAll('button')
-      .find((b) => b.text() === 'Remind')!
-      .trigger('click')
+    await findByTestId(sheet, 'row-remind').trigger('click')
     await flushPromises()
 
     expect(mocked.remind).toHaveBeenCalledWith('t-1', bob.id)

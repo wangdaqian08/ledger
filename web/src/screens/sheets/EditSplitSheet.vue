@@ -114,6 +114,7 @@ async function save() {
             :key="member.id"
             type="button"
             class="edit__payer"
+            data-testid="payer-chip"
             :class="{ 'edit__payer--on': payerId === member.id }"
             :aria-pressed="payerId === member.id"
             @click="payerId = member.id"
@@ -177,7 +178,13 @@ async function save() {
 
       <p v-if="error" class="edit__error" role="alert">{{ error }}</p>
 
-      <TallyButton variant="primary" full-width :disabled="busy || sharers.length === 0" @click="save">
+      <TallyButton
+        variant="primary"
+        full-width
+        data-testid="save-split"
+        :disabled="busy || sharers.length === 0"
+        @click="save"
+      >
         {{ t('editSplit.save') }}
       </TallyButton>
     </div>

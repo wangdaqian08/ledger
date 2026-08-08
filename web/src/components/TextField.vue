@@ -8,8 +8,18 @@ withDefaults(
     error?: string
     type?: 'text' | 'email' | 'date'
     disabled?: boolean
+    /** Lands on the input itself, where tests type — not on the wrapping label. */
+    testId?: string
   }>(),
-  { label: undefined, placeholder: '', hint: undefined, error: undefined, type: 'text', disabled: false },
+  {
+    label: undefined,
+    placeholder: '',
+    hint: undefined,
+    error: undefined,
+    type: 'text',
+    disabled: false,
+    testId: undefined,
+  },
 )
 
 defineEmits<{ 'update:modelValue': [string] }>()
@@ -25,6 +35,7 @@ defineEmits<{ 'update:modelValue': [string] }>()
       :value="modelValue"
       :placeholder="placeholder"
       :disabled="disabled"
+      :data-testid="testId"
       :aria-invalid="error ? 'true' : undefined"
       @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     />
