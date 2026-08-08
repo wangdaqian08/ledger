@@ -123,10 +123,52 @@ jobs:
       - name: Build web
         run: npm --prefix web run build
 
+  # The whole product in one piece: Playwright drives the built screens against the seeded
+  # backend — Gradle boots Postgres through Testcontainers, Vite serves the app, and the tests
+  # walk the money flows a mocked API cannot vouch for. Needs both toolchains and Docker.
+  e2e:
+    name: Web e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: temurin
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm --prefix web ci
+
+      - name: Install Playwright browser
+        run: npm --prefix web exec playwright install --with-deps chromium
+
+      - name: Run e2e suite
+        run: npm --prefix web run e2e
+
+      - name: Upload e2e report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-report
+          path: |
+            web/playwright-report/
+            web/test-results/
+          retention-days: 7
+
   green:
     name: CI green
     if: always()
-    needs: [format, engine, server, web]
+    needs: [format, engine, server, web, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
