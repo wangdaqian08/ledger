@@ -86,7 +86,7 @@ export default {
     yourShare: 'You owe',
     paidBy: 'Paid by',
     frontedTheBill: 'fronted the whole bill',
-    howSplit: 'How it was split',
+    howSplit: 'How it was split · {count} people',
     paybacks: 'Paid back so far',
     noPaybacks: 'Nobody has paid anything back yet',
     approve: 'Yes, paid me',

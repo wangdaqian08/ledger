@@ -8,6 +8,7 @@ import TallyButton from '@/components/TallyButton.vue'
 import { api, type ItemView, type TripView } from '@/lib/api'
 import { currencySymbol } from '@/lib/money'
 import { saltFor, splitShares } from '@/lib/split'
+import { DRAG_SCALE, normalizedWeights } from '@/lib/weights'
 
 /**
  * Fixing a bill's people list — the mechanism the entire design rests on (spec §1): tick the
@@ -41,9 +42,13 @@ watch(
     ticked.value = Object.fromEntries(
       props.trip.members.map((m) => [m.id, item.splits.some((s) => s.memberId === m.id)]),
     )
-    // Existing people keep their dragged weights; anyone ticked on later starts at 1.
+    // Existing people keep their ratio, scaled up so the bar has room to move (see weights.ts);
+    // anyone ticked on later starts at one scaled unit. Saving normalises back down.
     weights.value = Object.fromEntries(
-      props.trip.members.map((m) => [m.id, item.splits.find((s) => s.memberId === m.id)?.weight ?? 1]),
+      props.trip.members.map((m) => [
+        m.id,
+        (item.splits.find((s) => s.memberId === m.id)?.weight ?? 1) * DRAG_SCALE,
+      ]),
     )
   },
 )
@@ -81,11 +86,12 @@ async function save() {
   busy.value = true
   error.value = ''
   try {
+    const saved = normalizedWeights(sharers.value.map((m) => weights.value[m.id] ?? DRAG_SCALE))
     await api.patchItem(item.id, {
       payerMemberId: payerId.value,
       splitRule: custom.value ? 'WEIGHTED' : 'EQUAL',
-      sharedBy: sharers.value.map((m) =>
-        custom.value ? { memberId: m.id, weight: weights.value[m.id] ?? 1 } : { memberId: m.id },
+      sharedBy: sharers.value.map((m, index) =>
+        custom.value ? { memberId: m.id, weight: saved[index] } : { memberId: m.id },
       ),
     })
     emit('saved')

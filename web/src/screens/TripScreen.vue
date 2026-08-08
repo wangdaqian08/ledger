@@ -53,6 +53,7 @@ const claim = ref<{ itemId: string; toName: string; prefillMinor: number } | nul
 
 const symbol = computed(() => currencySymbol(trip.value?.currencyCode ?? 'AUD'))
 const me = computed(() => trip.value?.members.find((m) => m.isYou) ?? null)
+const remindedMemberId = ref<string | null>(null)
 
 const heroTone = computed(() => {
   const net = trip.value?.yourNetMinor ?? 0
@@ -130,6 +131,7 @@ function openDetail(itemId: string) {
 
 async function remind(memberId: string) {
   await api.remind(props.tripId, memberId)
+  remindedMemberId.value = memberId
 }
 
 function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
@@ -215,6 +217,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
           :currency-code="trip.currencyCode"
           :symbol="symbol"
           :pending="row.pending.length > 0"
+          :reminded="remindedMemberId === row.memberId"
           :divider="index < settlement.rows.length - 1"
           @pay="settleOpen = true"
           @remind="remind(row.memberId)"

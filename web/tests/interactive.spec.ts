@@ -24,23 +24,33 @@ describe('SplitBar', () => {
     }
   })
 
-  it('keeps weights whole when dragged', async () => {
-    const bar = mount(SplitBar, { props: { people, totalMinor: 10_000, salt: 0n } })
-    const handle = bar.find('.split__handle-hit')
+  it('a drag moves the weights — whole, above zero, and actually moved', async () => {
+    // Scaled weights, the way the sheets now hand them over: at 1:1 every pair sums to 2 and the
+    // clamp pins the handle in place — the bar shipped provably inert, and the old version of
+    // this test tolerated silence (`if (emitted)`), which is how nobody noticed.
+    const scaled = [
+      { memberId: 'a', displayName: 'Bob', personHue: 1, weight: 40 },
+      { memberId: 'b', displayName: 'Alice', personHue: 2, weight: 20 },
+    ]
+    const bar = mount(SplitBar, { props: { people: scaled, totalMinor: 10_000, salt: 0n } })
+    // happy-dom boxes are zero-sized; the drag arithmetic needs a real-shaped bar.
+    const barBox = bar.find('.split__bar').element as HTMLElement
+    barBox.getBoundingClientRect = () =>
+      ({ left: 0, width: 300, top: 0, height: 56, right: 300, bottom: 56, x: 0, y: 0 }) as DOMRect
 
-    await handle.trigger('pointerdown')
-    await bar.find('.split').trigger('pointermove', { clientX: 40 })
+    await bar.find('.split__handle-hit').trigger('pointerdown')
+    // A third of the way across a 60-weight bar: the pair re-divides to 20:40.
+    await bar.find('.split').trigger('pointermove', { clientX: 100 })
 
     const emitted = bar.emitted('update:people')
-    if (emitted) {
-      for (const [next] of emitted as [typeof people][]) {
-        for (const person of next) {
-          expect(Number.isInteger(person.weight)).toBe(true)
-          // Nobody is ever dragged to nothing: zero is "not sharing this", which is a different
-          // statement and belongs to the tick, not the bar.
-          expect(person.weight).toBeGreaterThanOrEqual(1)
-        }
-      }
+    expect(emitted, 'a drag must emit — silence is the bug').toBeTruthy()
+    const [next] = emitted!.at(-1) as [typeof scaled]
+    expect(next.map((p) => p.weight)).toEqual([20, 40])
+    for (const person of next) {
+      expect(Number.isInteger(person.weight)).toBe(true)
+      // Nobody is ever dragged to nothing: zero is "not sharing this", which is a different
+      // statement and belongs to the tick, not the bar.
+      expect(person.weight).toBeGreaterThanOrEqual(1)
     }
   })
 

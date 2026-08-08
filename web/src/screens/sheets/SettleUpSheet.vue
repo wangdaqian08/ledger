@@ -93,12 +93,11 @@ const undoClaim = (paybackId: string) => act(() => api.undoPayback(paybackId))
           :currency-code="currencyCode"
           :symbol="symbol"
           :pending="pendingOf(row).length > 0"
+          :reminded="reminded === row.memberId"
           :divider="index < rows.length - 1"
           @pay="startPay(row)"
           @remind="remind(row)"
         />
-
-        <p v-if="reminded === row.memberId" class="settle__note">{{ t('settle.remind') }} ✓</p>
 
         <div v-for="claim in pendingOf(row)" :key="claim.id" class="settle__pending">
           <span class="settle__pending-text">
@@ -152,11 +151,6 @@ const undoClaim = (paybackId: string) => act(() => api.undoPayback(paybackId))
   gap: var(--space-2);
 }
 
-.settle__note {
-  color: var(--text-muted);
-  font-size: var(--text-caption);
-}
-
 .settle__pending {
   display: flex;
   align-items: center;
@@ -179,6 +173,13 @@ const undoClaim = (paybackId: string) => act(() => api.undoPayback(paybackId))
   display: flex;
   gap: var(--space-2);
   align-items: center;
+}
+
+/* The amount field yields, the button does not: an input's intrinsic width once pushed the Pay
+   button 92px past a 390px viewport, clipped and unreachable. */
+.settle__pay > :first-child {
+  flex: 1;
+  min-width: 0;
 }
 
 .settle__error {

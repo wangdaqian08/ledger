@@ -97,6 +97,11 @@ function onInput(event: Event) {
   background: var(--surface-card);
   border: 2px solid var(--ink);
   border-radius: var(--radius-md);
+  /* Never wider than the space offered: the inner input's intrinsic size must not decide the
+     layout on a phone. */
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .field:focus-within {

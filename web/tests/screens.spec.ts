@@ -324,6 +324,65 @@ describe('AddExpenseSheet', () => {
   })
 })
 
+describe('AddExpenseSheet custom weights', () => {
+  it('saves the dragged ratio normalised, not the drag scale', async () => {
+    // Custom mode scales every weight up so the bar can move; the payload divides the greatest
+    // common divisor back out — an untouched custom split saves as 1:1:1, never 20:20:20.
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('cafebabe-dead-4eef-cafe-babedead4eef')
+    mocked.createItem!.mockResolvedValue(item({}))
+    const sheet = mount(AddExpenseSheet, {
+      props: {
+        open: false,
+        trip: trip(),
+        categories: [
+          {
+            id: 'c-food',
+            key: 'food',
+            nameEn: 'Food',
+            nameZh: '餐饮',
+            icon: 'utensils',
+            hue: 1,
+            builtIn: true,
+          },
+        ],
+      },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await nextTick()
+
+    await sheet
+      .findAll('button')
+      .find((b) => b.text() === '5')!
+      .trigger('click')
+    await sheet
+      .findAll('button')
+      .find((b) => b.text() === 'Next')!
+      .trigger('click')
+    await sheet
+      .findAll('button')
+      .find((b) => b.text() === 'Custom')!
+      .trigger('click')
+    await sheet
+      .findAll('button')
+      .find((b) => b.text() === 'Save expense')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(mocked.createItem).toHaveBeenCalledWith(
+      't-1',
+      expect.objectContaining({
+        splitRule: 'WEIGHTED',
+        sharedBy: [
+          { memberId: you.id, weight: 1 },
+          { memberId: bob.id, weight: 1 },
+          { memberId: cara.id, weight: 1 },
+        ],
+      }),
+    )
+  })
+})
+
 describe('ItemDetailSheet', () => {
   const pendingClaim = {
     id: 'p-1',

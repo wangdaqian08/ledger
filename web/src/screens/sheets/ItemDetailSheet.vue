@@ -151,7 +151,9 @@ async function remove() {
       </section>
 
       <section class="detail__section">
-        <h3 class="detail__label">{{ t('itemDetail.howSplit') }}</h3>
+        <!-- The count matters when the list is long: thirteen people is a scroll, and knowing the
+             money went thirteen ways is the fact the heading owes you up front. -->
+        <h3 class="detail__label">{{ t('itemDetail.howSplit', { count: detail.splits.length }) }}</h3>
         <div v-for="split in detail.splits" :key="split.memberId" class="detail__row">
           <PersonAvatar
             :name="memberName(split.memberId)"
