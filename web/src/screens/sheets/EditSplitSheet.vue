@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import AmountInput from '@/components/AmountInput.vue'
 import PersonToggleRow from '@/components/PersonToggleRow.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import SplitBar, { type SplitPerson } from '@/components/SplitBar.vue'
@@ -23,6 +24,7 @@ const emit = defineEmits<{ close: []; saved: [] }>()
 
 const { t } = useI18n()
 
+const amountMinor = ref(0)
 const payerId = ref<string | null>(null)
 const ticked = ref<Record<string, boolean>>({})
 const custom = ref(false)
@@ -37,6 +39,7 @@ watch(
   ([open, item]) => {
     if (!open || !item) return
     error.value = ''
+    amountMinor.value = item.amountMinor
     payerId.value = item.payerMemberId
     custom.value = item.splitRule === 'WEIGHTED'
     ticked.value = Object.fromEntries(
@@ -69,7 +72,7 @@ const previewShares = computed<Map<string, number>>(() => {
   const item = props.item
   if (!item || sharers.value.length === 0) return new Map()
   const parts = splitShares({
-    totalMinor: item.amountMinor,
+    totalMinor: amountMinor.value,
     weights: sharers.value.map((m) => (custom.value ? (weights.value[m.id] ?? 1) : 1)),
     salt: saltFor(item.id),
   })
@@ -82,12 +85,13 @@ function onWeights(next: SplitPerson[]) {
 
 async function save() {
   const item = props.item
-  if (!item || busy.value || sharers.value.length === 0 || !payerId.value) return
+  if (!item || busy.value || sharers.value.length === 0 || !payerId.value || amountMinor.value <= 0) return
   busy.value = true
   error.value = ''
   try {
     const saved = normalizedWeights(sharers.value.map((m) => weights.value[m.id] ?? DRAG_SCALE))
     await api.patchItem(item.id, {
+      amountMinor: amountMinor.value,
       payerMemberId: payerId.value,
       splitRule: custom.value ? 'WEIGHTED' : 'EQUAL',
       sharedBy: sharers.value.map((m, index) =>
@@ -106,6 +110,16 @@ async function save() {
 <template>
   <SheetPanel :open="open" :title="t('editSplit.title')" @close="emit('close')">
     <div v-if="item" class="edit">
+      <section class="edit__section">
+        <h3 class="edit__label">{{ t('editSplit.amount') }}</h3>
+        <AmountInput
+          v-model="amountMinor"
+          test-id="edit-amount"
+          :currency-code="trip.currencyCode"
+          :symbol="symbol"
+        />
+      </section>
+
       <section class="edit__section">
         <h3 class="edit__label">{{ t('addExpense.whoPaid') }}</h3>
         <div class="edit__payers">
@@ -168,7 +182,7 @@ async function save() {
         <SplitBar
           v-if="custom && splitPeople.length > 1"
           :people="splitPeople"
-          :total-minor="item.amountMinor"
+          :total-minor="amountMinor"
           :salt="saltFor(item.id)"
           :currency-code="trip.currencyCode"
           :symbol="symbol"
@@ -182,7 +196,7 @@ async function save() {
         variant="primary"
         full-width
         data-testid="save-split"
-        :disabled="busy || sharers.length === 0"
+        :disabled="busy || sharers.length === 0 || amountMinor <= 0"
         @click="save"
       >
         {{ t('editSplit.save') }}

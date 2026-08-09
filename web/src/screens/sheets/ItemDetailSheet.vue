@@ -9,7 +9,7 @@ import TallyBadge from '@/components/TallyBadge.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TextField from '@/components/TextField.vue'
 import { api, type CategoryView, type ItemDetail, type TripView } from '@/lib/api'
-import { currencySymbol } from '@/lib/money'
+import { currencySymbol, formatMinor } from '@/lib/money'
 
 /**
  * Screen 5 — one bill, whole: the split, and the approval section.
@@ -99,6 +99,20 @@ async function reject(paybackId: string) {
 
 async function remove() {
   if (!props.itemId || !confirm(t('itemDetail.deleteConfirm'))) return
+
+  // Confirmed repayments are records of money that really changed hands, and they die with the
+  // bill (spec §5: item claims cascade). That is never a single-tap decision: name the count and
+  // the sum, and ask again.
+  const approved = (detail.value?.paybacks ?? []).filter((p) => p.status === 'APPROVED')
+  if (approved.length > 0) {
+    const total = approved.reduce((sum, p) => sum + p.amountMinor, 0)
+    const amount = formatMinor(total, {
+      currencyCode: props.trip.currencyCode,
+      symbol: symbol.value,
+    })
+    if (!confirm(t('itemDetail.deleteApprovedConfirm', { count: approved.length, amount }))) return
+  }
+
   await act(() => api.deleteItem(props.itemId!))
   emit('close')
 }

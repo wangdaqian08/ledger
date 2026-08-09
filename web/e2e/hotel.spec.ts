@@ -36,4 +36,19 @@ test('the hotel case: ticking a late arrival onto the bill re-divides it for eve
   }
   await page.getByTestId('sheet-close').click()
   await expectRowsToSumToHero(page)
+
+  // The deposit turns out to have been $120.00, not $100.00. Correcting the amount re-derives
+  // every share — 30.00 exactly, four ways — with nothing stored to go stale.
+  await page.getByTestId('expense-row').filter({ hasText: 'Hotel deposit' }).click()
+  await page.getByTestId('edit-split-open').click()
+  await page.getByTestId('edit-amount').fill('12000')
+  await page.getByTestId('save-split').click()
+
+  await page.getByTestId('expense-row').filter({ hasText: 'Hotel deposit' }).click()
+  await expect(shares).toHaveCount(4)
+  for (let index = 0; index < 4; index += 1) {
+    await expect(shares.nth(index)).toContainText('$30.00')
+  }
+  await page.getByTestId('sheet-close').click()
+  await expectRowsToSumToHero(page)
 })
