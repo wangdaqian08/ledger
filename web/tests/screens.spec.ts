@@ -151,6 +151,25 @@ describe('SignInScreen', () => {
   })
 })
 
+describe('SignInScreen', () => {
+  it('fast-forwards somebody already signed in, straight to where they were going', async () => {
+    mocked.me!.mockResolvedValue({
+      id: 'u1',
+      displayName: 'Alice',
+      email: 'a@x',
+      photoUrl: null,
+      friends: [],
+    })
+    await router.push('/signin?next=/trips/t-1')
+
+    mount(SignInScreen, { global: global() })
+    await flushPromises()
+
+    expect(mocked.signIn).not.toHaveBeenCalled()
+    expect(router.currentRoute.value.fullPath).toBe('/trips/t-1')
+  })
+})
+
 describe('TripsScreen', () => {
   it('shows every group and the overall position', async () => {
     mocked.me!.mockResolvedValue({
@@ -507,6 +526,29 @@ describe('EditSplitSheet', () => {
       sharedBy: [{ memberId: you.id }, { memberId: bob.id }, { memberId: cara.id }],
     })
     expect(sheet.emitted('saved')).toBeTruthy()
+  })
+
+  it("scales a weighted bill's ratio up for the drag, keeping the ratio itself", async () => {
+    // A stored 2:1 arrives at the bar as 40:20 — same split to the cent, but with room to move;
+    // at raw small weights every adjacent pair pins the handle where it stands.
+    const weighted = item({
+      id: 'cafebabe-dead-4eef-cafe-babedead4eef',
+      splitRule: 'WEIGHTED',
+      splits: [
+        { memberId: you.id, amountMinor: 6_000, weight: 2, exactAmountMinor: null },
+        { memberId: bob.id, amountMinor: 3_000, weight: 1, exactAmountMinor: null },
+      ],
+    })
+    const sheet = mount(EditSplitSheet, {
+      props: { open: false, trip: trip(), item: null },
+      global: global(),
+    })
+    await sheet.setProps({ open: true, item: weighted })
+    await nextTick()
+
+    const bar = sheet.findComponent({ name: 'SplitBar' })
+    expect(bar.exists()).toBe(true)
+    expect((bar.props('people') as { weight: number }[]).map((p) => p.weight)).toEqual([40, 20])
   })
 
   it('lets a wrong amount be corrected, re-deriving every share live', async () => {

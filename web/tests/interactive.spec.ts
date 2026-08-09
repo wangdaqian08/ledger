@@ -6,6 +6,7 @@ import CategoryPicker from '../src/components/CategoryPicker.vue'
 import PersonToggleRow from '../src/components/PersonToggleRow.vue'
 import SplitBar from '../src/components/SplitBar.vue'
 import { saltFor, splitShares } from '../src/lib/split'
+import { pressKey } from '../src/lib/till'
 import { findAllByTestId, findByTestId } from './testids'
 
 const people = [
@@ -143,6 +144,17 @@ describe('AmountInput', () => {
 
     // Same digits, different currency: 1999 minor units of yen are ¥1999, not ¥19.99.
     expect((input.find('input').element as HTMLInputElement).value).toBe('1999')
+  })
+})
+
+describe('till', () => {
+  it('shifts digits like a drawer and refuses to leave the safe range', () => {
+    expect(pressKey(0, '4')).toBe(4)
+    expect(pressKey(4, '2')).toBe(42)
+    expect(pressKey(42, '00')).toBe(4200)
+    expect(pressKey(4200, 'del')).toBe(420)
+    // One keypress past Number.MAX_SAFE_INTEGER changes nothing rather than going inexact.
+    expect(pressKey(Number.MAX_SAFE_INTEGER, '9')).toBe(Number.MAX_SAFE_INTEGER)
   })
 })
 

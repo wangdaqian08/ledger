@@ -51,6 +51,7 @@ test('the hotel case: ticking a late arrival onto the bill re-divides it for eve
   await page.getByTestId('save-split').click()
 
   await page.getByTestId('expense-row').filter({ hasText: 'Hotel deposit' }).click()
+  await expect(page.getByTestId('how-split')).toContainText('4 people')
   await expect(shares).toHaveCount(4)
   for (let index = 0; index < 4; index += 1) {
     await expect(shares.nth(index)).toContainText('$30.00')

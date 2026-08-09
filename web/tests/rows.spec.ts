@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import AppBar from '../src/components/AppBar.vue'
 import BalanceRow from '../src/components/BalanceRow.vue'
 import ExpenseRow from '../src/components/ExpenseRow.vue'
 import GroupCard from '../src/components/GroupCard.vue'
@@ -125,5 +126,16 @@ describe('TallyKeypad', () => {
     // A decimal key would invite somebody to type one and expect a float; the caller shifts
     // digits into whole cents instead.
     expect(labels).not.toContain('.')
+  })
+})
+
+describe('AppBar', () => {
+  it('keeps the icon slug and the human label apart', () => {
+    // The action string was once both at the same time, so "Invite" rendered the fallback glyph
+    // and 中文 would have asked for an icon named 邀请.
+    const bar = mount(AppBar, { props: { title: 'Osaka', action: 'user-plus', actionLabel: '邀请' } })
+    const action = bar.find('[data-testid="appbar-action"]')
+    expect(action.attributes('aria-label')).toBe('邀请')
+    expect(bar.findAllComponents(TallyIcon).some((i) => i.props('name') === 'user-plus')).toBe(true)
   })
 })
