@@ -1,0 +1,32 @@
+package app.ledger.server.settlement
+
+import app.ledger.server.payback.PaybackView
+import java.util.UUID
+
+/**
+ * One row of the Settle-up screen: your position with one other person.
+ *
+ * [owedMinor] is positive when you owe them and negative when they owe you. Rows are bilateral by
+ * design (§7a) — not the shortest set of transfers, which would pair up people who have no row on
+ * this screen at all.
+ */
+data class SettlementRow(
+    val memberId: UUID,
+    val displayName: String,
+    val personHue: Short,
+    val owedMinor: Long,
+    /**
+     * Trip-level claims between the two of you that nobody has decided yet, in either direction.
+     * A pending claim is why the row can read "sent for confirmation" while still counting as
+     * unpaid — because that is exactly what it is.
+     */
+    val pending: List<PaybackView>,
+)
+
+data class SettlementView(
+    val rows: List<SettlementRow>,
+    /** Positive means the group owes you. Equal to minus the sum of [rows], by construction. */
+    val yourNetMinor: Long,
+    /** Derived, never a button (§7a): everyone is square when no row has anything left on it. */
+    val allSquare: Boolean,
+)

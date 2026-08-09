@@ -6,7 +6,6 @@ import app.ledger.server.me.toMeView
 import app.ledger.server.user.UserDirectory
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
-import jakarta.validation.constraints.NotBlank
 import org.springframework.http.HttpStatus
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.annotation.AuthenticationPrincipal
@@ -24,11 +23,6 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
-
-data class SignInRequest(
-    @field:NotBlank
-    val idToken: String,
-)
 
 @RestController
 @Validated

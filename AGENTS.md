@@ -133,11 +133,15 @@ Inside `server/`, `identity/` is the one seam to whoever vouches for a user — 
 on the dev profile today, Google at build order step 10. Nothing above that interface knows which is
 in play, and nothing should learn.
 
-**Server packages are by feature, never by layer, and a file's name states its contents:**
-`XCommands.kt` holds the request bodies, `XViews.kt` the response shapes, `XController.kt` only the
-controller; a feature small enough for one file calls it `XApi.kt` (`category/`, `settlement/`,
-`me/`, `auth/`). A `controllers/`–`models/` re-sort would group by kind what changes together by
-feature — that debate is settled, do not reopen it silently.
+**Server packages are by feature, never by layer, and a file is named for exactly what it holds:**
+`XController.kt` holds only the controller, `XService.kt` only the service, `XCommands.kt` and
+`XViews.kt` a feature's request and response types — and a type standing alone takes its own name
+(`SignInRequest.kt`), which the ktlint filename rule demands anyway. There is no bundle file: an
+`XApi.kt` holding types + controller + service was tried and retired, because a tree listing that
+hides where a controller lives misleads whoever reads it, and "small enough to bundle" is a
+judgment call that drifts — `settlement/` had already straddled it. A `controllers/`–`models/`
+re-sort of the packages themselves would group by kind what changes together by feature — that
+debate is settled too, do not reopen either silently.
 
 **A trip you cannot see returns 404, not 403.** A stranger must not be able to confirm that a trip
 exists. 403 is reserved for people who *are* on the trip but lack the right — a member who is not
