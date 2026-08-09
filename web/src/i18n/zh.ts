@@ -96,6 +96,8 @@ export default {
     payBack: '还这一笔',
     delete: '删除支出',
     deleteConfirm: '删除这笔支出？相关的还款记录会一并删除。',
+    deleteApprovedConfirm:
+      '此账单有{count}笔已确认的还款，共{amount}，将随账单一并删除，余额会随之变动。确定删除吗？',
   },
   claim: {
     title: '还款',
@@ -107,8 +109,9 @@ export default {
     disclaimer: 'Tally不经手钱。这会请{name}确认现金确实到手了。',
   },
   editSplit: {
-    title: '修改分摊',
-    save: '保存分摊',
+    title: '修改账单',
+    amount: '多少钱？',
+    save: '保存账单',
   },
   invite: {
     title: '成员',

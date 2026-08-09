@@ -95,6 +95,8 @@ export default {
     payBack: 'Pay this back',
     delete: 'Delete expense',
     deleteConfirm: 'Delete this expense? Its repayment claims go with it.',
+    deleteApprovedConfirm:
+      '{count} confirmed repayment(s) totalling {amount} will be erased with this bill, and the balances will move. Really delete?',
   },
   claim: {
     title: 'Pay back',
@@ -106,8 +108,9 @@ export default {
     disclaimer: "Tally doesn't move money. This asks {name} to confirm cash really changed hands.",
   },
   editSplit: {
-    title: 'Fix the split',
-    save: 'Save the split',
+    title: 'Fix the bill',
+    amount: 'How much was it?',
+    save: 'Save the bill',
   },
   invite: {
     title: 'People',

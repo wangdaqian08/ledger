@@ -94,6 +94,16 @@ test('pay → reject → try again → approve → undo, across two browsers', a
   await expect(alice.getByTestId('trip-position')).toContainText('All square')
   await expectRowsToSumToHero(alice)
 
+  // Deleting a bill with a confirmed repayment on it asks twice, and cold feet at the second
+  // question — the one naming the money — leaves everything standing.
+  await alice.getByTestId('expense-row').filter({ hasText: 'Dinner' }).click()
+  const answers = [true, false]
+  alice.on('dialog', (dialog) => (answers.shift() ? dialog.accept() : dialog.dismiss()))
+  await alice.getByTestId('delete-item').click()
+  await alice.getByTestId('sheet-close').click()
+  await expect(alice.getByTestId('expense-row').filter({ hasText: 'Dinner' })).toBeVisible()
+  await expect(alice.getByTestId('trip-position')).toContainText('All square')
+
   // And Bob can take it back: an approved settlement undone un-settles the trip (§7a).
   await bob.goto(tripUrl)
   await bob.getByTestId('expense-row').filter({ hasText: 'Dinner' }).click()

@@ -418,6 +418,54 @@ describe('ItemDetailSheet', () => {
     expect(findByTestId(sheet, 'approve').exists()).toBe(false)
     expect(findByTestId(sheet, 'undo-claim').exists()).toBe(true)
   })
+
+  it('asks twice before deleting a bill that carries confirmed repayments', async () => {
+    mocked.itemDetail!.mockResolvedValue({
+      ...item({}),
+      paybacks: [
+        { ...pendingClaim, id: 'p-ok', status: 'APPROVED' as const, amountMinor: 2_000 },
+        { ...pendingClaim, id: 'p-ok2', status: 'APPROVED' as const, amountMinor: 1_000 },
+      ],
+    })
+    const answers = [true, false] // yes to delete, then cold feet at the money question
+    const asked: string[] = []
+    vi.stubGlobal('confirm', (message: string) => (asked.push(message), answers.shift() ?? false))
+
+    const sheet = mount(ItemDetailSheet, {
+      props: { open: false, itemId: 'i-1', trip: trip(), categories: [] },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await flushPromises()
+    await findByTestId(sheet, 'delete-item').trigger('click')
+    await flushPromises()
+
+    expect(asked).toHaveLength(2)
+    expect(asked[1]).toContain('2') //  both confirmed repayments counted
+    expect(asked[1]).toContain('$30.00') // and their sum named
+    expect(mocked.deleteItem).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('asks only once when nothing confirmed is at stake', async () => {
+    mocked.itemDetail!.mockResolvedValue({ ...item({}), paybacks: [] })
+    mocked.deleteItem!.mockResolvedValue(undefined)
+    let asks = 0
+    vi.stubGlobal('confirm', () => ((asks += 1), true))
+
+    const sheet = mount(ItemDetailSheet, {
+      props: { open: false, itemId: 'i-1', trip: trip(), categories: [] },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await flushPromises()
+    await findByTestId(sheet, 'delete-item').trigger('click')
+    await flushPromises()
+
+    expect(asks).toBe(1)
+    expect(mocked.deleteItem).toHaveBeenCalledWith('i-1')
+    vi.unstubAllGlobals()
+  })
 })
 
 describe('EditSplitSheet', () => {
@@ -452,11 +500,47 @@ describe('EditSplitSheet', () => {
     await flushPromises()
 
     expect(mocked.patchItem).toHaveBeenCalledWith(existing.id, {
+      amountMinor: 9_000,
       payerMemberId: you.id,
       splitRule: 'EQUAL',
       sharedBy: [{ memberId: you.id }, { memberId: bob.id }, { memberId: cara.id }],
     })
     expect(sheet.emitted('saved')).toBeTruthy()
+  })
+
+  it('lets a wrong amount be corrected, re-deriving every share live', async () => {
+    const existing = item({ id: 'cafebabe-dead-4eef-cafe-babedead4eef' })
+    mocked.patchItem!.mockResolvedValue(existing)
+
+    const sheet = mount(EditSplitSheet, {
+      props: { open: false, trip: trip(), item: null },
+      global: global(),
+    })
+    await sheet.setProps({ open: true, item: existing })
+    await nextTick()
+
+    // Pre-filled with what the bill says now.
+    const amount = findByTestId(sheet, 'edit-amount')
+    expect((amount.element as HTMLInputElement).value).toBe('90.00')
+
+    // Corrected to $120.00: the three previews re-derive to exact 40.00s before saving.
+    await amount.setValue('12000')
+    const expected = splitShares({
+      totalMinor: 12_000,
+      weights: [1, 1, 1],
+      salt: saltFor(existing.id),
+    })
+    for (const share of expected) {
+      expect(sheet.text()).toContain((share / 100).toFixed(2))
+    }
+
+    await findByTestId(sheet, 'save-split').trigger('click')
+    await flushPromises()
+
+    expect(mocked.patchItem).toHaveBeenCalledWith(
+      existing.id,
+      expect.objectContaining({ amountMinor: 12_000 }),
+    )
   })
 })
 
