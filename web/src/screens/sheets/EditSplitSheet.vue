@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AmountInput from '@/components/AmountInput.vue'
+import AmountKeypadField from '@/components/AmountKeypadField.vue'
 import PersonToggleRow from '@/components/PersonToggleRow.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import SplitBar, { type SplitPerson } from '@/components/SplitBar.vue'
@@ -112,7 +112,7 @@ async function save() {
     <div v-if="item" class="edit">
       <section class="edit__section">
         <h3 class="edit__label">{{ t('editSplit.amount') }}</h3>
-        <AmountInput
+        <AmountKeypadField
           v-model="amountMinor"
           test-id="edit-amount"
           :currency-code="trip.currencyCode"

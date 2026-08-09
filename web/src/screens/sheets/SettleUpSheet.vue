@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AmountInput from '@/components/AmountInput.vue'
+import AmountKeypadField from '@/components/AmountKeypadField.vue'
 import BalanceRow from '@/components/BalanceRow.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import TallyButton from '@/components/TallyButton.vue'
@@ -129,7 +129,7 @@ const undoClaim = (paybackId: string) => act(() => api.undoPayback(paybackId))
           data-testid="pay-form"
           @submit.prevent="pay"
         >
-          <AmountInput
+          <AmountKeypadField
             v-model="amountMinor"
             test-id="pay-amount"
             :currency-code="currencyCode"
@@ -189,16 +189,11 @@ const undoClaim = (paybackId: string) => act(() => api.undoPayback(paybackId))
 }
 
 .settle__pay {
+  /* A column, because the amount is a tappable box with a keypad that unfolds beneath it —
+     an inline row once pushed its own button 92px past a 390px viewport. */
   display: flex;
+  flex-direction: column;
   gap: var(--space-2);
-  align-items: center;
-}
-
-/* The amount field yields, the button does not: an input's intrinsic width once pushed the Pay
-   button 92px past a 390px viewport, clipped and unreachable. */
-.settle__pay > :first-child {
-  flex: 1;
-  min-width: 0;
 }
 
 .settle__error {

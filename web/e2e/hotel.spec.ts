@@ -41,7 +41,13 @@ test('the hotel case: ticking a late arrival onto the bill re-divides it for eve
   // every share — 30.00 exactly, four ways — with nothing stored to go stale.
   await page.getByTestId('expense-row').filter({ hasText: 'Hotel deposit' }).click()
   await page.getByTestId('edit-split-open').click()
-  await page.getByTestId('edit-amount').fill('12000')
+  // Tap the amount box: the keypad unfolds. Clear $100.00, key in $120.00.
+  await page.getByTestId('edit-amount').click()
+  for (let presses = 0; presses < 5; presses += 1) {
+    await page.getByTestId('key-del').click()
+  }
+  await typeAmount(page, '12000')
+  await expect(page.getByTestId('edit-amount')).toContainText('120.00')
   await page.getByTestId('save-split').click()
 
   await page.getByTestId('expense-row').filter({ hasText: 'Hotel deposit' }).click()

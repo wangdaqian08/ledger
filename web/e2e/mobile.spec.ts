@@ -86,6 +86,6 @@ test('the pay form fits the phone', async ({ page }) => {
   await page.getByTestId('settle-up').click()
   const sheet = page.getByTestId('sheet-panel')
   await sheet.getByTestId('row-pay').click()
-  await expect(sheet.getByTestId('pay-amount')).toHaveValue('25.00')
+  await expect(sheet.getByTestId('pay-amount')).toContainText('25.00')
   await expectNoSidewaysScroll(page, 'pay form open')
 })

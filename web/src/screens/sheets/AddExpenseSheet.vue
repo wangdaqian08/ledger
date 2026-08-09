@@ -11,6 +11,7 @@ import TextField from '@/components/TextField.vue'
 import { api, type CategoryView, type TripView } from '@/lib/api'
 import { currencySymbol, formatMinor } from '@/lib/money'
 import { newItemId, saltFor, splitShares } from '@/lib/split'
+import { pressKey } from '@/lib/till'
 import { DRAG_SCALE, normalizedWeights } from '@/lib/weights'
 
 /**
@@ -59,13 +60,7 @@ watch(
 )
 
 function onKey(key: KeypadKey) {
-  if (key === 'del') {
-    amountMinor.value = Math.floor(amountMinor.value / 10)
-    return
-  }
-  const shifted = amountMinor.value * 10 ** key.length + Number(key)
-  // Refusing beats wrapping: past the safe range the digits would stop being exact.
-  if (shifted <= Number.MAX_SAFE_INTEGER) amountMinor.value = shifted
+  amountMinor.value = pressKey(amountMinor.value, key)
 }
 
 const shown = computed(() =>
