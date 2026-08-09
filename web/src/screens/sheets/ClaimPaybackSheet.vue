@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AmountInput from '@/components/AmountInput.vue'
+import AmountKeypadField from '@/components/AmountKeypadField.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TextField from '@/components/TextField.vue'
@@ -67,9 +67,10 @@ async function send() {
   <SheetPanel :open="open" :title="t('claim.title')" @close="emit('close')">
     <form class="claim" @submit.prevent="send">
       <label class="claim__label">{{ t('claim.amount') }}</label>
-      <AmountInput
+      <AmountKeypadField
         v-model="amountMinor"
         test-id="claim-amount"
+        start-open
         :currency-code="currencyCode"
         :symbol="symbol"
       />

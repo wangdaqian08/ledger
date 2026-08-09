@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import AmountInput from '../src/components/AmountInput.vue'
+import AmountKeypadField from '../src/components/AmountKeypadField.vue'
 import CategoryPicker from '../src/components/CategoryPicker.vue'
 import PersonToggleRow from '../src/components/PersonToggleRow.vue'
 import SplitBar from '../src/components/SplitBar.vue'
@@ -142,6 +143,36 @@ describe('AmountInput', () => {
 
     // Same digits, different currency: 1999 minor units of yen are ¥1999, not ¥19.99.
     expect((input.find('input').element as HTMLInputElement).value).toBe('1999')
+  })
+})
+
+describe('AmountKeypadField', () => {
+  it('unfolds its keypad on tap and folds it again', async () => {
+    const field = mount(AmountKeypadField, { props: { modelValue: 2_500, testId: 'amt' } })
+    expect(field.text()).toContain('25.00')
+    expect(findByTestId(field, 'key-1').exists()).toBe(false)
+
+    await findByTestId(field, 'amt').trigger('click')
+    expect(findByTestId(field, 'key-1').exists()).toBe(true)
+
+    await findByTestId(field, 'amt').trigger('click')
+    expect(findByTestId(field, 'key-1').exists()).toBe(false)
+  })
+
+  it('keys shift cents through the shared till, delete included', async () => {
+    const field = mount(AmountKeypadField, {
+      props: { modelValue: 0, testId: 'amt', startOpen: true },
+    })
+
+    await findByTestId(field, 'key-4').trigger('click')
+    // The parent owns the model; feed the emitted value back like v-model would.
+    await field.setProps({ modelValue: field.emitted('update:modelValue')!.at(-1)![0] as number })
+    await findByTestId(field, 'key-2').trigger('click')
+    await field.setProps({ modelValue: field.emitted('update:modelValue')!.at(-1)![0] as number })
+    expect(field.props('modelValue')).toBe(42)
+
+    await findByTestId(field, 'key-del').trigger('click')
+    expect(field.emitted('update:modelValue')!.at(-1)![0]).toBe(4)
   })
 })
 

@@ -8,9 +8,10 @@ import TallyIcon from './TallyIcon.vue'
  * of minor units the way a till does, which is why there is no decimal-point key: the point is
  * presentation, and offering it would invite somebody to type one and expect a float.
  */
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', 'del'] as const
+import { KEYS, type KeypadKey } from '@/lib/till'
 
-export type KeypadKey = (typeof KEYS)[number]
+// Re-exported so callers importing the type alongside the component keep working.
+export type { KeypadKey }
 
 defineEmits<{ key: [KeypadKey] }>()
 </script>

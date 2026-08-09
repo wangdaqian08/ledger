@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import SheetPanel from '../src/components/SheetPanel.vue'
 import AddExpenseSheet from '../src/screens/sheets/AddExpenseSheet.vue'
 import ClaimPaybackSheet from '../src/screens/sheets/ClaimPaybackSheet.vue'
+import AmountKeypadField from '../src/components/AmountKeypadField.vue'
 import EditSplitSheet from '../src/screens/sheets/EditSplitSheet.vue'
 import InviteSheet from '../src/screens/sheets/InviteSheet.vue'
 import ItemDetailSheet from '../src/screens/sheets/ItemDetailSheet.vue'
@@ -521,10 +522,17 @@ describe('EditSplitSheet', () => {
 
     // Pre-filled with what the bill says now.
     const amount = findByTestId(sheet, 'edit-amount')
-    expect((amount.element as HTMLInputElement).value).toBe('90.00')
+    expect(amount.text()).toContain('90.00')
 
-    // Corrected to $120.00: the three previews re-derive to exact 40.00s before saving.
-    await amount.setValue('12000')
+    // Tap the box: the app's own keypad unfolds — no OS keyboard to rely on, least of all on a
+    // desktop browser. (Key-by-key plumbing is pinned in AmountKeypadField's own tests; here the
+    // corrected amount is driven through the field's v-model contract.)
+    await amount.trigger('click')
+    const field = sheet.findComponent(AmountKeypadField)
+    expect(findByTestId(field, 'key-del').exists()).toBe(true)
+    field.vm.$emit('update:modelValue', 12_000)
+    await nextTick()
+    expect(findByTestId(sheet, 'edit-amount').text()).toContain('120.00')
     const expected = splitShares({
       totalMinor: 12_000,
       weights: [1, 1, 1],
@@ -595,7 +603,7 @@ describe('ClaimPaybackSheet', () => {
     await sheet.setProps({ open: true })
     await nextTick()
 
-    expect((findByTestId(sheet, 'claim-amount').element as HTMLInputElement).value).toBe('25.00')
+    expect(findByTestId(sheet, 'claim-amount').text()).toContain('25.00')
 
     await sheet.find('form').trigger('submit')
     await flushPromises()
@@ -664,8 +672,7 @@ describe('SettleUpSheet', () => {
     await nextTick()
 
     await findByTestId(sheet, 'row-pay').trigger('click')
-    const input = findByTestId(sheet, 'pay-amount')
-    expect((input.element as HTMLInputElement).value).toBe('60.00')
+    expect(findByTestId(sheet, 'pay-amount').text()).toContain('60.00')
 
     await sheet.find('form').trigger('submit')
     await flushPromises()

@@ -59,7 +59,7 @@ test('pay → reject → try again → approve → undo, across two browsers', a
   await expect(bob.getByTestId('trip-position')).toContainText('You owe')
   await bob.getByTestId('expense-row').filter({ hasText: 'Dinner' }).click()
   await bob.getByTestId('pay-back-open').click()
-  await expect(bob.getByTestId('claim-amount')).toHaveValue('25.00')
+  await expect(bob.getByTestId('claim-amount')).toContainText('25.00')
   await bob.getByTestId('claim-send').click()
 
   await alice.goto(tripUrl)
