@@ -1,6 +1,7 @@
 package app.ledger.server.category
 
 import app.ledger.server.trip.TripAccess
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -35,20 +36,24 @@ class CategoryService(
             throw ResponseStatusException(HttpStatus.CONFLICT, "This trip already has a category like that")
         }
 
-        return categories
-            .save(
-                CategoryEntity(
-                    tripId = tripId,
-                    key = key,
-                    // Both languages get what was typed. A name somebody chose is not ours to
-                    // translate, and i18n covers the interface, not the user's own words.
-                    nameEn = name,
-                    nameZh = name,
-                    icon = command.icon.trim(),
-                    hue = command.hue.toShort(),
-                    sortOrder = (BUILT_IN_COUNT + categories.countByTripId(tripId) + 1).toShort(),
-                ),
-            ).toView()
+        val category = CategoryEntity(
+            tripId = tripId,
+            key = key,
+            // Both languages get what was typed. A name somebody chose is not ours to translate,
+            // and i18n covers the interface, not the user's own words.
+            nameEn = name,
+            nameZh = name,
+            icon = command.icon.trim(),
+            hue = command.hue.toShort(),
+            sortOrder = (BUILT_IN_COUNT + categories.countByTripId(tripId) + 1).toShort(),
+        )
+        val saved = try {
+            // Flushed in-transaction so two simultaneous adds of the same name are one 409, not a 500.
+            categories.saveAndFlush(category)
+        } catch (race: DataIntegrityViolationException) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "This trip already has a category like that", race)
+        }
+        return saved.toView()
     }
 
     private fun slugify(name: String) = name.lowercase().replace(NON_SLUG, "-").trim('-')

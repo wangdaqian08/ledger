@@ -75,7 +75,10 @@ class DemoData {
             hokkaido(bobUser)
             flat(signUp("Mei"))
 
-            println("Demo data ready. Sign in as Bob, Mei, or any of Friend 1..12 — the dev provider takes any name.")
+            println(
+                "Demo data ready. Sign in as Bob (Hokkaido) or Mei (Flat) to land on a seeded trip. " +
+                    "Friend 1..12 and Jack are unclaimed seats, not sign-ins — invite and claim them from inside a trip.",
+            )
         }
 
         /** The hotel case, mid-story: everybody has paid, and then Jack turned up. */

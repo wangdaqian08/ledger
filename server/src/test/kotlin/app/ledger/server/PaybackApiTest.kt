@@ -94,6 +94,35 @@ class PaybackApiTest : ApiTest() {
     }
 
     @Test
+    fun `a claim still awaiting review cannot be silently re-priced`() {
+        val trip = twoPeopleAndABill()
+        val claim = trip.bob.post("/api/items/${trip.item}/paybacks", claimOf(trip.bobMember, 5_000)).id()
+
+        // Bob filed $50 and it is sitting PENDING in front of Alice. He must not be able to change
+        // the amount she is looking at — correcting a claim is for one that was turned DOWN. Moving
+        // the goalposts mid-review would let Alice approve a number she never saw.
+        val moved = trip.bob.patch("/api/paybacks/$claim", mapOf("amountMinor" to 1))
+
+        assertEquals(HttpStatus.CONFLICT, moved.statusCode)
+        assertEquals(
+            5_000,
+            trip.alice
+                .get("/api/items/${trip.item}")
+                .json()["paybacks"]
+                .single()["amountMinor"]
+                .asLong(),
+        )
+        assertEquals(
+            "PENDING",
+            trip.alice
+                .get("/api/items/${trip.item}")
+                .json()["paybacks"]
+                .single()["status"]
+                .asText(),
+        )
+    }
+
+    @Test
     fun `an approved claim cannot be quietly edited`() {
         val trip = twoPeopleAndABill()
         val claim = trip.bob.post("/api/items/${trip.item}/paybacks", claimOf(trip.bobMember, 5_000)).id()

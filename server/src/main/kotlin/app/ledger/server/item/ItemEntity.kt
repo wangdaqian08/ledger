@@ -8,6 +8,7 @@ import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 import java.io.Serializable
 import java.time.Instant
 import java.time.LocalDate
@@ -52,6 +53,14 @@ class ItemEntity(
     /** The column has a default, but nothing in Postgres advances it — the service must. */
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now(),
+    /**
+     * Optimistic-lock version, managed by Hibernate. Two edits that started from the same state
+     * cannot both commit: the second finds the version has moved and is refused with a 409 rather
+     * than silently overwriting the first — see [app.ledger.server.ApiExceptionHandler].
+     */
+    @Version
+    @Column(nullable = false)
+    var version: Long = 0,
 )
 
 @Embeddable

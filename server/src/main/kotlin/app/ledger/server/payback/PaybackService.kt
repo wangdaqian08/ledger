@@ -6,7 +6,6 @@ import app.ledger.server.trip.TripAccess
 import app.ledger.server.trip.TripEntity
 import app.ledger.server.trip.TripMemberRepository
 import org.springframework.http.HttpStatus
-import org.springframework.security.access.AccessDeniedException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
@@ -48,7 +47,10 @@ class PaybackService(
         val claimant = member(command.fromMemberId)
         val recordedByThePersonOwed = payer.userId == actor
         if (claimant.userId != actor && !recordedByThePersonOwed) {
-            throw AccessDeniedException("Only you, or the person you owe, can record that you have paid")
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "Only you, or the person you owe, can record that you have paid",
+            )
         }
 
         return paybacks
@@ -95,6 +97,10 @@ class PaybackService(
      * Correct a turned-down claim and send it back. The amount and date are the things that get
      * disputed, so they are what can change; who paid whom cannot, because that would make this a
      * different claim wearing the same id.
+     *
+     * Only a REJECTED claim can be corrected. A PENDING one is sitting in front of the person owed:
+     * moving its amount underneath them would let them approve a figure they never saw, so it is
+     * refused — withdraw and file again if it was wrong. An APPROVED one is agreed; undo it instead.
      */
     @Transactional
     fun resubmit(paybackId: UUID, command: ResubmitPayback, actor: UUID): PaybackView {
@@ -102,12 +108,20 @@ class PaybackService(
         access.visibleTrip(payback.tripId, actor)
 
         if (member(payback.fromMemberId).userId != actor) {
-            throw AccessDeniedException("Only the person who made this claim can correct it")
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only the person who made this claim can correct it")
         }
-        if (payback.status == PaybackStatusName.APPROVED) {
-            // Already agreed. Undo it if it is wrong — editing an approved record behind the
-            // approver's back is exactly what the two-party rule exists to prevent.
-            throw ResponseStatusException(HttpStatus.CONFLICT, "This has been approved; undo it instead")
+        when (payback.status) {
+            PaybackStatusName.APPROVED -> {
+                throw ResponseStatusException(HttpStatus.CONFLICT, "This has been approved; undo it instead")
+            }
+
+            PaybackStatusName.PENDING -> {
+                throw ResponseStatusException(HttpStatus.CONFLICT, "This claim is still waiting on the other person")
+            }
+
+            PaybackStatusName.REJECTED -> {
+                Unit
+            }
         }
 
         command.amountMinor?.let { payback.amountMinor = it }
@@ -133,7 +147,10 @@ class PaybackService(
 
         val isEitherParty = member(payback.fromMemberId).userId == actor || member(payback.toMemberId).userId == actor
         if (!isEitherParty && trip.createdByUserId != actor) {
-            throw AccessDeniedException("Only the two people involved, or the trip's creator, can undo this")
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "Only the two people involved, or the trip's creator, can undo this",
+            )
         }
         paybacks.delete(payback)
     }
@@ -146,18 +163,34 @@ class PaybackService(
     }
 
     /**
-     * The approval rule, in one place: the person owed, or the trip's creator.
+     * The approval rule, in one place: the person owed, or the trip's creator — but never the person
+     * paying (spec §3, §7a). Someone cannot wave through their own repayment; the recipient's
+     * agreement is the whole point.
      *
-     * The creator is included on the strength of §5's permissions table. It is worth being clear
-     * about what it means — the creator can mark a debt between two other people as settled — and
-     * it is deliberate, so that a trip does not stall when somebody stops answering their phone.
+     * The creator is included on the strength of §5's permissions table, so a trip does not stall
+     * when somebody stops answering their phone. That collides with "never the payer" in exactly one
+     * place — a creator who is also the one paying — and there the recipient decides who wins: if the
+     * recipient is a signed-in member, only they can approve, and the creator hat does not override
+     * that. Only when the recipient has never signed in (and so cannot speak for themselves) may the
+     * creator vouch for their own payment, which is the ghost-settlement §5 exists to allow.
      */
     private fun reviewable(paybackId: UUID, actor: UUID): PaybackEntity {
         val payback = paybacks.findById(paybackId).orElseThrow { noSuchPayback() }
         val trip: TripEntity = access.visibleTrip(payback.tripId, actor)
+        val recipient = member(payback.toMemberId)
+        val payer = member(payback.fromMemberId)
 
-        if (member(payback.toMemberId).userId != actor && trip.createdByUserId != actor) {
-            throw AccessDeniedException("Only the person owed, or the trip's creator, can decide this")
+        if (recipient.userId != actor && trip.createdByUserId != actor) {
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "Only the person owed, or the trip's creator, can decide this",
+            )
+        }
+        if (payer.userId == actor && recipient.userId != null) {
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "You cannot approve a repayment you are the one making — that is for the person you paid",
+            )
         }
         if (payback.status != PaybackStatusName.PENDING) {
             throw ResponseStatusException(HttpStatus.CONFLICT, "This has already been decided")

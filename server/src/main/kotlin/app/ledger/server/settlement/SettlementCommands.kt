@@ -1,5 +1,7 @@
 package app.ledger.server.settlement
 
+import app.ledger.server.MAX_AMOUNT_MINOR
+import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Positive
 import java.util.UUID
 
@@ -7,6 +9,7 @@ import java.util.UUID
 data class SubmitSettlement(
     val toMemberId: UUID,
     @field:Positive(message = "a settlement has to be for some money")
+    @field:Max(MAX_AMOUNT_MINOR)
     val amountMinor: Long,
 )
 

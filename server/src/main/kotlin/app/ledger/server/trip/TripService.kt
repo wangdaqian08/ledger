@@ -64,14 +64,19 @@ class TripService(
     @Transactional(readOnly = true)
     fun listFor(actor: UUID): TripsView {
         val visible = trips.findAllForUser(actor)
-        if (visible.isEmpty()) return TripsView(emptyList(), 0, 0)
+        if (visible.isEmpty()) return TripsView(emptyList(), emptyList(), 0)
 
         val loaded = snapshots.loadAll(visible.map { it.id })
         val views = visible.mapNotNull { trip -> loaded[trip.id]?.let { trip.toView(it, actor) } }
 
         return TripsView(
             trips = views,
-            overallNetMinor = views.sumOf { it.yourNetMinor },
+            // One line per currency, each summed on its own. Sorted so the home screen is stable
+            // rather than at the mercy of trip order.
+            overalls = views
+                .groupBy { it.currencyCode }
+                .map { (code, group) -> CurrencyTotalView(code, group.sumOf { it.yourNetMinor }) }
+                .sortedBy { it.currencyCode },
             // "Settled" is being square with the group, which is what the GroupsHome badge means.
             settledTripCount = views.count { it.yourNetMinor == 0L },
         )
@@ -92,10 +97,15 @@ class TripService(
             throw ResponseStatusException(HttpStatus.CONFLICT, "Somebody on this trip already has that name")
         }
 
-        val member = members.save(
-            TripMemberEntity(tripId = trip.id, displayName = displayName, personHue = nextHue(trip.id)),
-        )
-        return member.toMemberView(actor)
+        val member = TripMemberEntity(tripId = trip.id, displayName = displayName, personHue = nextHue(trip.id))
+        val saved = try {
+            // Flushed inside the transaction so two simultaneous adds of the same name become one
+            // 409, the same answer the second would get arriving a moment later — not a bare 500.
+            members.saveAndFlush(member)
+        } catch (race: DataIntegrityViolationException) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Somebody on this trip already has that name", race)
+        }
+        return saved.toMemberView(actor)
     }
 
     /** Trip creator only: the share link is how the roster gets filled, so it follows the roster rule. */
@@ -186,18 +196,28 @@ class TripService(
     }
 }
 
-private fun TripEntity.toView(snapshot: TripSnapshot, actor: UUID) = TripView(
-    id = id,
-    name = name,
-    icon = icon,
-    hue = hue,
-    currencyCode = currencyCode,
-    startsOn = startsOn,
-    endsOn = endsOn,
-    members = snapshot.roster.map { it.toMemberView(actor) },
-    items = snapshot.items.map { snapshot.toView(it, actor) },
-    yourNetMinor = snapshot.memberFor(actor)?.let { snapshot.netFor(it.id) } ?: 0L,
-)
+private fun TripEntity.toView(snapshot: TripSnapshot, actor: UUID): TripView {
+    val you = snapshot.memberFor(actor)
+    return TripView(
+        id = id,
+        name = name,
+        icon = icon,
+        hue = hue,
+        currencyCode = currencyCode,
+        startsOn = startsOn,
+        endsOn = endsOn,
+        members = snapshot.roster.map { it.toMemberView(actor) },
+        items = snapshot.items.map { snapshot.toView(it, actor) },
+        yourNetMinor = you?.let { snapshot.netFor(it.id) } ?: 0L,
+        // The three headline figures, derived here so TripScreen shows them rather than re-summing
+        // the items itself — a locally recomputed total is exactly the stale number the design avoids.
+        groupSpendMinor = snapshot.items.sumOf { it.amountMinor },
+        yourShareMinor = you?.let { me -> snapshot.items.sumOf { snapshot.sharesOf(it)[me.id] ?: 0L } } ?: 0L,
+        youFrontedMinor =
+            you?.let { me -> snapshot.items.filter { it.payerMemberId == me.id }.sumOf { it.amountMinor } } ?: 0L,
+        youAreCreator = createdByUserId == actor,
+    )
+}
 
 private fun TripMemberEntity.toMemberView(actor: UUID) = MemberView(
     id = id,

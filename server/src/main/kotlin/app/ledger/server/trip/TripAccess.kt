@@ -1,7 +1,6 @@
 package app.ledger.server.trip
 
 import org.springframework.http.HttpStatus
-import org.springframework.security.access.AccessDeniedException
 import org.springframework.stereotype.Component
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
@@ -27,11 +26,15 @@ class TripAccess(
         return trip
     }
 
-    /** Trip creator only — the roster rules (spec §5). 403, because they are on the trip. */
+    /**
+     * Trip creator only — the roster rules (spec §5). 403, because they are on the trip, and a
+     * ResponseStatusException so the reason rides the RFC 7807 body: a bare 403 the client cannot
+     * explain is the legacy error shape problemdetails exists to replace.
+     */
     fun creatorOnly(tripId: UUID, actor: UUID): TripEntity {
         val trip = visibleTrip(tripId, actor)
         if (trip.createdByUserId != actor) {
-            throw AccessDeniedException("Only the person who created this trip can do that")
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only the person who created this trip can do that")
         }
         return trip
     }

@@ -7,13 +7,21 @@ import app.ledger.server.trip.TripEntity
 import app.ledger.server.trip.TripMemberRepository
 import app.ledger.server.trip.TripSnapshot
 import app.ledger.server.trip.TripSnapshots
+import jakarta.persistence.EntityManager
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
-import org.springframework.security.access.AccessDeniedException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import java.util.UUID
+
+/**
+ * The insert of a client-minted item id lost a race to an identical one. Thrown so the controller
+ * can retry the create in a fresh transaction, where the pre-check now finds the winner and answers
+ * the retry as an idempotent replay — the whole point of the client minting the id (spec §6).
+ */
+class ItemIdRace(val id: UUID) : RuntimeException()
 
 @Service
 class ItemService(
@@ -23,6 +31,7 @@ class ItemService(
     private val categories: CategoryRepository,
     private val snapshots: TripSnapshots,
     private val access: TripAccess,
+    private val entityManager: EntityManager,
 ) {
     /** Any trip member can record what they spent (spec §5). */
     @Transactional
@@ -44,20 +53,33 @@ class ItemService(
         validateSplit(command.splitRule, command.amountMinor, command.sharedBy)
         requireCategoryAvailable(trip.id, command.categoryId)
 
-        val item = items.save(
-            ItemEntity(
-                id = command.id ?: UUID.randomUUID(),
-                tripId = trip.id,
-                title = command.title.trim(),
-                categoryId = command.categoryId,
-                amountMinor = command.amountMinor,
-                splitRule = command.splitRule,
-                payerMemberId = command.payerMemberId,
-                spentOn = command.spentOn,
-                note = command.note?.trim()?.ifEmpty { null },
-                createdByUserId = actor,
-            ),
+        val item = ItemEntity(
+            id = command.id ?: UUID.randomUUID(),
+            tripId = trip.id,
+            title = command.title.trim(),
+            categoryId = command.categoryId,
+            amountMinor = command.amountMinor,
+            splitRule = command.splitRule,
+            payerMemberId = command.payerMemberId,
+            spentOn = command.spentOn,
+            note = command.note?.trim()?.ifEmpty { null },
+            createdByUserId = actor,
         )
+        try {
+            // persist, not save: the id is client-assigned, so repository.save would merge — a
+            // SELECT-then-INSERT that quietly turns a duplicate id into an UPDATE. persist always
+            // INSERTs, so a lost race meets the unique constraint head-on. Flushed now, inside the
+            // transaction, so that surfaces here as something we can catch rather than a commit-time
+            // 500. (items.flush routes through the repository proxy, which translates the exception.)
+            entityManager.persist(item)
+            items.flush()
+        } catch (race: DataIntegrityViolationException) {
+            // Two creates of the same client-minted id passed the replay check together, and this
+            // one lost the insert. A retry, not a duplicate — hand it back to the controller to
+            // answer as the replay it is, rather than doubling somebody's dinner.
+            command.id?.let { throw ItemIdRace(it) }
+            throw race
+        }
         writeShares(item, command.sharedBy)
 
         return CreatedItem(viewOf(item.id, trip.id, actor), fresh = true)
@@ -103,7 +125,16 @@ class ItemService(
         )
         command.categoryId?.let { requireCategoryAvailable(trip.id, it) }
 
-        command.title?.let { item.title = it.trim() }
+        command.title?.let {
+            val trimmed = it.trim()
+            // Create refuses a blank name (@NotBlank); a patch must too, or a correction can leave
+            // an expense nameless on every screen. Absent still means unchanged — only a supplied
+            // blank is refused.
+            if (trimmed.isEmpty()) {
+                throw ResponseStatusException(HttpStatus.BAD_REQUEST, "an expense has to have a name")
+            }
+            item.title = trimmed
+        }
         command.categoryId?.let { item.categoryId = it }
         command.amountMinor?.let { item.amountMinor = it }
         command.splitRule?.let { item.splitRule = it }
@@ -134,7 +165,10 @@ class ItemService(
         // The payer fronted the money, so it is theirs to correct; the trip creator can correct
         // anything. Everybody else views and claims.
         if (payer.userId != actor && trip.createdByUserId != actor) {
-            throw AccessDeniedException("Only the person who paid, or the trip's creator, can change this expense")
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "Only the person who paid, or the trip's creator, can change this expense",
+            )
         }
         return trip
     }
@@ -167,8 +201,17 @@ class ItemService(
             }
 
             SplitRuleName.WEIGHTED -> {
-                if (sharedBy.any { (it.weight ?: 0) <= 0 }) {
-                    throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Every weight has to be a positive number")
+                // Zero is allowed — on the bill for the record, owing nothing — matching the engine,
+                // the browser's split port and the pinned vectors. Only a negative is nonsense, and
+                // somebody has to carry weight or there is nothing to divide by.
+                if (sharedBy.any { (it.weight ?: 0) < 0 }) {
+                    throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A weight cannot be negative")
+                }
+                if (sharedBy.none { (it.weight ?: 0) > 0 }) {
+                    throw ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "At least one person has to carry some weight",
+                    )
                 }
                 // The engine refuses combinations where amount × weight cannot fit in a Long,
                 // because past that point the arithmetic wraps and the shares come out wrong with

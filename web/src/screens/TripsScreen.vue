@@ -41,14 +41,11 @@ const GROUP_ICONS = [
 ]
 
 const overview = computed(() => trips.overview)
-const overallTone = computed(() => {
-  const net = overview.value?.overallNetMinor ?? 0
-  return net === 0 ? 'settled' : net > 0 ? 'owed' : 'owe'
-})
-const overallLabel = computed(() => {
-  const net = overview.value?.overallNetMinor ?? 0
-  return net === 0 ? t('money.allSquare') : net > 0 ? t('money.youAreOwed') : t('money.youOwe')
-})
+// One figure per currency: ¥ added to $ is a meaningless number, so each stands on its own line
+// with its own symbol. The server sends the per-currency breakdown already summed.
+const toneFor = (net: number) => (net === 0 ? 'settled' : net > 0 ? 'owed' : 'owe')
+const labelFor = (net: number) =>
+  net === 0 ? t('money.allSquare') : net > 0 ? t('money.youAreOwed') : t('money.youOwe')
 
 onMounted(async () => {
   try {
@@ -96,14 +93,17 @@ async function signOut() {
       }}</TallyButton>
     </header>
 
-    <TallyCard v-if="overview" class="trips__hero" data-testid="overall-hero">
-      <p class="trips__hero-label">{{ overallLabel }}</p>
-      <AmountText
-        :amount-minor="Math.abs(overview.overallNetMinor)"
-        size="hero"
-        :tone="overallTone"
-        currency-code="AUD"
-      />
+    <TallyCard v-if="overview && overview.overalls.length > 0" class="trips__hero" data-testid="overall-hero">
+      <div v-for="total in overview.overalls" :key="total.currencyCode" class="trips__overall">
+        <p class="trips__hero-label">{{ labelFor(total.netMinor) }}</p>
+        <AmountText
+          :amount-minor="Math.abs(total.netMinor)"
+          size="hero"
+          :tone="toneFor(total.netMinor)"
+          :currency-code="total.currencyCode"
+          :symbol="currencySymbol(total.currencyCode)"
+        />
+      </div>
       <ProgressBar
         v-if="overview.trips.length > 0"
         :covered-minor="overview.settledTripCount"
@@ -205,6 +205,12 @@ async function signOut() {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.trips__overall {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .trips__hero-label {

@@ -15,7 +15,6 @@ import JoinScreen from '../src/screens/JoinScreen.vue'
 import SignInScreen from '../src/screens/SignInScreen.vue'
 import TripScreen from '../src/screens/TripScreen.vue'
 import TripsScreen from '../src/screens/TripsScreen.vue'
-import { i18n } from '../src/i18n'
 import { findAllByTestId, findByTestId } from './testids'
 import { saltFor, splitShares } from '../src/lib/split'
 import type { ItemView, MemberView, SettlementView, TripView } from '../src/lib/api'
@@ -99,6 +98,10 @@ function trip(overrides: Partial<TripView> = {}): TripView {
     members: [you, bob, cara],
     items: [],
     yourNetMinor: 0,
+    groupSpendMinor: 0,
+    yourShareMinor: 0,
+    youFrontedMinor: 0,
+    youAreCreator: true,
     ...overrides,
   }
 }
@@ -128,7 +131,7 @@ beforeEach(() => {
 
 // Sheets teleport to <body>; stubbing the teleport keeps their content inside the wrapper where
 // the assertions can see it.
-const global = () => ({ plugins: [i18n, router], stubs: { teleport: true } })
+const global = () => ({ plugins: [router], stubs: { teleport: true } })
 
 describe('SignInScreen', () => {
   it('signs in with the trimmed name and moves on', async () => {
@@ -181,7 +184,7 @@ describe('TripsScreen', () => {
     })
     mocked.trips!.mockResolvedValue({
       trips: [trip({ yourNetMinor: -4_280 }), trip({ id: 't-2', name: 'Flat', yourNetMinor: 0 })],
-      overallNetMinor: -4_280,
+      overalls: [{ currencyCode: 'AUD', netMinor: -4_280 }],
       settledTripCount: 1,
     })
 
@@ -205,10 +208,15 @@ describe('TripScreen', () => {
     ])
   }
 
-  it('derives the three stats from the items, and groups the feed by day', async () => {
+  it('shows the three headline figures the server derived, and groups the feed by day', async () => {
     serve(
       trip({
         yourNetMinor: 9_000,
+        // The three figures now come from the payload, derived by the engine — the screen no longer
+        // re-sums the items itself (that was the stale-number risk the design forbids).
+        groupSpendMinor: 12_000,
+        yourShareMinor: 4_000,
+        youFrontedMinor: 9_000,
         items: [
           item({ id: 'i-1', amountMinor: 9_000, yourShareMinor: 3_000, spentOn: '2026-08-07' }),
           item({
@@ -705,6 +713,7 @@ describe('SettleUpSheet', () => {
         open: true,
         tripId: 't-1',
         myMemberId: you.id,
+        youAreCreator: true,
         rows: [{ memberId: bob.id, displayName: 'Bob', personHue: 2, owedMinor: 6_000, pending: [] }],
         currencyCode: 'AUD',
         symbol: '$',
@@ -730,6 +739,7 @@ describe('SettleUpSheet', () => {
         open: true,
         tripId: 't-1',
         myMemberId: you.id,
+        youAreCreator: true,
         rows: [{ memberId: bob.id, displayName: 'Bob', personHue: 2, owedMinor: -4_230, pending: [] }],
         currencyCode: 'AUD',
         symbol: '$',

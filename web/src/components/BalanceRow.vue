@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import AmountText from './AmountText.vue'
 import PersonAvatar from './PersonAvatar.vue'
 import TallyButton from './TallyButton.vue'
@@ -32,6 +33,8 @@ withDefaults(
 )
 
 defineEmits<{ pay: []; remind: [] }>()
+
+const { t } = useI18n()
 </script>
 
 <template>
@@ -40,14 +43,14 @@ defineEmits<{ pay: []; remind: [] }>()
 
     <div class="row__body">
       <div class="row__name">{{ displayName }}</div>
-      <!-- The state is two short words and must stay on one line: "Owes / you" split across
-           two reads like a different sentence. Names may wrap; the caption may not. -->
+      <!-- Direction stays put even while a claim is pending: which way the money goes is the one
+           thing the row must never drop. The waiting note sits under it, not in place of it. -->
       <div class="row__state">
-        <template v-if="pending">Waiting for confirmation</template>
-        <template v-else-if="owedMinor === 0">All square</template>
-        <template v-else-if="owedMinor > 0">Owes you</template>
-        <template v-else>You owe</template>
+        <template v-if="owedMinor === 0">{{ t('money.allSquare') }}</template>
+        <template v-else-if="owedMinor > 0">{{ t('settle.owesYouShort') }}</template>
+        <template v-else>{{ t('settle.youOweShort') }}</template>
       </div>
+      <div v-if="pending" class="row__pending">{{ t('settle.waiting') }}</div>
     </div>
 
     <AmountText
@@ -66,11 +69,11 @@ defineEmits<{ pay: []; remind: [] }>()
       data-testid="row-remind"
       @click="$emit('remind')"
     >
-      {{ reminded ? 'Reminded ✓' : 'Remind' }}
+      {{ reminded ? t('settle.reminded') : t('settle.remind') }}
     </TallyButton>
-    <TallyButton v-else-if="owedMinor < 0 && !pending" size="sm" data-testid="row-pay" @click="$emit('pay')"
-      >Pay</TallyButton
-    >
+    <TallyButton v-else-if="owedMinor < 0 && !pending" size="sm" data-testid="row-pay" @click="$emit('pay')">
+      {{ t('settle.pay') }}
+    </TallyButton>
   </div>
 </template>
 
@@ -103,6 +106,13 @@ defineEmits<{ pay: []; remind: [] }>()
   font-size: var(--text-caption);
   color: var(--text-muted);
   margin-top: 2px;
+  white-space: nowrap;
+}
+
+.row__pending {
+  font-size: var(--text-caption);
+  color: var(--lemon-ink, var(--text-subtle));
+  margin-top: 1px;
   white-space: nowrap;
 }
 </style>

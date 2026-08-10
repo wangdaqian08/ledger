@@ -8,7 +8,7 @@ import SheetPanel from '@/components/SheetPanel.vue'
 import TallyBadge from '@/components/TallyBadge.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TextField from '@/components/TextField.vue'
-import { api, type CategoryView, type ItemDetail, type TripView } from '@/lib/api'
+import { api, type CategoryView, type ItemDetail, type PaybackView, type TripView } from '@/lib/api'
 import { currencySymbol, formatMinor } from '@/lib/money'
 
 /**
@@ -30,7 +30,7 @@ const emit = defineEmits<{
   edit: [item: ItemDetail]
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const detail = ref<ItemDetail | null>(null)
 const rejecting = ref<string | null>(null)
@@ -42,18 +42,58 @@ const symbol = computed(() => currencySymbol(props.trip.currencyCode))
 const me = computed(() => props.trip.members.find((m) => m.isYou) ?? null)
 const payerName = computed(() => memberName(detail.value?.payerMemberId ?? ''))
 const iAmPayer = computed(() => detail.value?.payerMemberId === me.value?.id)
+// The server lets the trip's creator correct or decide anything, not only the payer; the UI now
+// offers what the server allows instead of making the creator discover it through a 403.
+const iCanEdit = computed(() => iAmPayer.value || props.trip.youAreCreator)
 
-/** What I still owe on this bill: my share minus what I have already had approved. */
+const categoryName = computed(() => {
+  const category = props.categories.find((c) => c.id === detail.value?.categoryId)
+  if (!category) return ''
+  return locale.value.startsWith('zh') ? category.nameZh : category.nameEn
+})
+const spentOnLabel = computed(() => {
+  const iso = detail.value?.spentOn
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: 'short', day: 'numeric' }).format(
+    new Date(y!, m! - 1, d),
+  )
+})
+const splitRuleLabel = computed(() =>
+  detail.value?.splitRule === 'WEIGHTED'
+    ? t('itemDetail.splitWeighted')
+    : detail.value?.splitRule === 'EXACT'
+      ? t('itemDetail.splitExact')
+      : t('itemDetail.splitEqual'),
+)
+
+/**
+ * What I still owe on this bill: my share minus what I have already claimed — pending claims
+ * included, so filing one hides the button rather than inviting a duplicate.
+ */
 const myRemaining = computed(() => {
   const d = detail.value
   const my = me.value
   if (!d || !my) return 0
   const share = d.splits.find((s) => s.memberId === my.id)?.amountMinor ?? 0
   const repaid = d.paybacks
-    .filter((p) => p.fromMemberId === my.id && p.status === 'APPROVED')
+    .filter((p) => p.fromMemberId === my.id && (p.status === 'APPROVED' || p.status === 'PENDING'))
     .reduce((sum, p) => sum + p.amountMinor, 0)
   return Math.max(0, share - repaid)
 })
+
+/** Can I decide this claim? The person owed always; the creator too, but never their own claim. */
+function canDecide(payback: PaybackView): boolean {
+  if (payback.status !== 'PENDING') return false
+  if (iAmPayer.value) return true
+  return props.trip.youAreCreator && me.value?.id !== payback.fromMemberId
+}
+
+/** Can I undo it? The claimant any time; the person owed or the creator once it is approved. */
+function canUndo(payback: PaybackView): boolean {
+  if (payback.fromMemberId === me.value?.id) return true
+  return (iAmPayer.value || props.trip.youAreCreator) && payback.status === 'APPROVED'
+}
 
 watch(
   () => [props.open, props.itemId] as const,
@@ -98,7 +138,7 @@ async function reject(paybackId: string) {
 }
 
 async function remove() {
-  if (!props.itemId || !confirm(t('itemDetail.deleteConfirm'))) return
+  if (!props.itemId || busy.value || !confirm(t('itemDetail.deleteConfirm'))) return
 
   // Confirmed repayments are records of money that really changed hands, and they die with the
   // bill (spec §5: item claims cascade). That is never a single-tap decision: name the count and
@@ -113,8 +153,21 @@ async function remove() {
     if (!confirm(t('itemDetail.deleteApprovedConfirm', { count: approved.length, amount }))) return
   }
 
-  await act(() => api.deleteItem(props.itemId!))
-  emit('close')
+  // Not routed through act(): that reloads the item, and this item is about to not exist. Refresh
+  // the feed (so the deleted row and the moved balances land) and close — but only once the delete
+  // has actually succeeded. A refused delete (a 403) keeps the sheet open with the reason, rather
+  // than closing and destroying the message.
+  busy.value = true
+  error.value = ''
+  try {
+    await api.deleteItem(props.itemId)
+    emit('changed')
+    emit('close')
+  } catch (failure) {
+    error.value = failure instanceof Error ? failure.message : String(failure)
+  } finally {
+    busy.value = false
+  }
 }
 </script>
 
@@ -133,17 +186,24 @@ async function remove() {
             :symbol="symbol"
           />
         </div>
-        <div v-if="detail.yourShareMinor > 0 && !iAmPayer" class="detail__yours">
-          <p class="detail__label">{{ t('itemDetail.yourShare') }}</p>
+        <div v-if="detail.yourShareMinor > 0" class="detail__yours">
+          <p class="detail__label">{{ t('itemDetail.yourPortion') }}</p>
+          <!-- The payer sees their share too — it is not a debt (they fronted the bill), so it is
+               shown in neutral ink rather than the owe colour. -->
           <AmountText
             :amount-minor="detail.yourShareMinor"
             size="lg"
-            tone="owe"
+            :tone="iAmPayer ? 'neutral' : 'owe'"
             :currency-code="trip.currencyCode"
             :symbol="symbol"
           />
         </div>
       </div>
+
+      <!-- Category, date and how it was split — the facts the detail sheet used to omit. -->
+      <p v-if="categoryName || spentOnLabel" class="detail__meta">
+        {{ [categoryName, spentOnLabel, splitRuleLabel].filter(Boolean).join(' · ') }}
+      </p>
 
       <section class="detail__section">
         <h3 class="detail__label">{{ t('itemDetail.paidBy') }}</h3>
@@ -168,7 +228,7 @@ async function remove() {
         <!-- The count matters when the list is long: thirteen people is a scroll, and knowing the
              money went thirteen ways is the fact the heading owes you up front. -->
         <h3 class="detail__label" data-testid="how-split">
-          {{ t('itemDetail.howSplit', { count: detail.splits.length }) }}
+          {{ t('itemDetail.howSplit', { count: detail.splits.length }) }} · {{ splitRuleLabel }}
         </h3>
         <div v-for="split in detail.splits" :key="split.memberId" class="detail__row" data-testid="split-row">
           <PersonAvatar
@@ -213,7 +273,9 @@ async function remove() {
                 payback.status === 'APPROVED'
                   ? t('payback.approved')
                   : payback.status === 'PENDING'
-                    ? t('payback.pending', { name: payerName })
+                    ? iAmPayer
+                      ? t('itemDetail.waitingOn')
+                      : t('payback.pending', { name: payerName })
                     : t('payback.rejected')
               }}
             </TallyBadge>
@@ -231,7 +293,7 @@ async function remove() {
                settled bill can un-settle, the accepted cost of never trapping a wrong record.
                The server holds the real rule; these buttons only appear where they will succeed. -->
           <div v-if="payback.status !== 'REJECTED'" class="detail__decide">
-            <template v-if="iAmPayer && payback.status === 'PENDING'">
+            <template v-if="canDecide(payback)">
               <TallyButton
                 size="sm"
                 variant="secondary"
@@ -244,10 +306,10 @@ async function remove() {
                 {{ t('itemDetail.approve') }}
               </TallyButton>
             </template>
-            <!-- The claimant can always withdraw; the person owed un-does an *approved* one
-                 (a pending claim they disagree with has Reject, which says why). -->
+            <!-- The claimant can always withdraw; the person owed or the creator un-does an
+                 *approved* one (a pending claim they disagree with has Reject, which says why). -->
             <TallyButton
-              v-if="payback.fromMemberId === me?.id || (iAmPayer && payback.status === 'APPROVED')"
+              v-if="canUndo(payback)"
               size="sm"
               variant="ghost"
               data-testid="undo-claim"
@@ -284,7 +346,7 @@ async function remove() {
              the creator) corrects it. EXACT bills stay out: their people change means retyping
              amounts, a different conversation. -->
         <TallyButton
-          v-if="iAmPayer && detail.splitRule !== 'EXACT'"
+          v-if="iCanEdit && detail.splitRule !== 'EXACT'"
           variant="secondary"
           size="sm"
           data-testid="edit-split-open"
@@ -292,7 +354,7 @@ async function remove() {
         >
           {{ t('editSplit.title') }}
         </TallyButton>
-        <TallyButton v-if="iAmPayer" variant="danger" size="sm" data-testid="delete-item" @click="remove">
+        <TallyButton v-if="iCanEdit" variant="danger" size="sm" data-testid="delete-item" @click="remove">
           {{ t('itemDetail.delete') }}
         </TallyButton>
         <!-- Never for the payer: their own share is not a debt, and the server refuses a
@@ -326,6 +388,12 @@ async function remove() {
 
 .detail__yours {
   text-align: right;
+}
+
+.detail__meta {
+  font-size: var(--text-caption);
+  color: var(--text-muted);
+  overflow-wrap: break-word;
 }
 
 .detail__label {
