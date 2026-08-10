@@ -110,7 +110,7 @@ that item's exact amount.
 | New item default | **Nobody ticked.** An `All` chip selects everyone in one tap. |
 | Payers | Exactly one per item. |
 | Paybacks | Filed under an item, or trip-level with no item (the Settle-up screen). Amount + date + optional screenshot. |
-| Approval | **The person owed**, or the trip's creator. On an item the person owed is the payer, who fronted the money; at trip level it is whoever the money is going to. Them ticking a name off themselves is instant, since the only agreement needed is their own. The creator is included so a trip cannot stall when somebody stops answering their phone — the cost being that a creator can mark a debt between two other people as settled. That is deliberate; it was the one place §3 and §5 disagreed, and §5 won. |
+| Approval | **The person owed**, or the trip's creator — but never the person paying, enforced with a 403 even when that person is the creator. On an item the person owed is the payer, who fronted the money; at trip level it is whoever the money is going to. Them ticking a name off themselves is instant, since the only agreement needed is their own. The creator is included so a trip cannot stall when somebody stops answering their phone — the cost being that a creator can mark a debt between two other people as settled — and a creator may vouch for their *own* payment only to a member who has never signed in and so cannot confirm it. That is deliberate; it was the one place §3 and §5 disagreed, and §5 won. |
 | Rejection | Reject with a reason → avatar turns coral → claimant edits and resubmits. |
 | Item state | `ALL_SQUARE` when every sharer's approved paybacks ≥ their share. Card greys out, sinks down. |
 | Final settlement | **Recorded.** Tapping Pay sends a request to the person owed; it sits pending until they approve. Display-only is no longer possible — a pending approval is state. |
@@ -233,7 +233,14 @@ categories(id, trip_id NULL, key, name_en, name_zh, icon, hue, sort_order)
                                            -- trip_id NULL = built-in; non-null = user-added
 
 items(id, trip_id, title, category_id, amount_minor BIGINT, payer_member_id,
-      spent_on, note, created_by_user_id, created_at, updated_at)
+      spent_on, note, created_by_user_id, created_at, updated_at, version BIGINT)
+                                           -- amount_minor is bounded on input (≤ 1e12): every
+                                           -- balance is a sum into a Long, so an unbounded amount
+                                           -- could wrap the sum past Long.MAX and break the two
+                                           -- invariants under a 200.
+                                           -- version: optimistic lock. Two edits from the same
+                                           -- starting state cannot both land — the second gets a
+                                           -- 409, not a silent overwrite of the first's people list.
 
 items ... + split_rule                     -- EQUAL | WEIGHTED | EXACT
 
@@ -242,6 +249,9 @@ item_shares(trip_id, item_id, member_id, weight NULL, exact_amount_minor NULL)
                                            -- weight is set for WEIGHTED, exact_amount_minor
                                            -- for EXACT; both null for EQUAL. Shares are
                                            -- still derived, never stored.
+                                           -- weight ≥ 0: zero is legal (on the bill for the
+                                           -- record, owing nothing), matching the engine and the
+                                           -- browser's split port. Only a negative is refused.
                                            -- trip_id is here so both foreign keys can be
                                            -- composite — see "Trip scoping" below.
 
@@ -304,7 +314,7 @@ hue from the person ramp. Custom categories are scoped to their trip. **No emoji
 
 | Screen (`Screens.jsx`) | Needs | Endpoint |
 |---|---|---|
-| `GroupsHome` | every group's name, icon, hue, member avatars, your net; overall net; count settled | `GET /api/trips` |
+| `GroupsHome` | every group's name, icon, hue, member avatars, your net; overall net **per currency** (never summed across currencies — ¥ added to $ is a meaningless figure); count settled | `GET /api/trips` |
 | `OverallScreen` | net **per person across all groups**, and which groups each debt came from; total spent; what you fronted | `GET /api/overview` |
 | `GroupDetail` | balance hero, three stats, who-owes-who rows, members, currency, start date, expenses grouped by day, filters | `GET /api/trips/{id}` |
 | `ExpenseDetailSheet` | title, category, date, total, your share, payer, per-person splits, note | *(in the trip payload — see below)* |
@@ -475,7 +485,13 @@ group's hero card. That identity is a property test, not a comment.
 ### Pay is a request, not an act
 
 The person paying cannot approve their own claim, so tapping **Pay** cannot settle anything on its
-own. Only the person owed — or the trip's creator — can (§3).
+own. Only the person owed — or the trip's creator — can (§3), and this is enforced on the server,
+not merely stated: a creator who is *also* the one paying is refused (403), because the recipient's
+agreement is the whole point. The one exception is a creator vouching for a payment to a member who
+has **never signed in** — that person cannot confirm it themselves, so without the creator the debt
+to a ghost would stall forever (§5). The confirmation itself lives on the Settle-up strip: a
+trip-level settlement has no bill, so the recipient approves, rejects, or the claimant withdraws it
+there, never on an item sheet.
 
 ```
   tap Pay  →  PENDING          "Sent to Mei for confirmation"   counts as unpaid

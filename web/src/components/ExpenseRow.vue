@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import AmountText from './AmountText.vue'
 import TallyIcon from './TallyIcon.vue'
 
@@ -25,7 +26,9 @@ const props = withDefaults(
   defineProps<{
     title: string
     categoryKey?: string
+    /** The payer's display name; when [paidByYou] is set it is not shown, "You paid" is. */
     paidBy?: string
+    paidByYou?: boolean
     spentOn?: string
     yourShareMinor: number
     allSquare?: boolean
@@ -36,6 +39,7 @@ const props = withDefaults(
   {
     categoryKey: 'other',
     paidBy: undefined,
+    paidByYou: false,
     spentOn: undefined,
     allSquare: false,
     currencyCode: 'AUD',
@@ -46,15 +50,19 @@ const props = withDefaults(
 
 defineEmits<{ click: [] }>()
 
+const { t } = useI18n()
+
 const look = () => CATEGORY_LOOK[props.categoryKey] ?? CATEGORY_LOOK.other!
-const subtitle = () => [props.paidBy && `${props.paidBy} paid`, props.spentOn].filter(Boolean).join(' · ')
+const paidLabel = () =>
+  props.paidByYou ? t('trip.youPaid') : props.paidBy ? t('trip.paidBy', { name: props.paidBy }) : null
+const subtitle = () => [paidLabel(), props.spentOn].filter(Boolean).join(' · ')
 </script>
 
 <template>
   <button
     type="button"
     class="row"
-    :class="{ 'row--divided': divider }"
+    :class="{ 'row--divided': divider, 'row--settled': allSquare }"
     data-testid="expense-row"
     @click="$emit('click')"
   >
@@ -82,7 +90,13 @@ const subtitle = () => [props.paidBy && `${props.paidBy} paid`, props.spentOn].f
         :show-sign="!allSquare"
       />
       <span class="row__caption">
-        {{ allSquare ? 'settled' : yourShareMinor < 0 ? 'you owe' : 'you get' }}
+        {{
+          allSquare
+            ? t('trip.settledCaption')
+            : yourShareMinor < 0
+              ? t('trip.oweCaption')
+              : t('trip.getCaption')
+        }}
       </span>
     </span>
   </button>
@@ -104,6 +118,16 @@ const subtitle = () => [props.paidBy && `${props.paidBy} paid`, props.spentOn].f
 
 .row--divided {
   border-bottom: 1.5px solid var(--hairline);
+}
+
+/* Settled expenses read as finished, not active: the disc and text fade back so an open bill is
+   what the eye lands on. Reopen it (undo a repayment) and it returns to full strength. */
+.row--settled {
+  opacity: 0.62;
+}
+
+.row--settled .row__disc {
+  filter: grayscale(0.5);
 }
 
 .row:hover {

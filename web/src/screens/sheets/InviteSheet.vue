@@ -78,34 +78,38 @@ async function copyLink() {
           data-testid="invite-member"
         >
           <PersonAvatar :name="member.displayName" :hue="member.personHue" :size="36" />
-          <span class="invite__name">{{ member.isYou ? 'You' : member.displayName }}</span>
+          <span class="invite__name">{{ member.isYou ? t('common.you') : member.displayName }}</span>
           <TallyBadge :tone="member.claimed ? 'settled' : 'pending'">
             {{ member.claimed ? t('invite.claimed') : t('invite.unclaimed') }}
           </TallyBadge>
         </div>
       </section>
 
-      <form class="invite__add" @submit.prevent="addName">
-        <TextField
-          v-model="newName"
-          test-id="member-name"
-          :placeholder="t('invite.namePlaceholder')"
-          :disabled="busy"
-        />
-        <TallyButton
-          type="submit"
-          variant="secondary"
-          data-testid="add-member"
-          :disabled="!newName.trim() || busy"
-          @click="addName"
-        >
-          {{ t('invite.add') }}
-        </TallyButton>
-      </form>
+      <!-- Adding names and handing out the link is the creator's job (the server enforces it); a
+           plain member sees the roster but not the write controls, so no button leads to a 403. -->
+      <template v-if="trip.youAreCreator">
+        <form class="invite__add" @submit.prevent="addName">
+          <TextField
+            v-model="newName"
+            test-id="member-name"
+            :placeholder="t('invite.namePlaceholder')"
+            :disabled="busy"
+          />
+          <TallyButton
+            type="submit"
+            variant="secondary"
+            data-testid="add-member"
+            :disabled="!newName.trim() || busy"
+            @click="addName"
+          >
+            {{ t('invite.add') }}
+          </TallyButton>
+        </form>
 
-      <TallyButton variant="primary" full-width data-testid="copy-link" @click="copyLink">
-        {{ t('invite.copyLink') }}
-      </TallyButton>
+        <TallyButton variant="primary" full-width data-testid="copy-link" @click="copyLink">
+          {{ t('invite.copyLink') }}
+        </TallyButton>
+      </template>
 
       <p v-if="linkNote" class="invite__note" data-testid="invite-note">{{ linkNote }}</p>
       <p v-if="error" class="invite__error" role="alert">{{ error }}</p>

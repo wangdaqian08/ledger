@@ -1,6 +1,8 @@
 package app.ledger.server.item
 
+import app.ledger.server.MAX_AMOUNT_MINOR
 import jakarta.validation.Valid
+import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotEmpty
 import jakarta.validation.constraints.PositiveOrZero
@@ -36,6 +38,7 @@ data class CreateItem(
     val title: String,
     val categoryId: UUID,
     @field:PositiveOrZero
+    @field:Max(MAX_AMOUNT_MINOR)
     val amountMinor: Long,
     val splitRule: SplitRuleName = SplitRuleName.EQUAL,
     val payerMemberId: UUID,
@@ -57,6 +60,7 @@ data class PatchItem(
     val title: String? = null,
     val categoryId: UUID? = null,
     @field:PositiveOrZero
+    @field:Max(MAX_AMOUNT_MINOR)
     val amountMinor: Long? = null,
     val splitRule: SplitRuleName? = null,
     val payerMemberId: UUID? = null,

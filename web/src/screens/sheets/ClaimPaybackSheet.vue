@@ -6,6 +6,7 @@ import SheetPanel from '@/components/SheetPanel.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TextField from '@/components/TextField.vue'
 import { api } from '@/lib/api'
+import { todayLocal } from '@/lib/dates'
 
 /**
  * Screen 6 — "I paid you back": a claim against one bill, pre-filled with what is still owed.
@@ -37,7 +38,7 @@ watch(
   (open) => {
     if (!open) return
     amountMinor.value = props.prefillMinor
-    paidOn.value = new Date().toISOString().slice(0, 10)
+    paidOn.value = todayLocal()
     note.value = ''
     error.value = ''
   },

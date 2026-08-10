@@ -27,7 +27,14 @@ class ItemController(private val items: ItemService) {
         @Valid @RequestBody command: CreateItem,
         @AuthenticationPrincipal principal: LedgerPrincipal,
     ): ResponseEntity<ItemView> {
-        val created = items.create(tripId, command, principal.userId)
+        val created = try {
+            items.create(tripId, command, principal.userId)
+        } catch (race: ItemIdRace) {
+            // The insert lost a race to an identical client-minted id (the same tap on two flaky
+            // networks). The winner is committed now, so this retry finds it on the replay check and
+            // answers 200 — never a 500, never a doubled expense.
+            items.create(tripId, command, principal.userId)
+        }
         return ResponseEntity.status(if (created.fresh) HttpStatus.CREATED else HttpStatus.OK).body(created.item)
     }
 

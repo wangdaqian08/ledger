@@ -54,6 +54,8 @@ const claim = ref<{ itemId: string; toName: string; prefillMinor: number } | nul
 const symbol = computed(() => currencySymbol(trip.value?.currencyCode ?? 'AUD'))
 const me = computed(() => trip.value?.members.find((m) => m.isYou) ?? null)
 const remindedMemberId = ref<string | null>(null)
+const remindError = ref('')
+const loadError = ref<'notFound' | 'other' | null>(null)
 
 const heroTone = computed(() => {
   const net = trip.value?.yourNetMinor ?? 0
@@ -63,16 +65,6 @@ const heroLabel = computed(() => {
   const net = trip.value?.yourNetMinor ?? 0
   return net === 0 ? t('money.allSquare') : net > 0 ? t('money.youAreOwed') : t('money.youOwe')
 })
-
-const groupSpend = computed(() => (trip.value?.items ?? []).reduce((sum, item) => sum + item.amountMinor, 0))
-const yourShare = computed(() =>
-  (trip.value?.items ?? []).reduce((sum, item) => sum + item.yourShareMinor, 0),
-)
-const youFronted = computed(() =>
-  (trip.value?.items ?? [])
-    .filter((item) => item.payerMemberId === me.value?.id)
-    .reduce((sum, item) => sum + item.amountMinor, 0),
-)
 
 const filtered = computed(() =>
   (trip.value?.items ?? []).filter((item) => {
@@ -120,8 +112,10 @@ onMounted(async () => {
     await refresh()
     categories.value = await api.categories(props.tripId)
   } catch (failure) {
-    // A 401 has already sent the router to sign-in; anything else is worth the console noise.
-    if (!(failure instanceof ApiError && failure.status === 401)) throw failure
+    // A 401 has already sent the router to sign-in. A trip you cannot see 404s — show that, rather
+    // than a blank page under an empty title bar; anything else is a real error, shown the same way.
+    if (failure instanceof ApiError && failure.status === 401) return
+    loadError.value = failure instanceof ApiError && failure.status === 404 ? 'notFound' : 'other'
   }
 })
 
@@ -130,8 +124,15 @@ function openDetail(itemId: string) {
 }
 
 async function remind(memberId: string) {
-  await api.remind(props.tripId, memberId)
-  remindedMemberId.value = memberId
+  remindError.value = ''
+  try {
+    await api.remind(props.tripId, memberId)
+    remindedMemberId.value = memberId
+  } catch (failure) {
+    // The debt may have cleared in another tab; whatever the reason, say so rather than letting the
+    // promise reject silently and the button do nothing.
+    remindError.value = failure instanceof ApiError ? failure.message : t('trip.remindFailed')
+  }
 }
 
 function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
@@ -173,7 +174,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
             <dt>{{ t('trip.groupSpend') }}</dt>
             <dd>
               <AmountText
-                :amount-minor="groupSpend"
+                :amount-minor="trip.groupSpendMinor"
                 size="sm"
                 :currency-code="trip.currencyCode"
                 :symbol="symbol"
@@ -184,7 +185,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
             <dt>{{ t('trip.yourShare') }}</dt>
             <dd>
               <AmountText
-                :amount-minor="yourShare"
+                :amount-minor="trip.yourShareMinor"
                 size="sm"
                 :currency-code="trip.currencyCode"
                 :symbol="symbol"
@@ -195,7 +196,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
             <dt>{{ t('trip.youFronted') }}</dt>
             <dd>
               <AmountText
-                :amount-minor="youFronted"
+                :amount-minor="trip.youFrontedMinor"
                 size="sm"
                 :currency-code="trip.currencyCode"
                 :symbol="symbol"
@@ -223,6 +224,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
           @pay="settleOpen = true"
           @remind="remind(row.memberId)"
         />
+        <p v-if="remindError" class="trip__remind-error" role="alert">{{ remindError }}</p>
       </TallyCard>
 
       <section class="trip__expenses">
@@ -267,7 +269,8 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
               :key="item.id"
               :title="item.title"
               :category-key="categoryKey(item.categoryId)"
-              :paid-by="item.payerMemberId === me?.id ? 'You' : memberName(item.payerMemberId)"
+              :paid-by="memberName(item.payerMemberId)"
+              :paid-by-you="item.payerMemberId === me?.id"
               :your-share-minor="
                 item.payerMemberId === me?.id ? item.amountMinor - item.yourShareMinor : -item.yourShareMinor
               "
@@ -282,7 +285,17 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       </section>
     </template>
 
+    <EmptyState
+      v-else-if="loadError"
+      class="trip__missing"
+      icon="circle-dashed"
+      :title="t('trip.notFound')"
+      :body="t('trip.notFoundBody')"
+      data-testid="trip-missing"
+    />
+
     <button
+      v-if="trip && settlement"
       class="trip__add"
       type="button"
       data-testid="add-expense"
@@ -342,6 +355,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       :open="settleOpen"
       :trip-id="tripId"
       :my-member-id="me.id"
+      :you-are-creator="trip.youAreCreator"
       :rows="settlement.rows"
       :currency-code="trip.currencyCode"
       :symbol="symbol"
@@ -425,6 +439,16 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
   letter-spacing: var(--ls-heading-sm);
   color: var(--ink);
   margin-bottom: var(--space-2);
+}
+
+.trip__remind-error {
+  margin-top: var(--space-2);
+  color: var(--coral);
+  font-size: var(--text-caption);
+}
+
+.trip__missing {
+  margin: var(--space-8) var(--gutter-screen);
 }
 
 .trip__expenses {

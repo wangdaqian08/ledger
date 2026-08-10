@@ -239,6 +239,31 @@ class SettlementApiTest : ApiTest() {
     }
 
     @Test
+    fun `the creator cannot wave through a settlement they are the one paying`() {
+        // Alice created the trip, so she can approve on the group's behalf — but not a payment she
+        // herself is making to somebody who can speak for themselves. Bob is a signed-in member; his
+        // is the only agreement that counts here, and the creator hat does not override that.
+        val trip = threeWayTrip()
+        val claim = trip.alice
+            .post(
+                "/api/trips/${trip.id}/settlements",
+                mapOf("toMemberId" to trip.bobMember.toString(), "amountMinor" to 3_000),
+            ).id()
+
+        val selfApprove = trip.alice.post("/api/paybacks/$claim/approve", emptyMap<String, String>())
+
+        assertEquals(HttpStatus.FORBIDDEN, selfApprove.statusCode)
+        // The claim is still waiting on Bob, and Bob can still approve it himself.
+        val stillPending = trip.bob.rowFor(trip.id, trip.aliceMember)["pending"].single()
+        assertEquals(claim.toString(), stillPending["id"].asText())
+        assertEquals("PENDING", stillPending["status"].asText())
+        assertEquals(
+            HttpStatus.OK,
+            trip.bob.post("/api/paybacks/$claim/approve", emptyMap<String, String>()).statusCode,
+        )
+    }
+
+    @Test
     fun `a stranger sees no settlement at all`() {
         val trip = threeWayTrip()
 

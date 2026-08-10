@@ -2,20 +2,25 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AmountKeypadField from '@/components/AmountKeypadField.vue'
+import AmountText from '@/components/AmountText.vue'
 import BalanceRow from '@/components/BalanceRow.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import TallyButton from '@/components/TallyButton.vue'
-import { api, type SettlementRow } from '@/lib/api'
+import TextField from '@/components/TextField.vue'
+import { api, type PaybackView, type SettlementRow } from '@/lib/api'
 
 /**
  * Screen 7 — Settle up. One row per person; Pay files a trip-level settlement that stays
- * PENDING until the person owed (or the trip's creator) confirms it. "Done for now" closes the
- * sheet, because all-square is a derived state, never a button (§7a).
+ * PENDING until the person owed (or the trip's creator) confirms it. That confirmation lives here
+ * too: a settlement has no bill, so the item sheet never sees it — the recipient approves, rejects
+ * or the claimant withdraws it right on this strip. "Done for now" closes the sheet, because
+ * all-square is a derived state, never a button (§7a).
  */
 const props = defineProps<{
   open: boolean
   tripId: string
   myMemberId: string
+  youAreCreator: boolean
   rows: SettlementRow[]
   currencyCode: string
   symbol: string
@@ -29,6 +34,8 @@ const amountMinor = ref(0)
 const error = ref('')
 const busy = ref(false)
 const reminded = ref<string | null>(null)
+const rejecting = ref<string | null>(null)
+const rejectReason = ref('')
 
 watch(
   () => props.open,
@@ -37,11 +44,22 @@ watch(
     paying.value = null
     error.value = ''
     reminded.value = null
+    rejecting.value = null
+    rejectReason.value = ''
   },
 )
 
 /** Claims between me and this row's person that are still waiting on somebody. */
 const pendingOf = computed(() => (row: SettlementRow) => row.pending.filter((p) => p.status === 'PENDING'))
+
+/**
+ * Can I decide this settlement? The person it is owed to always; the trip's creator too, but never
+ * their own claim — a payment is confirmed by the person receiving it, not the one making it (§7a).
+ */
+function canDecide(claim: PaybackView): boolean {
+  if (claim.toMemberId === props.myMemberId) return true
+  return props.youAreCreator && claim.fromMemberId !== props.myMemberId
+}
 
 function startPay(row: SettlementRow) {
   paying.value = row
@@ -79,6 +97,16 @@ async function remind(row: SettlementRow) {
 }
 
 const undoClaim = (paybackId: string) => act(() => api.undoPayback(paybackId))
+const approveClaim = (paybackId: string) => act(() => api.approvePayback(paybackId))
+
+async function rejectClaim(paybackId: string) {
+  if (!rejectReason.value.trim()) return
+  await act(() => api.rejectPayback(paybackId, rejectReason.value.trim()))
+  if (!error.value) {
+    rejecting.value = null
+    rejectReason.value = ''
+  }
+}
 </script>
 
 <template>
@@ -105,22 +133,71 @@ const undoClaim = (paybackId: string) => act(() => api.undoPayback(paybackId))
           class="settle__pending"
           data-testid="pending-claim"
         >
-          <span class="settle__pending-text">
-            {{
-              t('settle.sentForConfirmation', {
-                name: claim.toMemberId === myMemberId ? 'you' : row.displayName,
-              })
-            }}
-          </span>
-          <TallyButton
-            v-if="claim.fromMemberId === myMemberId"
-            size="sm"
-            variant="ghost"
-            data-testid="pending-undo"
-            @click="undoClaim(claim.id)"
-          >
-            {{ t('common.cancel') }}
-          </TallyButton>
+          <div class="settle__pending-head">
+            <span class="settle__pending-text">
+              {{
+                claim.fromMemberId === myMemberId
+                  ? t('settle.sentForConfirmation', { name: row.displayName })
+                  : t('settle.awaitingYou', { name: row.displayName })
+              }}
+            </span>
+            <!-- U1: the amount that is actually waiting, shown — not just that something is. -->
+            <AmountText
+              :amount-minor="claim.amountMinor"
+              size="sm"
+              :currency-code="currencyCode"
+              :symbol="symbol"
+            />
+          </div>
+
+          <div class="settle__pending-actions">
+            <!-- The claimant can withdraw; the recipient (or the creator) decides. A settlement's
+                 only home is this strip, so the decision has to live here. -->
+            <TallyButton
+              v-if="claim.fromMemberId === myMemberId"
+              size="sm"
+              variant="ghost"
+              data-testid="pending-undo"
+              @click="undoClaim(claim.id)"
+            >
+              {{ t('common.cancel') }}
+            </TallyButton>
+            <template v-if="canDecide(claim)">
+              <TallyButton
+                size="sm"
+                variant="secondary"
+                data-testid="pending-reject"
+                @click="rejecting = claim.id"
+              >
+                {{ t('settle.reject') }}
+              </TallyButton>
+              <TallyButton
+                size="sm"
+                variant="primary"
+                data-testid="pending-approve"
+                @click="approveClaim(claim.id)"
+              >
+                {{ t('settle.approve') }}
+              </TallyButton>
+            </template>
+          </div>
+
+          <form v-if="rejecting === claim.id" class="settle__reject" @submit.prevent="rejectClaim(claim.id)">
+            <TextField
+              v-model="rejectReason"
+              test-id="pending-reject-reason"
+              :placeholder="t('itemDetail.rejectReason')"
+            />
+            <TallyButton
+              size="sm"
+              variant="danger"
+              data-testid="pending-reject-send"
+              :disabled="!rejectReason.trim()"
+              @click="rejectClaim(claim.id)"
+            >
+              {{ t('settle.reject') }}
+            </TallyButton>
+          </form>
         </div>
 
         <form
@@ -172,13 +249,35 @@ const undoClaim = (paybackId: string) => act(() => api.undoPayback(paybackId))
 
 .settle__pending {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border: var(--border-card);
   border-radius: var(--radius-md);
   background: var(--lemon-tint);
+}
+
+.settle__pending-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.settle__pending-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.settle__pending-actions:empty {
+  display: none;
+}
+
+.settle__reject {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
 }
 
 .settle__pending-text {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import AmountText from './AmountText.vue'
 import AvatarStack, { type StackedPerson } from './AvatarStack.vue'
 import TallyBadge from './TallyBadge.vue'
@@ -26,6 +27,8 @@ withDefaults(
 )
 
 defineEmits<{ click: [] }>()
+
+const { t } = useI18n()
 </script>
 
 <template>
@@ -43,7 +46,9 @@ defineEmits<{ click: [] }>()
 
       <div class="group__title">
         <div class="group__name">{{ name }}</div>
-        <div class="group__count">{{ members.length }} {{ members.length === 1 ? 'person' : 'people' }}</div>
+        <div class="group__count">
+          {{ t(members.length === 1 ? 'trips.personOne' : 'trips.people', { count: members.length }) }}
+        </div>
       </div>
 
       <TallyIcon name="chevron-right" :size="20" class="group__chevron" />
@@ -52,9 +57,11 @@ defineEmits<{ click: [] }>()
     <div class="group__foot">
       <AvatarStack :people="members" :size="30" :max="5" />
 
-      <TallyBadge v-if="yourNetMinor === 0" tone="settled">All square</TallyBadge>
+      <TallyBadge v-if="yourNetMinor === 0" tone="settled">{{ t('money.allSquare') }}</TallyBadge>
       <span v-else class="group__balance">
-        <span class="group__caption">{{ yourNetMinor > 0 ? 'you get' : 'you owe' }}</span>
+        <span class="group__caption">{{
+          yourNetMinor > 0 ? t('trip.getCaption') : t('trip.oweCaption')
+        }}</span>
         <AmountText
           :amount-minor="Math.abs(yourNetMinor)"
           :currency-code="currencyCode"

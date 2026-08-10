@@ -360,6 +360,88 @@ class ItemApiTest : ApiTest() {
         assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
     }
 
+    @Test
+    fun `an equal split too large to hold on the books is refused, not wrapped`() {
+        // An EQUAL split skips the weighted overflow guard, so nothing stopped an amount that a
+        // second expense could sum past Long.MAX_VALUE — at which point the trip's net wraps to a
+        // huge negative under a 200, and both invariants break silently. Bound it at the input.
+        val trip = tripWith("Alice", "Bob")
+
+        val response = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Absurd", Long.MAX_VALUE, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)),
+        )
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+    }
+
+    @Test
+    fun `an amount larger than any real trip is refused, but a merely large one is not`() {
+        val trip = tripWith("Alice", "Bob")
+        val members = listOf(trip.ownerMember, trip.bob)
+
+        val overCap = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Over", 1_000_000_000_001, trip.category, trip.ownerMember, members),
+        )
+        assertEquals(HttpStatus.BAD_REQUEST, overCap.statusCode, "one over the ceiling is refused")
+
+        val atCap = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("At", 1_000_000_000_000, trip.category, trip.ownerMember, members),
+        )
+        assertEquals(HttpStatus.CREATED, atCap.statusCode, "a ten-billion-dollar expense is still allowed")
+        assertEquals(1_000_000_000_000, atCap.json()["splits"].sumOf { it["amountMinor"].asLong() })
+    }
+
+    @Test
+    fun `a blank title cannot be patched onto an expense`() {
+        val trip = tripWith("Alice", "Bob")
+        val item = trip.owner
+            .post(
+                "/api/trips/${trip.id}/items",
+                expense("Dinner", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)),
+            ).id()
+
+        // Create refuses a blank name; a patch must too, or a corrected expense can be left nameless
+        // on every screen.
+        val blanked = trip.owner.patch("/api/items/$item", mapOf("title" to "   "))
+
+        assertEquals(HttpStatus.BAD_REQUEST, blanked.statusCode)
+        assertEquals(
+            "Dinner",
+            trip.owner
+                .get("/api/items/$item")
+                .json()["title"]
+                .asText(),
+            "the old name should stand",
+        )
+    }
+
+    @Test
+    fun `a weighted split may put a zero on somebody, and it costs them nothing`() {
+        // Weight zero is a real input the engine, the browser port and the pinned split vectors all
+        // honour: this person is on the bill for the record but owes nothing on it. The server was
+        // the one layer refusing it.
+        val trip = tripWith("Alice", "Bob")
+
+        val item = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Cab", 10_000, trip.category, trip.ownerMember, emptyList(), splitRule = "WEIGHTED") +
+                mapOf(
+                    "sharedBy" to listOf(
+                        mapOf("memberId" to trip.ownerMember.toString(), "weight" to 1),
+                        mapOf("memberId" to trip.bob.toString(), "weight" to 0),
+                    ),
+                ),
+        )
+
+        assertEquals(HttpStatus.CREATED, item.statusCode)
+        val byMember = item.json()["splits"].associate { it["memberId"].asText() to it["amountMinor"].asLong() }
+        assertEquals(10_000, byMember[trip.ownerMember.toString()])
+        assertEquals(0, byMember[trip.bob.toString()], "the zero-weight person owes nothing")
+    }
+
     private fun tripWith(ownerName: String, friend: String): Fixture {
         val owner = signedIn(ownerName)
         val tripId = owner.createTrip()

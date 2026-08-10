@@ -25,7 +25,7 @@ describe('api client', () => {
   }
 
   it('echoes the CSRF cookie in the header Spring expects', async () => {
-    respond(200, { trips: [], overallNetMinor: 0, settledTripCount: 0 })
+    respond(200, { trips: [], overalls: [], settledTripCount: 0 })
 
     await api.trips()
 

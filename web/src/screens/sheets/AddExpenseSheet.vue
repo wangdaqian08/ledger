@@ -9,6 +9,7 @@ import TallyButton from '@/components/TallyButton.vue'
 import TallyKeypad, { type KeypadKey } from '@/components/TallyKeypad.vue'
 import TextField from '@/components/TextField.vue'
 import { api, type CategoryView, type TripView } from '@/lib/api'
+import { todayLocal } from '@/lib/dates'
 import { currencySymbol, formatMinor } from '@/lib/money'
 import { newItemId, saltFor, splitShares } from '@/lib/split'
 import { pressKey } from '@/lib/till'
@@ -121,7 +122,7 @@ async function save() {
       amountMinor: amountMinor.value,
       splitRule: custom.value ? 'WEIGHTED' : 'EQUAL',
       payerMemberId: payerId.value,
-      spentOn: new Date().toISOString().slice(0, 10),
+      spentOn: todayLocal(),
       sharedBy: sharers.value.map((m, index) =>
         custom.value ? { memberId: m.id, weight: saved[index] } : { memberId: m.id },
       ),

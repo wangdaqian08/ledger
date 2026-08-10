@@ -69,9 +69,10 @@ test('pay → reject → try again → approve → undo, across two browsers', a
   await expectRowsToSumToHero(alice)
 
   // An item claim waits on the bill's own sheet, not the settle-up row — the trip payload
-  // deliberately carries no paybacks (spec §6). Alice opens the bill, and there it is.
+  // deliberately carries no paybacks (spec §6). Alice opens the bill, and there it is — the
+  // decision is hers, so the badge names her, not the person who filed it.
   await alice.getByTestId('expense-row').filter({ hasText: 'Dinner' }).click()
-  await expect(alice.getByTestId('sheet-panel')).toContainText('Waiting for')
+  await expect(alice.getByTestId('sheet-panel')).toContainText('Waiting on you')
   await alice.getByTestId('reject-open').click()
   await alice.getByTestId('reject-reason').fill('nothing arrived')
   await alice.getByTestId('reject-send').click()

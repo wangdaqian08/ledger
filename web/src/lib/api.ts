@@ -104,11 +104,23 @@ export interface TripView {
   members: MemberView[]
   items: ItemView[]
   yourNetMinor: number
+  /** The three headline figures, derived by the engine so no screen recomputes them. */
+  groupSpendMinor: number
+  yourShareMinor: number
+  youFrontedMinor: number
+  /** Whether the viewer created the trip — gates the creator's edit / approve / roster powers. */
+  youAreCreator: boolean
+}
+
+/** One overall total per currency the viewer holds a trip in — never summed across currencies. */
+export interface CurrencyTotal {
+  currencyCode: string
+  netMinor: number
 }
 
 export interface TripsView {
   trips: TripView[]
-  overallNetMinor: number
+  overalls: CurrencyTotal[]
   settledTripCount: number
 }
 

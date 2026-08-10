@@ -93,6 +93,12 @@ class TripApiTest : ApiTest() {
         val asMember = bob.post("/api/trips/$tripId/members", mapOf("displayName" to "Carol"))
 
         assertEquals(HttpStatus.FORBIDDEN, asMember.statusCode)
+        // A 403 must still say why. Answering with a bare status the client cannot explain is the
+        // legacy error body problemdetails exists to replace — it just never covered access denials.
+        assertTrue(
+            asMember.body!!.contains("Only the person who created this trip"),
+            "the 403 threw away its reason: ${asMember.body}",
+        )
         assertEquals(HttpStatus.OK, bob.get("/api/trips/$tripId").statusCode, "but he can still see the trip")
     }
 
@@ -280,7 +286,75 @@ class TripApiTest : ApiTest() {
         val trips = alice.get("/api/trips").json()
 
         assertEquals(0, trips["trips"][0]["yourNetMinor"].asLong())
-        assertEquals(0, trips["overallNetMinor"].asLong())
+        val overalls = trips["overalls"]
+        assertEquals(1, overalls.size(), "one line per currency held")
+        assertEquals("AUD", overalls[0]["currencyCode"].asText())
+        assertEquals(0, overalls[0]["netMinor"].asLong())
         assertEquals(1, trips["settledTripCount"].asInt())
     }
+
+    @Test
+    fun `the overall figure sums each currency on its own, never across them`() {
+        val alice = signedIn("Alice")
+
+        // Two AUD trips, alice owed $1.00 on each — the dollars line must be the SUM, $2.00.
+        repeat(2) { n ->
+            val t = alice.createTrip("Aud $n")
+            val me = alice.meOn(t)
+            val friend = alice.addMember(t, "Friend $n")
+            alice.post("/api/trips/$t/items", expense("Coffee", 200, alice.builtInCategory(t), me, listOf(me, friend)))
+        }
+        // One JPY trip, alice owed ¥3 — a yen figure has no business being folded into dollars.
+        val jpy = alice.post("/api/trips", newTrip("Tokyo") + mapOf("currencyCode" to "JPY")).id()
+        val meJ = alice.meOn(jpy)
+        val friendJ = alice.addMember(jpy, "Yuki")
+        alice.post("/api/trips/$jpy/items", expense("Sushi", 6, alice.builtInCategory(jpy), meJ, listOf(meJ, friendJ)))
+
+        val overalls = alice
+            .get("/api/trips")
+            .json()["overalls"]
+            .associate { it["currencyCode"].asText() to it["netMinor"].asLong() }
+
+        assertEquals(200, overalls["AUD"], "two AUD trips of +100 each, summed")
+        assertEquals(3, overalls["JPY"], "the yen trip stands on its own")
+    }
+
+    @Test
+    fun `the trip payload says whether you are its creator`() {
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip("Hokkaido")
+        val bobMember = alice.addMember(tripId, "Bob")
+        val bob = signedIn("Bob")
+        bob.claim(tripId, alice.invite(tripId), bobMember)
+
+        assertTrue(alice.get("/api/trips/$tripId").json()["youAreCreator"].asBoolean(), "the creator should be told so")
+        assertFalse(
+            bob.get("/api/trips/$tripId").json()["youAreCreator"].asBoolean(),
+            "a plain member is not the creator",
+        )
+    }
+
+    @Test
+    fun `the trip payload carries the three headline figures, derived by the engine`() {
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip("Hokkaido")
+        val me = alice.meOn(tripId)
+        val bob = alice.addMember(tripId, "Bob")
+        // Alice fronts $100 split two ways: the group spent $100, her share is $50, she fronted $100.
+        alice.post(
+            "/api/trips/$tripId/items",
+            expense("Hotel", 10_000, alice.builtInCategory(tripId), me, listOf(me, bob)),
+        )
+
+        val trip = alice.get("/api/trips/$tripId").json()
+
+        assertEquals(10_000, trip["groupSpendMinor"].asLong(), "group spend")
+        assertEquals(5_000, trip["yourShareMinor"].asLong(), "your share")
+        assertEquals(10_000, trip["youFrontedMinor"].asLong(), "you fronted")
+    }
+
+    private fun SessionAwareClient.meOn(tripId: UUID): UUID =
+        UUID.fromString(
+            get("/api/trips/$tripId").json()["members"].first { it["isYou"].asBoolean() }["id"].asText(),
+        )
 }

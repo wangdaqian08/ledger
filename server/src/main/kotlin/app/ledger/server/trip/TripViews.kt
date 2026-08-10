@@ -43,14 +43,30 @@ data class TripView(
     val items: List<ItemView>,
     /** Positive means the group owes you. Derived by the engine, never stored. */
     val yourNetMinor: Long,
+    /** The three headline figures, derived by the engine here so no screen recomputes them. */
+    val groupSpendMinor: Long,
+    val yourShareMinor: Long,
+    val youFrontedMinor: Long,
+    /**
+     * Whether the viewer created this trip. The creator can edit anyone's expense, approve any
+     * payback and change the roster; without this the client could only discover that by attempting
+     * a write and being refused.
+     */
+    val youAreCreator: Boolean,
 )
 
-/** GroupsHome: every group, plus the two figures across all of them that the header shows. */
+/** GroupsHome: every group, the per-currency overall figures, and how many are settled. */
 data class TripsView(
     val trips: List<TripView>,
-    val overallNetMinor: Long,
+    /**
+     * One total per currency the viewer holds a trip in. Summing across currencies would render a
+     * meaningless figure — ¥ added to $ — so each currency stands on its own line.
+     */
+    val overalls: List<CurrencyTotalView>,
     val settledTripCount: Int,
 )
+
+data class CurrencyTotalView(val currencyCode: String, val netMinor: Long)
 
 data class InviteView(val token: String, val expiresAt: Instant)
 
