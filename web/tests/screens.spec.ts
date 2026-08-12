@@ -212,11 +212,13 @@ describe('TripScreen', () => {
     serve(
       trip({
         yourNetMinor: 9_000,
-        // The three figures now come from the payload, derived by the engine — the screen no longer
-        // re-sums the items itself (that was the stale-number risk the design forbids).
-        groupSpendMinor: 12_000,
-        yourShareMinor: 4_000,
-        youFrontedMinor: 9_000,
+        // The three figures come from the payload, derived by the engine — the screen no longer
+        // re-sums the items itself (the stale-number risk the design forbids). Deliberately set to
+        // values the fixture's items do NOT sum to, so re-summing them would show different numbers
+        // and this test would fail — proving the screen reads the payload, not the item list.
+        groupSpendMinor: 12_345,
+        yourShareMinor: 4_321,
+        youFrontedMinor: 8_888,
         items: [
           item({ id: 'i-1', amountMinor: 9_000, yourShareMinor: 3_000, spentOn: '2026-08-07' }),
           item({
@@ -235,9 +237,9 @@ describe('TripScreen', () => {
     await flushPromises()
 
     expect(screen.text()).toContain('Group spend')
-    expect(screen.text()).toContain('120.00') // 9000 + 3000
-    expect(screen.text()).toContain('40.00') //  your share 3000 + 1000
-    expect(screen.text()).toContain('90.00') //  you fronted item i-1 only
+    expect(screen.text()).toContain('123.45') // groupSpendMinor from the payload, not the item sum (120.00)
+    expect(screen.text()).toContain('43.21') //  yourShareMinor from the payload, not the item sum (40.00)
+    expect(screen.text()).toContain('88.88') //  youFrontedMinor from the payload, not the item sum (90.00)
     // Two different days, two day headers.
     expect(findAllByTestId(screen, 'expense-day')).toHaveLength(2)
 
