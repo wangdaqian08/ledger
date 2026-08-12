@@ -81,6 +81,8 @@ export default {
     paidBy: '{name}付的',
     youPaid: '你付的',
     settledCaption: '已结清',
+    shareCaption: '你的份额',
+    frontedCaption: '你垫付了',
     oweCaption: '你欠',
     getCaption: '待收',
     notFound: '找不到这个群组',

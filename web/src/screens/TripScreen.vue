@@ -85,6 +85,17 @@ const days = computed(() => {
   return groups
 })
 
+/**
+ * Who-owes-who, ordered for the eye: the people you actually owe or are owed lead, and everyone
+ * you're square with sinks to the bottom (rendered faded). Nobody is dropped — a $0 row still says
+ * "all square" — but the balances that need acting on are never buried among zeros, including the
+ * case where your net is zero because two opposite debts cancel out.
+ */
+const owesRows = computed(() => {
+  const rows = settlement.value?.rows ?? []
+  return [...rows.filter((row) => row.owedMinor !== 0), ...rows.filter((row) => row.owedMinor === 0)]
+})
+
 function dayLabel(isoDate: string): string {
   // Rendering only — never arithmetic. The ISO string is parsed as a local calendar date.
   const [y, m, d] = isoDate.split('-').map(Number)
@@ -206,21 +217,22 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
         </dl>
       </TallyCard>
 
-      <TallyCard v-if="settlement.rows.length > 0" class="trip__owes" data-testid="who-owes">
+      <TallyCard v-if="owesRows.length > 0" class="trip__owes" data-testid="who-owes">
         <h2 class="trip__section-title">{{ t('trip.whoOwesWho') }}</h2>
-        <!-- The API row is "positive = you owe them"; BalanceRow speaks the viewer's frame,
-             so the sign flips exactly once, here. -->
+        <!-- Real debts first, all-square people sunk and faded. The API row is "positive = you owe
+             them"; BalanceRow speaks the viewer's frame, so the sign flips exactly once, here. -->
         <BalanceRow
-          v-for="(row, index) in settlement.rows"
+          v-for="(row, index) in owesRows"
           :key="row.memberId"
           :display-name="row.displayName"
           :person-hue="row.personHue"
           :owed-minor="-row.owedMinor"
+          :muted="row.owedMinor === 0"
           :currency-code="trip.currencyCode"
           :symbol="symbol"
           :pending="row.pending.length > 0"
           :reminded="remindedMemberId === row.memberId"
-          :divider="index < settlement.rows.length - 1"
+          :divider="index < owesRows.length - 1"
           @pay="settleOpen = true"
           @remind="remind(row.memberId)"
         />

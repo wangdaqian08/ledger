@@ -13,10 +13,20 @@ import { findByTestId } from './testids'
 describe('ExpenseRow', () => {
   const base = { title: 'Hotel', yourShareMinor: -14286, categoryKey: 'stay' }
 
-  it('says which way the money goes, in whole cents', () => {
+  it('shows your stake in the bill in whole cents, framed as a share not a debt', () => {
+    // Somebody else paid, so this is your fixed share of the bill — never worded "you owe", which
+    // made a person who had already paid it back read it as money still outstanding. Magnitude only.
     const row = mount(ExpenseRow, { props: base })
     expect(row.text()).toContain('$142.86')
-    expect(row.text()).toContain('you owe')
+    expect(row.text()).toContain('your share')
+    expect(row.text()).not.toContain('you owe')
+  })
+
+  it('calls the payer’s stake what they fronted, not what they “get”', () => {
+    const row = mount(ExpenseRow, { props: { ...base, yourShareMinor: 37_500, paidByYou: true } })
+    expect(row.text()).toContain('$375.00')
+    expect(row.text()).toContain('you fronted')
+    expect(row.text()).not.toContain('you get')
   })
 
   it('reads settled from the item state, not from the share being zero', () => {

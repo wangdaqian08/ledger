@@ -80,6 +80,8 @@ export default {
     paidBy: '{name} paid',
     youPaid: 'You paid',
     settledCaption: 'settled',
+    shareCaption: 'your share',
+    frontedCaption: 'you fronted',
     oweCaption: 'you owe',
     getCaption: 'you get',
     notFound: 'This trip is not here',

@@ -27,9 +27,11 @@ withDefaults(
     pending?: boolean
     /** A nudge already sent this sitting: the button itself says so, in place. */
     reminded?: boolean
+    /** All-square rows are sunk to the bottom of Who-owes-who and faded — present, not prominent. */
+    muted?: boolean
     divider?: boolean
   }>(),
-  { currencyCode: 'AUD', symbol: '$', pending: false, reminded: false, divider: true },
+  { currencyCode: 'AUD', symbol: '$', pending: false, reminded: false, muted: false, divider: true },
 )
 
 defineEmits<{ pay: []; remind: [] }>()
@@ -38,7 +40,7 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <div class="row" :class="{ 'row--divided': divider }" data-testid="balance-row">
+  <div class="row" :class="{ 'row--divided': divider, 'row--muted': muted }" data-testid="balance-row">
     <PersonAvatar :name="displayName" :hue="personHue" :size="40" />
 
     <div class="row__body">
@@ -88,6 +90,12 @@ const { t } = useI18n()
 
 .row--divided {
   border-bottom: 1.5px solid var(--hairline);
+}
+
+/* Settled with this person: the row stays for reassurance but reads as finished, sunk behind the
+   debts that still need acting on. The same treatment a settled expense row and payment record get. */
+.row--muted {
+  opacity: 0.5;
 }
 
 .row__body {

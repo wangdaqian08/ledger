@@ -247,9 +247,9 @@ describe('TripScreen', () => {
     // (total − your share), the bill Bob paid is your share going out.
     const rows = screen.findAllComponents({ name: 'ExpenseRow' })
     expect(rows[0]!.props('yourShareMinor')).toBe(6_000) // 9000 you paid, minus your 3000 share
-    expect(rows[0]!.text()).toContain('you get')
+    expect(rows[0]!.text()).toContain('you fronted') // you paid → what you fronted for the others
     expect(rows[1]!.props('yourShareMinor')).toBe(-1_000) // Bob paid; your share of 1000 is owed
-    expect(rows[1]!.text()).toContain('you owe')
+    expect(rows[1]!.text()).toContain('your share') // Bob paid → your slice of his bill, not a debt
   })
 
   it('speaks the viewer’s frame on who-owes-who: an API +6000 is “You owe”', async () => {
@@ -268,6 +268,28 @@ describe('TripScreen', () => {
     expect(row.props('owedMinor')).toBe(-6_000)
     expect(row.text()).toContain('You owe')
     expect(row.text()).toContain('Pay')
+  })
+
+  it('sinks all-square people below real debts in who-owes-who, and fades them', async () => {
+    // You're square with Bob but owe Cara. Cara must lead; Bob is kept for reassurance but sunk to
+    // the bottom and muted, so a $0 row never sits above money that still needs acting on.
+    serve(trip({ yourNetMinor: -6_000 }), {
+      rows: [
+        { memberId: bob.id, displayName: 'Bob', personHue: 2, owedMinor: 0, pending: [], settled: [] },
+        { memberId: cara.id, displayName: 'Cara', personHue: 3, owedMinor: 6_000, pending: [], settled: [] },
+      ],
+      yourNetMinor: -6_000,
+      allSquare: false,
+    })
+
+    const screen = mount(TripScreen, { props: { tripId: 't-1' }, global: global() })
+    await flushPromises()
+
+    const rows = screen.findAllComponents({ name: 'BalanceRow' })
+    expect(rows[0]!.props('displayName')).toBe('Cara')
+    expect(rows[0]!.props('muted')).toBe(false)
+    expect(rows[1]!.props('displayName')).toBe('Bob')
+    expect(rows[1]!.props('muted')).toBe(true)
   })
 
   it('filters the feed to unsettled without touching the data', async () => {

@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import AmountText from '@/components/AmountText.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import GroupCard from '@/components/GroupCard.vue'
+import LocaleToggle from '@/components/LocaleToggle.vue'
 import ProgressBar from '@/components/ProgressBar.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import TallyButton from '@/components/TallyButton.vue'
@@ -88,9 +89,12 @@ async function signOut() {
   <main class="trips">
     <header class="trips__bar">
       <h1 class="trips__brand">{{ t('signin.title') }}</h1>
-      <TallyButton variant="ghost" size="sm" data-testid="sign-out" @click="signOut">{{
-        t('trips.signOut')
-      }}</TallyButton>
+      <div class="trips__bar-right">
+        <LocaleToggle />
+        <TallyButton variant="ghost" size="sm" data-testid="sign-out" @click="signOut">{{
+          t('trips.signOut')
+        }}</TallyButton>
+      </div>
     </header>
 
     <TallyCard v-if="overview && overview.overalls.length > 0" class="trips__hero" data-testid="overall-hero">
@@ -191,6 +195,12 @@ async function signOut() {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
+}
+
+.trips__bar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .trips__brand {

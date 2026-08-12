@@ -16,7 +16,14 @@ const CATEGORY_LOOK: Record<string, { icon: string; hue: number }> = {
 }
 
 /**
- * One expense in a trip's feed: category disc, title, who paid, and your share.
+ * One expense in a trip's feed: category disc, title, who paid, and your stake in the bill.
+ *
+ * The trailing figure is that stake, not a live debt: your *share* of the bill when somebody else
+ * paid, or what you *fronted* for everyone else when you did. It is fixed by the split and does not
+ * move when you settle up — repaying your $125 share does not change your $125 share of the bill.
+ * Whether you still owe anything is a different question, answered (netting repayments) by the hero
+ * and the Who-owes-who rows. Wording this figure "you owe" made a paid-up person read it as an open
+ * debt, so it stays neutral here and red/green is kept for those live-balance surfaces.
  *
  * `allSquare` comes from the server's derived item state, not from comparing a balance to zero
  * here. It is square when every sharer's *approved* paybacks cover their portion, which is a
@@ -83,19 +90,15 @@ const subtitle = () => [paidLabel(), props.spentOn].filter(Boolean).join(' · ')
 
     <span class="row__trailing">
       <AmountText
-        :amount-minor="yourShareMinor"
+        :amount-minor="Math.abs(yourShareMinor)"
         :currency-code="currencyCode"
         :symbol="symbol"
-        :tone="allSquare ? 'settled' : yourShareMinor < 0 ? 'owe' : 'owed'"
-        :show-sign="!allSquare"
+        :tone="allSquare ? 'settled' : 'neutral'"
+        :show-sign="false"
       />
       <span class="row__caption">
         {{
-          allSquare
-            ? t('trip.settledCaption')
-            : yourShareMinor < 0
-              ? t('trip.oweCaption')
-              : t('trip.getCaption')
+          allSquare ? t('trip.settledCaption') : paidByYou ? t('trip.frontedCaption') : t('trip.shareCaption')
         }}
       </span>
     </span>
