@@ -21,6 +21,12 @@ data class SettlementRow(
      * unpaid — because that is exactly what it is.
      */
     val pending: List<PaybackView>,
+    /**
+     * Approved trip-level settlements between the two of you. These have already moved [owedMinor],
+     * so they are a visible, undoable record rather than a live figure — the settle-up strip shows
+     * them muted, with an undo, so a mistaken confirmation can be walked back (§7a).
+     */
+    val settled: List<PaybackView>,
 )
 
 data class SettlementView(

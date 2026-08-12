@@ -23,15 +23,26 @@ class SettlementService(
     /** Your position with every other person on the trip, one row each. */
     @Transactional(readOnly = true)
     fun forViewer(tripId: UUID, actor: UUID): SettlementView {
-        access.visibleTrip(tripId, actor)
+        val trip = access.visibleTrip(tripId, actor)
         val snapshot = snapshots.load(tripId)
         val you = snapshot.memberFor(actor)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
 
-        val pendingByOther = snapshot.paybacks
-            .filter { it.itemId == null && it.status == PaybackStatusName.PENDING }
-            .filter { it.fromMemberId == you.id || it.toMemberId == you.id }
-            .groupBy { if (it.fromMemberId == you.id) it.toMemberId else it.fromMemberId }
+        val userIdOf = snapshot.roster.associate { it.id to it.userId }
+
+        fun view(payback: PaybackEntity) = payback.toView(actor, trip.createdByUserId) { userIdOf[it] }
+
+        fun theOther(payback: PaybackEntity) =
+            if (payback.fromMemberId == you.id) payback.toMemberId else payback.fromMemberId
+
+        // Trip-level settlements between you and someone, grouped by that someone. Pending ones still
+        // count as unpaid and can be decided; approved ones have already moved the balance but keep a
+        // visible, undoable record, so a mistaken confirmation is not a one-way door (§7a).
+        val mine = snapshot.paybacks.filter {
+            it.itemId == null && (it.fromMemberId == you.id || it.toMemberId == you.id)
+        }
+        val pendingByOther = mine.filter { it.status == PaybackStatusName.PENDING }.groupBy(::theOther)
+        val settledByOther = mine.filter { it.status == PaybackStatusName.APPROVED }.groupBy(::theOther)
 
         val rows = snapshot.roster
             .filter { it.id != you.id }
@@ -41,7 +52,8 @@ class SettlementService(
                     displayName = other.displayName,
                     personHue = other.personHue,
                     owedMinor = snapshot.owesBetween(you.id, other.id),
-                    pending = pendingByOther[other.id].orEmpty().map(PaybackEntity::toView),
+                    pending = pendingByOther[other.id].orEmpty().map(::view),
+                    settled = settledByOther[other.id].orEmpty().map(::view),
                 )
             }
 
@@ -76,6 +88,7 @@ class SettlementService(
         // Deliberately not capped at what you currently owe. Paying more than the running figure is
         // a real thing people do — rounding a debt up, or covering something not yet entered — and
         // refusing it would be the app telling somebody they are wrong about their own money.
+        val userIdOf = snapshot.roster.associate { it.id to it.userId }
         return paybacks
             .save(
                 PaybackEntity(
@@ -88,7 +101,7 @@ class SettlementService(
                     status = PaybackStatusName.PENDING,
                     createdByUserId = actor,
                 ),
-            ).toView()
+            ).toView(actor, trip.createdByUserId) { userIdOf[it] }
     }
 
     /**

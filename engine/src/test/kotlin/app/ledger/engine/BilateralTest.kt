@@ -184,35 +184,4 @@ class BilateralTest {
         // The rows have to add up to the card above them, or the screen is lying.
         assertEquals(-4_280L, settle(trip).net(you))         // YOU OWE    $42.80
     }
-
-    private fun randomTrip(random: Random): Trip {
-        val members = (1..random.nextInt(2, 7)).map { MemberId("member-$it") }
-
-        val items = (1..random.nextInt(0, 6)).map { index ->
-            Item(
-                id = ItemId(index.toLong()),
-                amountMinor = random.nextLong(1, 500_000),
-                payer = members.random(random),
-                sharedBy = members.filter { random.nextBoolean() }.ifEmpty { listOf(members.first()) },
-            )
-        }
-
-        val repayments = items.flatMap { item ->
-            item.sharedBy.filter { it != item.payer && random.nextBoolean() }.map {
-                item.repaidBy(it, random.nextLong(1, 200_000), PaybackStatus.entries.random(random))
-            }
-        }
-
-        val settlements = (1..random.nextInt(0, 4)).mapNotNull {
-            val from = members.random(random)
-            val to = members.random(random)
-            if (from == to) {
-                null
-            } else {
-                Payback(from, to, random.nextLong(1, 100_000), PaybackStatus.entries.random(random))
-            }
-        }
-
-        return Trip(members = members, items = items, paybacks = repayments + settlements)
-    }
 }

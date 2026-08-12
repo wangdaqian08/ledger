@@ -123,6 +123,8 @@ class ItemApiTest : ApiTest() {
 
         assertEquals(HttpStatus.FORBIDDEN, edit.statusCode)
         assertEquals(HttpStatus.FORBIDDEN, remove.statusCode)
+        // The 403 carries its reason, like the roster one does — not a bare status.
+        assertTrue(edit.body!!.contains("Only the person who paid"), "the 403 threw away its reason: ${edit.body}")
         assertEquals(10_000, bob.get("/api/items/$item").json()["amountMinor"].asLong(), "but he can read it")
     }
 
@@ -465,6 +467,43 @@ class ItemApiTest : ApiTest() {
         val byMember = item.json()["splits"].associate { it["memberId"].asText() to it["amountMinor"].asLong() }
         assertEquals(10_000, byMember[trip.ownerMember.toString()])
         assertEquals(0, byMember[trip.bob.toString()], "an omitted weight owes nothing, as validation implied")
+    }
+
+    @Test
+    fun `a negative weight is refused`() {
+        val trip = tripWith("Alice", "Bob")
+
+        val response = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Cab", 10_000, trip.category, trip.ownerMember, emptyList(), splitRule = "WEIGHTED") +
+                mapOf(
+                    "sharedBy" to listOf(
+                        mapOf("memberId" to trip.ownerMember.toString(), "weight" to 1),
+                        mapOf("memberId" to trip.bob.toString(), "weight" to -1),
+                    ),
+                ),
+        )
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+    }
+
+    @Test
+    fun `a weighted split where nobody carries any weight is refused`() {
+        // Zero for everybody has nothing to divide by; somebody has to carry weight.
+        val trip = tripWith("Alice", "Bob")
+
+        val response = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Cab", 10_000, trip.category, trip.ownerMember, emptyList(), splitRule = "WEIGHTED") +
+                mapOf(
+                    "sharedBy" to listOf(
+                        mapOf("memberId" to trip.ownerMember.toString(), "weight" to 0),
+                        mapOf("memberId" to trip.bob.toString(), "weight" to 0),
+                    ),
+                ),
+        )
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
     }
 
     private fun tripWith(ownerName: String, friend: String): Fixture {

@@ -88,13 +88,14 @@ class ItemService(
     @Transactional(readOnly = true)
     fun detail(itemId: UUID, actor: UUID): ItemDetailView {
         val item = items.findById(itemId).orElseThrow { noSuchItem() }
-        access.visibleTrip(item.tripId, actor)
+        val trip = access.visibleTrip(item.tripId, actor)
 
         val snapshot = snapshots.load(item.tripId)
         val loaded = snapshot.items.first { it.id == item.id }
+        val userIdOf = snapshot.roster.associate { it.id to it.userId }
         return ItemDetailView(
             item = snapshot.toView(loaded, actor),
-            paybacks = snapshot.paybacksFor(loaded).map { it.toView() },
+            paybacks = snapshot.paybacksFor(loaded).map { it.toView(actor, trip.createdByUserId) { m -> userIdOf[m] } },
         )
     }
 

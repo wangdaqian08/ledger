@@ -254,7 +254,9 @@ describe('TripScreen', () => {
 
   it('speaks the viewer’s frame on who-owes-who: an API +6000 is “You owe”', async () => {
     serve(trip({ yourNetMinor: -6_000 }), {
-      rows: [{ memberId: bob.id, displayName: 'Bob', personHue: 2, owedMinor: 6_000, pending: [] }],
+      rows: [
+        { memberId: bob.id, displayName: 'Bob', personHue: 2, owedMinor: 6_000, pending: [], settled: [] },
+      ],
       yourNetMinor: -6_000,
       allSquare: false,
     })
@@ -396,6 +398,8 @@ describe('AddExpenseSheet custom weights', () => {
 })
 
 describe('ItemDetailSheet', () => {
+  // Bob's claim on a bill `you` fronted: you are the person owed, so the server marks it decidable
+  // and undoable by you.
   const pendingClaim = {
     id: 'p-1',
     itemId: 'i-1',
@@ -408,6 +412,8 @@ describe('ItemDetailSheet', () => {
     proofObjectName: null,
     rejectReason: null,
     reviewedAt: null,
+    viewerCanDecide: true,
+    viewerCanUndo: true,
   }
 
   it('offers approve and reject to the person owed, and approves through the API', async () => {
@@ -434,7 +440,8 @@ describe('ItemDetailSheet', () => {
     // Bob's own view of a bill Alice paid: he filed the claim, he can cancel it, he cannot decide it.
     const bobsView = {
       ...item({ payerMemberId: cara.id, yourShareMinor: 3_000 }),
-      paybacks: [{ ...pendingClaim, fromMemberId: you.id, toMemberId: cara.id }],
+      // You filed this claim (from you), so the server says you cannot decide it — only withdraw it.
+      paybacks: [{ ...pendingClaim, fromMemberId: you.id, toMemberId: cara.id, viewerCanDecide: false }],
     }
     mocked.itemDetail!.mockResolvedValue(bobsView)
 
@@ -716,7 +723,9 @@ describe('SettleUpSheet', () => {
         tripId: 't-1',
         myMemberId: you.id,
         youAreCreator: true,
-        rows: [{ memberId: bob.id, displayName: 'Bob', personHue: 2, owedMinor: 6_000, pending: [] }],
+        rows: [
+          { memberId: bob.id, displayName: 'Bob', personHue: 2, owedMinor: 6_000, pending: [], settled: [] },
+        ],
         currencyCode: 'AUD',
         symbol: '$',
       },
@@ -742,7 +751,9 @@ describe('SettleUpSheet', () => {
         tripId: 't-1',
         myMemberId: you.id,
         youAreCreator: true,
-        rows: [{ memberId: bob.id, displayName: 'Bob', personHue: 2, owedMinor: -4_230, pending: [] }],
+        rows: [
+          { memberId: bob.id, displayName: 'Bob', personHue: 2, owedMinor: -4_230, pending: [], settled: [] },
+        ],
         currencyCode: 'AUD',
         symbol: '$',
       },

@@ -82,19 +82,6 @@ const myRemaining = computed(() => {
   return Math.max(0, share - repaid)
 })
 
-/** Can I decide this claim? The person owed always; the creator too, but never their own claim. */
-function canDecide(payback: PaybackView): boolean {
-  if (payback.status !== 'PENDING') return false
-  if (iAmPayer.value) return true
-  return props.trip.youAreCreator && me.value?.id !== payback.fromMemberId
-}
-
-/** Can I undo it? The claimant any time; the person owed or the creator once it is approved. */
-function canUndo(payback: PaybackView): boolean {
-  if (payback.fromMemberId === me.value?.id) return true
-  return (iAmPayer.value || props.trip.youAreCreator) && payback.status === 'APPROVED'
-}
-
 watch(
   () => [props.open, props.itemId] as const,
   async ([open, itemId]) => {
@@ -128,7 +115,17 @@ async function act(action: () => Promise<unknown>) {
 }
 
 const approve = (paybackId: string) => act(() => api.approvePayback(paybackId))
-const undo = (paybackId: string) => act(() => api.undoPayback(paybackId))
+
+async function undo(payback: PaybackView) {
+  // Undoing a *confirmed* repayment re-opens a balance the other person thought was closed, so it
+  // asks first. Withdrawing your own still-pending claim moved nothing, so it does not.
+  if (payback.status === 'APPROVED' && !confirm(t('itemDetail.undoConfirm'))) return
+  await act(() => api.undoPayback(payback.id))
+}
+
+/** Show undo where the server allows it: the claimant withdrawing, or the owed/creator un-settling. */
+const canUndo = (payback: PaybackView) =>
+  payback.viewerCanUndo && (payback.fromMemberId === me.value?.id || payback.status === 'APPROVED')
 
 async function reject(paybackId: string) {
   if (!rejectReason.value.trim()) return
@@ -293,7 +290,9 @@ async function remove() {
                settled bill can un-settle, the accepted cost of never trapping a wrong record.
                The server holds the real rule; these buttons only appear where they will succeed. -->
           <div v-if="payback.status !== 'REJECTED'" class="detail__decide">
-            <template v-if="canDecide(payback)">
+            <!-- The server decides who may act; these buttons only render where its flag is set, so
+                 none of them can lead to a 403. -->
+            <template v-if="payback.viewerCanDecide">
               <TallyButton
                 size="sm"
                 variant="secondary"
@@ -306,16 +305,16 @@ async function remove() {
                 {{ t('itemDetail.approve') }}
               </TallyButton>
             </template>
-            <!-- The claimant can always withdraw; the person owed or the creator un-does an
-                 *approved* one (a pending claim they disagree with has Reject, which says why). -->
+            <!-- The claimant withdraws a pending claim; the person owed or the creator un-does an
+                 approved one (which un-settles the bill, so it asks first). -->
             <TallyButton
               v-if="canUndo(payback)"
               size="sm"
               variant="ghost"
               data-testid="undo-claim"
-              @click="undo(payback.id)"
+              @click="undo(payback)"
             >
-              {{ t('common.cancel') }}
+              {{ payback.status === 'APPROVED' ? t('common.undo') : t('common.cancel') }}
             </TallyButton>
           </div>
 

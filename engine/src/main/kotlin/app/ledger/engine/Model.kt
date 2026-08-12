@@ -155,7 +155,10 @@ fun Trip.itemState(itemId: ItemId): ItemState {
     val shares = item.shares()
 
     val coveredByMember = approvedPaybacks()
-        .filter { it.itemId == itemId }
+        // Aimed at this item, and at the person actually owed on it — the payer. A payback towards
+        // this item but paid to somebody else covers nothing here; the engine says so itself rather
+        // than trusting every caller to only ever construct paybacks with `to = payer`.
+        .filter { it.itemId == itemId && it.to == item.payer }
         .groupBy { it.from }
         .mapValues { (_, theirs) -> theirs.sumOf { it.amountMinor } }
 

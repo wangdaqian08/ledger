@@ -105,9 +105,11 @@ test('pay → reject → try again → approve → undo, across two browsers', a
   await expect(alice.getByTestId('expense-row').filter({ hasText: 'Dinner' })).toBeVisible()
   await expect(alice.getByTestId('trip-position')).toContainText('All square')
 
-  // And Bob can take it back: an approved settlement undone un-settles the trip (§7a).
+  // And Bob can take it back: an approved repayment undone un-settles the trip (§7a). Undoing a
+  // *confirmed* one asks first, since it re-opens a balance Alice thought was closed.
   await bob.goto(tripUrl)
   await bob.getByTestId('expense-row').filter({ hasText: 'Dinner' }).click()
+  bob.once('dialog', (dialog) => dialog.accept())
   await approvedRowCancel(bob)
   await bob.getByTestId('sheet-close').click()
 
