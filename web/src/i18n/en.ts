@@ -28,6 +28,7 @@ export default {
     settled: 'Settled',
     youPaidThem: 'You paid {name}',
     theyPaidYou: '{name} paid you',
+    declinedByThem: '{name} declined your payment',
     undoConfirm: 'Undo this settled payment? Their balance will re-open.',
     owesYou: '{name} owes you',
     youOweThem: 'You owe {name}',

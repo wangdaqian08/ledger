@@ -27,6 +27,13 @@ data class SettlementRow(
      * them muted, with an undo, so a mistaken confirmation can be walked back (§7a).
      */
     val settled: List<PaybackView>,
+    /**
+     * Settlements *you* filed that they declined, newest last, carrying the reason they gave. An
+     * item claim surfaces its rejection on the bill's own sheet; a trip-level settlement has no bill,
+     * so without this the decline is filtered out of the payload and simply vanishes — the balance
+     * reverts with nothing said and the claimant never learns why. This is that missing home.
+     */
+    val rejected: List<PaybackView>,
 )
 
 data class SettlementView(

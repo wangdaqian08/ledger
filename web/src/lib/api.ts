@@ -159,6 +159,8 @@ export interface SettlementRow {
   pending: PaybackView[]
   /** Approved settlements between you two — a visible, undoable record (they already moved owedMinor). */
   settled: PaybackView[]
+  /** Settlements you filed that they declined, newest last — carries the reason, so it doesn't vanish. */
+  rejected: PaybackView[]
 }
 
 export interface SettlementView {

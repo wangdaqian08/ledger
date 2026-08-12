@@ -303,6 +303,31 @@ class SettlementApiTest : ApiTest() {
     }
 
     @Test
+    fun `a declined settlement comes back to the claimant with the reason`() {
+        // A trip-level settlement has no bill sheet, so a decline used to be filtered out of the
+        // payload and simply vanish — the claimant never learned it was turned down, or why. It now
+        // lands on the row, so the reason reaches the person who made the claim.
+        val trip = threeWayTrip()
+        val claim = trip.bob
+            .post(
+                "/api/trips/${trip.id}/settlements",
+                mapOf("toMemberId" to trip.aliceMember.toString(), "amountMinor" to 3_000),
+            ).id()
+
+        trip.alice.post("/api/paybacks/$claim/reject", mapOf("reason" to "not received"))
+
+        val bobRow = trip.bob.rowFor(trip.id, trip.aliceMember)
+        assertEquals(0, bobRow["pending"].size(), "no longer waiting on anyone")
+        assertEquals(3_000, bobRow["owedMinor"].asLong(), "the debt is back, undecided")
+        val declined = bobRow["rejected"].single()
+        assertEquals("REJECTED", declined["status"].asText())
+        assertEquals("not received", declined["rejectReason"].asText())
+
+        // The person who declined it is not shown their own decline echoed back at them.
+        assertEquals(0, trip.alice.rowFor(trip.id, trip.bobMember)["rejected"].size())
+    }
+
+    @Test
     fun `a settlement larger than any real trip is refused`() {
         val trip = threeWayTrip()
 

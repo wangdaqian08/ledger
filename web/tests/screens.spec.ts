@@ -17,7 +17,14 @@ import TripScreen from '../src/screens/TripScreen.vue'
 import TripsScreen from '../src/screens/TripsScreen.vue'
 import { findAllByTestId, findByTestId } from './testids'
 import { saltFor, splitShares } from '../src/lib/split'
-import type { ItemView, MemberView, SettlementView, TripView } from '../src/lib/api'
+import type {
+  ItemView,
+  MemberView,
+  PaybackView,
+  SettlementRow,
+  SettlementView,
+  TripView,
+} from '../src/lib/api'
 
 /**
  * The screens against a scripted API. Every number a screen shows must be traceable to the
@@ -255,7 +262,15 @@ describe('TripScreen', () => {
   it('speaks the viewer’s frame on who-owes-who: an API +6000 is “You owe”', async () => {
     serve(trip({ yourNetMinor: -6_000 }), {
       rows: [
-        { memberId: bob.id, displayName: 'Bob', personHue: 2, owedMinor: 6_000, pending: [], settled: [] },
+        {
+          memberId: bob.id,
+          displayName: 'Bob',
+          personHue: 2,
+          owedMinor: 6_000,
+          pending: [],
+          settled: [],
+          rejected: [],
+        },
       ],
       yourNetMinor: -6_000,
       allSquare: false,
@@ -275,8 +290,24 @@ describe('TripScreen', () => {
     // the bottom and muted, so a $0 row never sits above money that still needs acting on.
     serve(trip({ yourNetMinor: -6_000 }), {
       rows: [
-        { memberId: bob.id, displayName: 'Bob', personHue: 2, owedMinor: 0, pending: [], settled: [] },
-        { memberId: cara.id, displayName: 'Cara', personHue: 3, owedMinor: 6_000, pending: [], settled: [] },
+        {
+          memberId: bob.id,
+          displayName: 'Bob',
+          personHue: 2,
+          owedMinor: 0,
+          pending: [],
+          settled: [],
+          rejected: [],
+        },
+        {
+          memberId: cara.id,
+          displayName: 'Cara',
+          personHue: 3,
+          owedMinor: 6_000,
+          pending: [],
+          settled: [],
+          rejected: [],
+        },
       ],
       yourNetMinor: -6_000,
       allSquare: false,
@@ -746,7 +777,15 @@ describe('SettleUpSheet', () => {
         myMemberId: you.id,
         youAreCreator: true,
         rows: [
-          { memberId: bob.id, displayName: 'Bob', personHue: 2, owedMinor: 6_000, pending: [], settled: [] },
+          {
+            memberId: bob.id,
+            displayName: 'Bob',
+            personHue: 2,
+            owedMinor: 6_000,
+            pending: [],
+            settled: [],
+            rejected: [],
+          },
         ],
         currencyCode: 'AUD',
         symbol: '$',
@@ -774,7 +813,15 @@ describe('SettleUpSheet', () => {
         myMemberId: you.id,
         youAreCreator: true,
         rows: [
-          { memberId: bob.id, displayName: 'Bob', personHue: 2, owedMinor: -4_230, pending: [], settled: [] },
+          {
+            memberId: bob.id,
+            displayName: 'Bob',
+            personHue: 2,
+            owedMinor: -4_230,
+            pending: [],
+            settled: [],
+            rejected: [],
+          },
         ],
         currencyCode: 'AUD',
         symbol: '$',
@@ -788,5 +835,72 @@ describe('SettleUpSheet', () => {
 
     expect(mocked.remind).toHaveBeenCalledWith('t-1', bob.id)
     expect(mocked.submitSettlement).not.toHaveBeenCalled()
+  })
+
+  const declined = (over: Partial<PaybackView> = {}): PaybackView => ({
+    id: 'p-declined',
+    itemId: null,
+    fromMemberId: you.id,
+    toMemberId: bob.id,
+    amountMinor: 12_500,
+    paidOn: '2026-08-13',
+    note: null,
+    status: 'REJECTED',
+    proofObjectName: null,
+    rejectReason: 'not received',
+    reviewedAt: '2026-08-13T02:00:00Z',
+    viewerCanDecide: false,
+    viewerCanUndo: false,
+    ...over,
+  })
+
+  function settleRow(over: Partial<SettlementRow> = {}): SettlementRow {
+    return {
+      memberId: bob.id,
+      displayName: 'Bob',
+      personHue: 2,
+      owedMinor: 12_500,
+      pending: [],
+      settled: [],
+      rejected: [],
+      ...over,
+    }
+  }
+
+  function mountSettle(rows: SettlementRow[]) {
+    return mount(SettleUpSheet, {
+      props: {
+        open: true,
+        tripId: 't-1',
+        myMemberId: you.id,
+        youAreCreator: false,
+        rows,
+        currencyCode: 'AUD',
+        symbol: '$',
+      },
+      global: global(),
+    })
+  }
+
+  it('surfaces a declined settlement back to the claimant, with the reason and amount', async () => {
+    // The gap this closes: a trip-level settlement has no bill sheet, so a decline used to be
+    // filtered out of the payload and vanish — the claimant never learned it was turned down or why.
+    const sheet = mountSettle([settleRow({ rejected: [declined()] })])
+    await nextTick()
+
+    const strip = findByTestId(sheet, 'declined-claim')
+    expect(strip.text()).toContain('Bob declined your payment')
+    expect(strip.text()).toContain('not received')
+    expect(strip.text()).toContain('125.00')
+  })
+
+  it('drops the decline note once a fresh claim to the same person is pending', async () => {
+    const pending = declined({ id: 'p-pending', status: 'PENDING', rejectReason: null })
+    const sheet = mountSettle([settleRow({ pending: [pending], rejected: [declined()] })])
+    await nextTick()
+
+    // Retrying speaks for itself — the old decline should not sit beside the new pending claim.
+    expect(findAllByTestId(sheet, 'declined-claim')).toHaveLength(0)
+    expect(findByTestId(sheet, 'pending-claim')).toBeTruthy()
   })
 })

@@ -43,6 +43,12 @@ class SettlementService(
         }
         val pendingByOther = mine.filter { it.status == PaybackStatusName.PENDING }.groupBy(::theOther)
         val settledByOther = mine.filter { it.status == PaybackStatusName.APPROVED }.groupBy(::theOther)
+        // Ones you filed and they turned down, handed back to you (the claimant) with the reason —
+        // a settlement has no bill sheet to carry a rejection, so this row is where it must land.
+        // Only your own: a decline you made needs no echo to yourself.
+        val rejectedByOther = mine
+            .filter { it.status == PaybackStatusName.REJECTED && it.fromMemberId == you.id }
+            .groupBy(::theOther)
 
         val rows = snapshot.roster
             .filter { it.id != you.id }
@@ -54,6 +60,7 @@ class SettlementService(
                     owedMinor = snapshot.owesBetween(you.id, other.id),
                     pending = pendingByOther[other.id].orEmpty().map(::view),
                     settled = settledByOther[other.id].orEmpty().map(::view),
+                    rejected = rejectedByOther[other.id].orEmpty().map(::view),
                 )
             }
 

@@ -29,6 +29,7 @@ export default {
     settled: '已结清',
     youPaidThem: '你付给了{name}',
     theyPaidYou: '{name}付给了你',
+    declinedByThem: '{name}拒绝了你的付款',
     undoConfirm: '撤销这笔已结清的付款？对方的余额会重新计入。',
     owesYou: '{name}欠你',
     youOweThem: '你欠{name}',
