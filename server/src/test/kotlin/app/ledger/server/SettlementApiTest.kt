@@ -264,6 +264,57 @@ class SettlementApiTest : ApiTest() {
     }
 
     @Test
+    fun `the strip tells each person what they may do with a pending settlement`() {
+        val trip = threeWayTrip()
+        trip.bob.post(
+            "/api/trips/${trip.id}/settlements",
+            mapOf("toMemberId" to trip.aliceMember.toString(), "amountMinor" to 3_000),
+        )
+
+        // Alice, the person owed, may approve or reject it — and undo it.
+        val aliceSees = trip.alice.rowFor(trip.id, trip.bobMember)["pending"].single()
+        assertTrue(aliceSees["viewerCanDecide"].asBoolean(), "the recipient may decide")
+        assertTrue(aliceSees["viewerCanUndo"].asBoolean())
+
+        // Bob, the one paying, may not wave through his own — only withdraw it.
+        val bobSees = trip.bob.rowFor(trip.id, trip.aliceMember)["pending"].single()
+        assertFalse(bobSees["viewerCanDecide"].asBoolean(), "the payer cannot decide their own")
+        assertTrue(bobSees["viewerCanUndo"].asBoolean(), "but may withdraw it")
+    }
+
+    @Test
+    fun `an approved settlement stays on the strip as an undoable record for both people`() {
+        val trip = threeWayTrip()
+        val claim = trip.bob
+            .post(
+                "/api/trips/${trip.id}/settlements",
+                mapOf("toMemberId" to trip.aliceMember.toString(), "amountMinor" to 3_000),
+            ).id()
+        trip.alice.post("/api/paybacks/$claim/approve", emptyMap<String, String>())
+
+        // It has moved the balance, and it stays visible as a settled, undoable record — so a
+        // mistaken confirmation is not a one-way door (§7a).
+        val bobRow = trip.bob.rowFor(trip.id, trip.aliceMember)
+        assertEquals(0, bobRow["owedMinor"].asLong(), "the balance moved")
+        val settled = bobRow["settled"].single()
+        assertEquals("APPROVED", settled["status"].asText())
+        assertTrue(settled["viewerCanUndo"].asBoolean(), "either party can undo it")
+        assertEquals(1, trip.alice.rowFor(trip.id, trip.bobMember)["settled"].size(), "and the recipient sees it too")
+    }
+
+    @Test
+    fun `a settlement larger than any real trip is refused`() {
+        val trip = threeWayTrip()
+
+        val response = trip.bob.post(
+            "/api/trips/${trip.id}/settlements",
+            mapOf("toMemberId" to trip.aliceMember.toString(), "amountMinor" to 1_000_000_000_001),
+        )
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+    }
+
+    @Test
     fun `a stranger sees no settlement at all`() {
         val trip = threeWayTrip()
 

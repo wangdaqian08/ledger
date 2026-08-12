@@ -60,6 +60,20 @@ class ItemStateTest {
     }
 
     @Test
+    fun `a payback towards the bill but paid to the wrong person covers nothing`() {
+        // The payment names this item, but the money went to amy, not lucy who is owed. Ben's share
+        // stays uncovered — the engine checks who was paid, not merely which bill was named.
+        assertEquals(
+            ItemState.OPEN,
+            dinner(
+                settled(amy),
+                settled(cara),
+                Payback(ben, amy, 5_000, PaybackStatus.APPROVED, dinnerItem.id),
+            ),
+        )
+    }
+
+    @Test
     fun `part-paying does not count as covered`() {
         assertEquals(
             ItemState.OPEN,

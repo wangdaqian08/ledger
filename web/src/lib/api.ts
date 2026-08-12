@@ -138,6 +138,13 @@ export interface PaybackView {
   proofObjectName: string | null
   rejectReason: string | null
   reviewedAt: string | null
+  /**
+   * What the viewer may do with this claim, decided by the server (not re-derived here): whether
+   * they may approve/reject it, and whether they may undo it. A control only shows where its flag
+   * is set, so the UI can never offer a button the server will refuse.
+   */
+  viewerCanDecide: boolean
+  viewerCanUndo: boolean
 }
 
 export type ItemDetail = ItemView & { paybacks: PaybackView[] }
@@ -148,7 +155,10 @@ export interface SettlementRow {
   personHue: number
   /** Positive: you owe them. Negative: they owe you. */
   owedMinor: number
+  /** Trip-level settlements between you and this person that nobody has decided yet. */
   pending: PaybackView[]
+  /** Approved settlements between you two — a visible, undoable record (they already moved owedMinor). */
+  settled: PaybackView[]
 }
 
 export interface SettlementView {

@@ -71,4 +71,17 @@ test('a trip-level settlement is approved by the person it is owed to, right on 
   await expectRowsToSumToHero(alice)
   await bob.goto(tripUrl)
   await expect(bob.getByTestId('trip-position')).toContainText('All square')
+
+  // The approved settlement is not a one-way door: it stays on the strip as a muted, undoable
+  // record. Alice regrets confirming (the cash never actually arrived) and undoes it — with a
+  // second look, since it re-opens Bob's debt — and the trip un-settles.
+  await alice.getByTestId('settle-up').click()
+  const settled = alice.getByTestId('settled-claim')
+  await expect(settled).toContainText('20.00')
+  alice.once('dialog', (dialog) => dialog.accept())
+  await settled.getByTestId('settled-undo').click()
+  await alice.getByTestId('settle-done').click()
+
+  await expect(alice.getByTestId('trip-position')).toContainText('You are owed')
+  await expect(alice.getByTestId('trip-position')).toContainText('$20.00')
 })

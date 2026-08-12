@@ -83,10 +83,12 @@ class ScenariosTest {
             )
 
             trip.items.forEach { item ->
-                val shares = splitEqually(item.amountMinor, item.sharedBy, item.id.value)
+                // item.shares() — the real derivation the app reads — not a parallel splitEqually
+                // that would ignore the item's actual rule now that trips carry weighted and exact
+                // splits too.
                 assertEquals(
                     item.amountMinor,
-                    shares.values.sum(),
+                    item.shares().values.sum(),
                     "seed $seed: item ${item.id.value} shares do not sum to its total",
                 )
             }
@@ -114,40 +116,5 @@ class ScenariosTest {
                 assertTrue(it.from != it.to, "seed $seed: ${it.from.value} paying themselves")
             }
         }
-    }
-
-    private fun randomTrip(random: Random): Trip {
-        val members = (1..random.nextInt(2, 9)).map { m("member-$it") }
-
-        val items = (1..random.nextInt(0, 7)).map { index ->
-            // A non-empty people list, sometimes excluding the payer — someone can front a
-            // bill they take no part in, like paying for everyone else's lift passes.
-            Item(
-                id = ItemId(index.toLong()),
-                amountMinor = random.nextLong(1, 500_000),
-                payer = members.random(random),
-                sharedBy = members.filter { random.nextBoolean() }.ifEmpty { listOf(members.first()) },
-            )
-        }
-
-        val repayments = items.flatMap { item ->
-            item.sharedBy.filter { it != item.payer && random.nextBoolean() }.map {
-                // Deliberately unconstrained: under- and over-payments both happen.
-                item.repaidBy(it, random.nextLong(1, 200_000), PaybackStatus.entries.random(random))
-            }
-        }
-
-        // Trip-level settlements between any two members, with no item behind them.
-        val settlements = (1..random.nextInt(0, 4)).mapNotNull {
-            val from = members.random(random)
-            val to = members.random(random)
-            if (from == to) {
-                null
-            } else {
-                Payback(from, to, random.nextLong(1, 100_000), PaybackStatus.entries.random(random))
-            }
-        }
-
-        return Trip(members = members, items = items, paybacks = repayments + settlements)
     }
 }

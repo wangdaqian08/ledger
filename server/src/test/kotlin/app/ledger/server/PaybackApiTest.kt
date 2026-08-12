@@ -51,7 +51,21 @@ class PaybackApiTest : ApiTest() {
         val self = trip.bob.post("/api/paybacks/$claim/approve", emptyMap<String, String>())
 
         assertEquals(HttpStatus.FORBIDDEN, self.statusCode)
+        // Bob is the one paying, so the 403 names exactly that, rather than a bare status.
+        assertTrue(self.body!!.contains("you are the one making"), "the 403 threw away its reason: ${self.body}")
         assertEquals(-5_000, trip.bob.netOn(trip.id), "a refused approval still moved money")
+    }
+
+    @Test
+    fun `a payback larger than any real trip is refused`() {
+        val trip = twoPeopleAndABill()
+
+        val response = trip.bob.post(
+            "/api/items/${trip.item}/paybacks",
+            claimOf(trip.bobMember, 1_000_000_000_001),
+        )
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
     }
 
     @Test

@@ -12,6 +12,7 @@ export default {
     save: 'Save',
     settled: 'All square',
     you: 'You',
+    undo: 'Undo',
   },
   money: {
     youAreOwed: 'You are owed',
@@ -24,6 +25,10 @@ export default {
     reminded: 'Reminded ✓',
     sentForConfirmation: 'Sent to {name} for confirmation',
     awaitingYou: '{name} says they paid you',
+    settled: 'Settled',
+    youPaidThem: 'You paid {name}',
+    theyPaidYou: '{name} paid you',
+    undoConfirm: 'Undo this settled payment? Their balance will re-open.',
     owesYou: '{name} owes you',
     youOweThem: 'You owe {name}',
     owesYouShort: 'Owes you',
@@ -113,6 +118,7 @@ export default {
     reject: 'Not yet',
     rejectReason: 'Say why, so it can be put right',
     payBack: 'Pay this back',
+    undoConfirm: 'Undo this confirmed repayment? The balance will re-open.',
     delete: 'Delete expense',
     deleteConfirm: 'Delete this expense? Its repayment claims go with it.',
     deleteApprovedConfirm:

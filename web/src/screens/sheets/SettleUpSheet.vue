@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AmountKeypadField from '@/components/AmountKeypadField.vue'
 import AmountText from '@/components/AmountText.vue'
@@ -49,17 +49,11 @@ watch(
   },
 )
 
-/** Claims between me and this row's person that are still waiting on somebody. */
-const pendingOf = computed(() => (row: SettlementRow) => row.pending.filter((p) => p.status === 'PENDING'))
-
-/**
- * Can I decide this settlement? The person it is owed to always; the trip's creator too, but never
- * their own claim — a payment is confirmed by the person receiving it, not the one making it (§7a).
- */
-function canDecide(claim: PaybackView): boolean {
-  if (claim.toMemberId === props.myMemberId) return true
-  return props.youAreCreator && claim.fromMemberId !== props.myMemberId
-}
+// Settlements between me and this row's person: ones still waiting on somebody, and ones already
+// approved — the latter kept as a muted, undoable record rather than vanishing (§7a). Who may act on
+// each is decided by the server (claim.viewerCanDecide / viewerCanUndo), never re-derived here.
+const pendingOf = (row: SettlementRow) => row.pending.filter((p) => p.status === 'PENDING')
+const settledOf = (row: SettlementRow) => row.settled
 
 function startPay(row: SettlementRow) {
   paying.value = row
@@ -96,7 +90,12 @@ async function remind(row: SettlementRow) {
   if (!error.value) reminded.value = row.memberId
 }
 
-const undoClaim = (paybackId: string) => act(() => api.undoPayback(paybackId))
+async function undoClaim(claim: PaybackView) {
+  // Undoing a *settled* payment re-opens the other person's balance, so it asks first; withdrawing
+  // your own still-pending one moved nothing, so it does not.
+  if (claim.status === 'APPROVED' && !confirm(t('settle.undoConfirm'))) return
+  await act(() => api.undoPayback(claim.id))
+}
 const approveClaim = (paybackId: string) => act(() => api.approvePayback(paybackId))
 
 async function rejectClaim(paybackId: string) {
@@ -151,18 +150,18 @@ async function rejectClaim(paybackId: string) {
           </div>
 
           <div class="settle__pending-actions">
-            <!-- The claimant can withdraw; the recipient (or the creator) decides. A settlement's
-                 only home is this strip, so the decision has to live here. -->
+            <!-- The claimant withdraws; the recipient (or creator) decides. A settlement's only home
+                 is this strip, so both live here — each shown only where the server's flag allows. -->
             <TallyButton
               v-if="claim.fromMemberId === myMemberId"
               size="sm"
               variant="ghost"
               data-testid="pending-undo"
-              @click="undoClaim(claim.id)"
+              @click="undoClaim(claim)"
             >
               {{ t('common.cancel') }}
             </TallyButton>
-            <template v-if="canDecide(claim)">
+            <template v-if="claim.viewerCanDecide">
               <TallyButton
                 size="sm"
                 variant="secondary"
@@ -198,6 +197,38 @@ async function rejectClaim(paybackId: string) {
               {{ t('settle.reject') }}
             </TallyButton>
           </form>
+        </div>
+
+        <!-- Approved settlements: already reflected in the balance above, kept as a muted, undoable
+             record so a mistaken confirmation is not a one-way door (§7a). -->
+        <div
+          v-for="claim in settledOf(row)"
+          :key="claim.id"
+          class="settle__settled"
+          data-testid="settled-claim"
+        >
+          <div class="settle__pending-head">
+            <span class="settle__settled-text">
+              {{
+                claim.fromMemberId === myMemberId
+                  ? t('settle.youPaidThem', { name: row.displayName })
+                  : t('settle.theyPaidYou', { name: row.displayName })
+              }}
+              · {{ t('settle.settled') }}
+            </span>
+            <AmountText
+              :amount-minor="claim.amountMinor"
+              size="sm"
+              tone="settled"
+              :currency-code="currencyCode"
+              :symbol="symbol"
+            />
+          </div>
+          <div v-if="claim.viewerCanUndo" class="settle__pending-actions">
+            <TallyButton size="sm" variant="ghost" data-testid="settled-undo" @click="undoClaim(claim)">
+              {{ t('common.undo') }}
+            </TallyButton>
+          </div>
         </div>
 
         <form
@@ -283,6 +314,25 @@ async function rejectClaim(paybackId: string) {
 .settle__pending-text {
   font-size: var(--text-caption);
   color: var(--ink-2);
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+
+/* A settled payment reads as done, not active: muted, sunk back, the way a settled expense row is. */
+.settle__settled {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-card);
+  border-radius: var(--radius-md);
+  background: var(--paper-sunk);
+  opacity: 0.72;
+}
+
+.settle__settled-text {
+  font-size: var(--text-caption);
+  color: var(--text-muted);
   overflow-wrap: break-word;
   min-width: 0;
 }

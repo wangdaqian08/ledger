@@ -13,6 +13,7 @@ export default {
     save: '保存',
     settled: '已结清',
     you: '你',
+    undo: '撤销',
   },
   money: {
     youAreOwed: '待收',
@@ -25,6 +26,10 @@ export default {
     reminded: '已提醒 ✓',
     sentForConfirmation: '已发送给{name}确认',
     awaitingYou: '{name}说已付给你',
+    settled: '已结清',
+    youPaidThem: '你付给了{name}',
+    theyPaidYou: '{name}付给了你',
+    undoConfirm: '撤销这笔已结清的付款？对方的余额会重新计入。',
     owesYou: '{name}欠你',
     youOweThem: '你欠{name}',
     owesYouShort: '欠你',
@@ -114,6 +119,7 @@ export default {
     reject: '还没有',
     rejectReason: '说明原因，方便更正',
     payBack: '还这一笔',
+    undoConfirm: '撤销这笔已确认的还款？余额会重新计入。',
     delete: '删除支出',
     deleteConfirm: '删除这笔支出？相关的还款记录会一并删除。',
     deleteApprovedConfirm:

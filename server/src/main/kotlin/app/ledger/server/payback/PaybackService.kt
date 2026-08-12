@@ -68,7 +68,7 @@ class PaybackService(
                     reviewedByUserId = actor.takeIf { recordedByThePersonOwed },
                     reviewedAt = Instant.now().takeIf { recordedByThePersonOwed },
                 ),
-            ).toView()
+            ).viewFor(actor)
     }
 
     /** The person owed, or the trip's creator (spec §5). */
@@ -79,7 +79,7 @@ class PaybackService(
         payback.rejectReason = null
         payback.reviewedByUserId = actor
         payback.reviewedAt = Instant.now()
-        return payback.toView()
+        return payback.viewFor(actor)
     }
 
     /** The person owed, or the trip's creator. A reason is required — it is what gets corrected. */
@@ -90,7 +90,7 @@ class PaybackService(
         payback.rejectReason = command.reason.trim()
         payback.reviewedByUserId = actor
         payback.reviewedAt = Instant.now()
-        return payback.toView()
+        return payback.viewFor(actor)
     }
 
     /**
@@ -132,7 +132,7 @@ class PaybackService(
         payback.reviewedByUserId = null
         payback.reviewedAt = null
 
-        return payback.toView()
+        return payback.viewFor(actor)
     }
 
     /**
@@ -145,8 +145,7 @@ class PaybackService(
         val payback = paybacks.findById(paybackId).orElseThrow { noSuchPayback() }
         val trip = access.visibleTrip(payback.tripId, actor)
 
-        val isEitherParty = member(payback.fromMemberId).userId == actor || member(payback.toMemberId).userId == actor
-        if (!isEitherParty && trip.createdByUserId != actor) {
+        if (!payback.undoableBy(actor, trip.createdByUserId) { member(it).userId }) {
             throw ResponseStatusException(
                 HttpStatus.FORBIDDEN,
                 "Only the two people involved, or the trip's creator, can undo this",
@@ -158,8 +157,10 @@ class PaybackService(
     @Transactional(readOnly = true)
     fun forItem(itemId: UUID, actor: UUID): List<PaybackView> {
         val item = items.findById(itemId).orElseThrow { noSuchItem() }
-        access.visibleTrip(item.tripId, actor)
-        return paybacks.findAllByItemIdOrderByCreatedAt(item.id).map { it.toView() }
+        val trip = access.visibleTrip(item.tripId, actor)
+        return paybacks
+            .findAllByItemIdOrderByCreatedAt(item.id)
+            .map { it.toView(actor, trip.createdByUserId) { memberId -> member(memberId).userId } }
     }
 
     /**
@@ -177,25 +178,28 @@ class PaybackService(
     private fun reviewable(paybackId: UUID, actor: UUID): PaybackEntity {
         val payback = paybacks.findById(paybackId).orElseThrow { noSuchPayback() }
         val trip: TripEntity = access.visibleTrip(payback.tripId, actor)
-        val recipient = member(payback.toMemberId)
-        val payer = member(payback.fromMemberId)
 
-        if (recipient.userId != actor && trip.createdByUserId != actor) {
-            throw ResponseStatusException(
-                HttpStatus.FORBIDDEN,
-                "Only the person owed, or the trip's creator, can decide this",
-            )
-        }
-        if (payer.userId == actor && recipient.userId != null) {
-            throw ResponseStatusException(
-                HttpStatus.FORBIDDEN,
-                "You cannot approve a repayment you are the one making — that is for the person you paid",
-            )
+        if (!payback.reviewableBy(actor, trip.createdByUserId) { member(it).userId }) {
+            // The same predicate the view uses; the message just names which half of it the actor
+            // tripped, so the person paying gets "that is for the person you paid" rather than the
+            // generic refusal.
+            val message = if (member(payback.fromMemberId).userId == actor) {
+                "You cannot approve a repayment you are the one making — that is for the person you paid"
+            } else {
+                "Only the person owed, or the trip's creator, can decide this"
+            }
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, message)
         }
         if (payback.status != PaybackStatusName.PENDING) {
             throw ResponseStatusException(HttpStatus.CONFLICT, "This has already been decided")
         }
         return payback
+    }
+
+    /** This payback as a view, carrying [actor]'s capability flags — derived from the trip it is on. */
+    private fun PaybackEntity.viewFor(actor: UUID): PaybackView {
+        val trip = access.visibleTrip(tripId, actor)
+        return toView(actor, trip.createdByUserId) { member(it).userId }
     }
 
     private fun member(memberId: UUID) = members.findById(memberId).orElseThrow { noSuchPayback() }
