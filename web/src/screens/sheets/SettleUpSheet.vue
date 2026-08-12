@@ -55,6 +55,17 @@ watch(
 const pendingOf = (row: SettlementRow) => row.pending.filter((p) => p.status === 'PENDING')
 const settledOf = (row: SettlementRow) => row.settled
 
+// A settlement you filed that they declined — the one place its reason reaches you, since a
+// trip-level claim has no bill sheet. Shown only while nothing fresh is pending to this person
+// (retrying speaks for itself), and only the newest, which carries the reason they gave.
+const declinedOf = (row: SettlementRow): PaybackView[] => {
+  if (pendingOf(row).length > 0 || row.rejected.length === 0) return []
+  const latest = [...row.rejected]
+    .sort((a, b) => (a.reviewedAt ?? '').localeCompare(b.reviewedAt ?? ''))
+    .at(-1)
+  return latest ? [latest] : []
+}
+
 function startPay(row: SettlementRow) {
   paying.value = row
   // Positive owedMinor is "you owe them" — the amount the Pay button pre-fills.
@@ -231,6 +242,29 @@ async function rejectClaim(paybackId: string) {
           </div>
         </div>
 
+        <!-- A settlement they declined: the one surface its reason reaches the claimant, a trip-level
+             claim having no bill sheet. The row still offers Pay, so a corrected one can be sent. -->
+        <div
+          v-for="claim in declinedOf(row)"
+          :key="claim.id"
+          class="settle__declined"
+          data-testid="declined-claim"
+        >
+          <div class="settle__pending-head">
+            <span class="settle__declined-text">{{
+              t('settle.declinedByThem', { name: row.displayName })
+            }}</span>
+            <AmountText
+              :amount-minor="claim.amountMinor"
+              size="sm"
+              tone="owe"
+              :currency-code="currencyCode"
+              :symbol="symbol"
+            />
+          </div>
+          <p v-if="claim.rejectReason" class="settle__declined-reason">“{{ claim.rejectReason }}”</p>
+        </div>
+
         <form
           v-if="paying?.memberId === row.memberId"
           class="settle__pay"
@@ -335,6 +369,32 @@ async function rejectClaim(paybackId: string) {
   color: var(--text-muted);
   overflow-wrap: break-word;
   min-width: 0;
+}
+
+/* A declined claim is a dead end that needs explaining, not a live action: sunk like a settled one,
+   but its heading in coral to say the payment did not stick, with the reason quoted beneath. */
+.settle__declined {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-card);
+  border-radius: var(--radius-md);
+  background: var(--paper-sunk);
+}
+
+.settle__declined-text {
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  color: var(--coral);
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+
+.settle__declined-reason {
+  font-size: var(--text-caption);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 
 .settle__pay {
