@@ -59,10 +59,10 @@ const settledOf = (row: SettlementRow) => row.settled
 // trip-level claim has no bill sheet. Shown only while nothing fresh is pending to this person
 // (retrying speaks for itself), and only the newest, which carries the reason they gave.
 const declinedOf = (row: SettlementRow): PaybackView[] => {
-  if (pendingOf(row).length > 0 || row.rejected.length === 0) return []
-  const latest = [...row.rejected]
-    .sort((a, b) => (a.reviewedAt ?? '').localeCompare(b.reviewedAt ?? ''))
-    .at(-1)
+  // Tolerate an older API that predates the field rather than throwing on it.
+  const rejected = row.rejected ?? []
+  if (pendingOf(row).length > 0 || rejected.length === 0) return []
+  const latest = [...rejected].sort((a, b) => (a.reviewedAt ?? '').localeCompare(b.reviewedAt ?? '')).at(-1)
   return latest ? [latest] : []
 }
 
