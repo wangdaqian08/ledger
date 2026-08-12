@@ -24,12 +24,15 @@ describe('LocaleToggle', () => {
     vi.unstubAllGlobals()
   })
 
-  it('lights the language in force and offers the other', () => {
+  it('lights the language in force and offers the other, flags named for screen readers', () => {
     const toggle = mount(LocaleToggle)
     expect(findByTestId(toggle, 'locale-en').attributes('aria-pressed')).toBe('true')
     expect(findByTestId(toggle, 'locale-zh').attributes('aria-pressed')).toBe('false')
-    expect(toggle.text()).toContain('EN')
-    expect(toggle.text()).toContain('中文')
+    // The flag is decorative; the real language rides in the accessible name.
+    expect(findByTestId(toggle, 'locale-en').attributes('aria-label')).toBe('English')
+    expect(findByTestId(toggle, 'locale-zh').attributes('aria-label')).toBe('中文')
+    expect(toggle.text()).toContain('🇬🇧')
+    expect(toggle.text()).toContain('🇨🇳')
   })
 
   it('switches the whole app and remembers the choice', async () => {

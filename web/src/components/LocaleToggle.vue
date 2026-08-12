@@ -4,13 +4,16 @@ import { setLocale, SUPPORTED_LOCALES, type Locale } from '@/i18n'
 
 /**
  * The language switch: one segment per language the app ships (SUPPORTED_LOCALES), the active one
- * lit. Words, not flag emoji — the design system carries no emoji (spec §5), and a flag names a
- * country, not a language (there is no flag for "English", and Chinese is spoken under several).
- * The choice is remembered across sessions; `setLocale` is what writes it.
+ * lit. Shown as flags by product choice — a deliberate exception to the design system's no-emoji
+ * rule. Each flag is a stand-in, not a claim: 🇬🇧 marks English (spoken well beyond Britain) and
+ * 🇨🇳 marks 中文, so the accessible name carries the real language for anyone who can't see the
+ * glyph, and note flag emoji fall back to letters on some platforms. The choice is remembered
+ * across sessions; `setLocale` is what writes it.
  */
 const { locale } = useI18n()
 
-const LABEL: Record<Locale, string> = { en: 'EN', zh: '中文' }
+const FLAG: Record<Locale, string> = { en: '🇬🇧', zh: '🇨🇳' }
+const NAME: Record<Locale, string> = { en: 'English', zh: '中文' }
 </script>
 
 <template>
@@ -22,10 +25,11 @@ const LABEL: Record<Locale, string> = { en: 'EN', zh: '中文' }
       class="locale__seg"
       :class="{ 'locale__seg--on': locale === option }"
       :data-testid="`locale-${option}`"
+      :aria-label="NAME[option]"
       :aria-pressed="locale === option"
       @click="setLocale(option)"
     >
-      {{ LABEL[option] }}
+      <span aria-hidden="true">{{ FLAG[option] }}</span>
     </button>
   </div>
 </template>
@@ -41,19 +45,21 @@ const LABEL: Record<Locale, string> = { en: 'EN', zh: '中文' }
 }
 
 .locale__seg {
+  display: inline-flex;
+  align-items: center;
   padding: 4px 10px;
-  font-size: var(--text-caption);
-  font-weight: var(--weight-bold);
-  line-height: 1.4;
-  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1.3;
   background: transparent;
   border: none;
   cursor: pointer;
+  /* A dimmed flag reads as "not the current language"; the lit one comes back to full strength. */
+  opacity: 0.45;
 }
 
 .locale__seg--on {
   background: var(--grape-tint);
-  color: var(--ink);
+  opacity: 1;
 }
 
 .locale__seg + .locale__seg {
