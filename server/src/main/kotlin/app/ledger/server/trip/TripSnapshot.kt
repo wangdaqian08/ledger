@@ -125,7 +125,10 @@ class TripSnapshot(
         }
 
         SplitRuleName.WEIGHTED -> {
-            SplitRule.Weighted(shares.associate { MemberId(it.id.memberId.toString()) to (it.weight ?: 1) })
+            // A missing weight is 0, not 1 — the same reading validation uses ("on the bill, owing
+            // nothing") and the same default the engine itself applies. Defaulting to 1 here let an
+            // omitted weight validate as zero and then be charged an equal share.
+            SplitRule.Weighted(shares.associate { MemberId(it.id.memberId.toString()) to (it.weight ?: 0) })
         }
 
         SplitRuleName.EXACT -> {

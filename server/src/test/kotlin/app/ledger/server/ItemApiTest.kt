@@ -442,6 +442,31 @@ class ItemApiTest : ApiTest() {
         assertEquals(0, byMember[trip.bob.toString()], "the zero-weight person owes nothing")
     }
 
+    @Test
+    fun `a weighted share with no weight at all is a zero, not a silent equal share`() {
+        // Validation reads a missing weight as 0 ("on the bill, owing nothing"); the engine mapping
+        // must agree. It once defaulted a null weight to 1, so an omitted weight validated as zero
+        // and was then charged an equal share — the two ends disagreeing under a 200.
+        val trip = tripWith("Alice", "Bob")
+
+        val item = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Cab", 10_000, trip.category, trip.ownerMember, emptyList(), splitRule = "WEIGHTED") +
+                mapOf(
+                    "sharedBy" to listOf(
+                        mapOf("memberId" to trip.ownerMember.toString(), "weight" to 1),
+                        // Bob's weight is omitted entirely.
+                        mapOf("memberId" to trip.bob.toString()),
+                    ),
+                ),
+        )
+
+        assertEquals(HttpStatus.CREATED, item.statusCode)
+        val byMember = item.json()["splits"].associate { it["memberId"].asText() to it["amountMinor"].asLong() }
+        assertEquals(10_000, byMember[trip.ownerMember.toString()])
+        assertEquals(0, byMember[trip.bob.toString()], "an omitted weight owes nothing, as validation implied")
+    }
+
     private fun tripWith(ownerName: String, friend: String): Fixture {
         val owner = signedIn(ownerName)
         val tripId = owner.createTrip()
