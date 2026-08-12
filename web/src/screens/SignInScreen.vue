@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import LocaleToggle from '@/components/LocaleToggle.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TextField from '@/components/TextField.vue'
 import { ApiError } from '@/lib/api'
@@ -49,6 +50,7 @@ async function submit() {
 
 <template>
   <main class="signin">
+    <LocaleToggle class="signin__locale" />
     <div class="signin__brand">
       <h1 class="signin__title">{{ t('signin.title') }}</h1>
       <p class="signin__tagline">{{ t('signin.tagline') }}</p>
@@ -79,12 +81,19 @@ async function submit() {
 
 <style scoped>
 .signin {
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: var(--space-8);
   min-height: 100dvh;
   padding: var(--space-6);
+}
+
+.signin__locale {
+  position: absolute;
+  top: max(var(--space-4), env(safe-area-inset-top));
+  right: var(--space-4);
 }
 
 .signin__brand {

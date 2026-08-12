@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import LocaleToggle from './LocaleToggle.vue'
 import TallyIcon from './TallyIcon.vue'
 
 withDefaults(
@@ -32,6 +33,7 @@ defineEmits<{ back: []; action: [] }>()
       <TallyIcon name="arrow-left" :size="22" />
     </button>
     <h1 class="bar__title">{{ title }}</h1>
+    <LocaleToggle />
     <button
       v-if="action"
       type="button"
