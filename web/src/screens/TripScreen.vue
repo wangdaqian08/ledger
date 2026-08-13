@@ -261,6 +261,16 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
                     : t('trip.filterYouPaid')
               }}
             </button>
+            <!-- A plain download: the browser fetches the CSV with the session cookie, no JS. The
+                 file is the outward spend only — expenses, never the internal who-paid-who. -->
+            <a
+              class="trip__filter trip__export"
+              :href="`/api/trips/${tripId}/expenses.csv`"
+              download
+              data-testid="export-csv"
+            >
+              {{ t('trip.exportCsv') }}
+            </a>
           </div>
         </div>
 
@@ -499,6 +509,12 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
   border-color: var(--ink);
   background: var(--grape-tint);
   color: var(--ink);
+}
+
+/* The export rides in the chip row but is an action, not a filter — same pill, link semantics. */
+.trip__export {
+  text-decoration: none;
+  line-height: normal;
 }
 
 .trip__day {
