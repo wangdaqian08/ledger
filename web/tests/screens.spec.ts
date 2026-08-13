@@ -285,6 +285,19 @@ describe('TripScreen', () => {
     expect(row.text()).toContain('Pay')
   })
 
+  it('offers the expense export as a plain download of this trip', async () => {
+    serve(trip())
+    const screen = mount(TripScreen, { props: { tripId: 't-1' }, global: global() })
+    await flushPromises()
+
+    const link = findByTestId(screen, 'export-csv')
+    // A real anchor with a download attribute — the browser fetches it with the session cookie;
+    // no JS in the path that could round-trip the numbers through floats.
+    expect(link.element.tagName).toBe('A')
+    expect(link.attributes('href')).toBe('/api/trips/t-1/expenses.csv')
+    expect(link.attributes('download')).toBeDefined()
+  })
+
   it('sinks all-square people below real debts in who-owes-who, and fades them', async () => {
     // You're square with Bob but owe Cara. Cara must lead; Bob is kept for reassurance but sunk to
     // the bottom and muted, so a $0 row never sits above money that still needs acting on.

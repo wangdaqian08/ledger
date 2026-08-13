@@ -78,6 +78,7 @@ export default {
     linkCopied: 'Link copied — anyone with it can pick their name',
     settleUp: 'Settle up',
     addExpense: 'Add expense',
+    exportCsv: 'Export CSV',
     paidBy: '{name} paid',
     youPaid: 'You paid',
     settledCaption: 'settled',

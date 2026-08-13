@@ -79,6 +79,7 @@ export default {
     linkCopied: '链接已复制——拿到链接的人可以认领自己的名字',
     settleUp: '结算',
     addExpense: '记一笔',
+    exportCsv: '导出 CSV',
     paidBy: '{name}付的',
     youPaid: '你付的',
     settledCaption: '已结清',

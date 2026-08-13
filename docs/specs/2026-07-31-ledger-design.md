@@ -359,6 +359,7 @@ GET    /api/trips/{id}/settlement   bilateral rows: your position with each pers
 POST   /api/trips/{id}/settlements  { toMemberId, amountMinor } — the Pay button
 POST   /api/paybacks/{id}/undo      either side, before or after approval
 POST   /api/trips/{id}/remind       { memberId } — a nudge; changes no balance
+GET    /api/trips/{id}/expenses.csv the outward spend as a downloadable file — expenses only
 GET    /api/overview                OverallScreen — cross-group, one call
 GET    /api/activity                Activity tab — cross-group feed
 ```
@@ -383,6 +384,16 @@ GET    /api/activity                Activity tab — cross-group feed
   no items, no balances, no claimed members. The token travels in the request body (and in the
   share link's URL *fragment*), never a query string, which would copy it into access logs and
   Referer headers.
+
+- **`GET /api/trips/{id}/expenses.csv`** — added by request once real trips were being reviewed:
+  a record of the money that left the group, kept outside the app. One row per expense — date,
+  recorded-at timestamp, payer, title, exact amount, currency — and deliberately nothing else:
+  no paybacks or settlements (internal movement, not spend), no shares or participants (the
+  reviewer wants the spend journal, not the debt graph). Amounts are exact major units derived
+  from integer minor units by string arithmetic; the file is RFC 4180 with a UTF-8 BOM so
+  spreadsheets read 中文 titles correctly. Same visibility as the trip: a stranger gets 404.
+  The spend *time of day* is not captured by the app, so the export carries the spend date plus
+  the row's write timestamp rather than inventing one.
 
 ### Removed, because nothing needs them
 
