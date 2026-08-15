@@ -16,6 +16,8 @@ import SignInScreen from '../src/screens/SignInScreen.vue'
 import TripScreen from '../src/screens/TripScreen.vue'
 import TripsScreen from '../src/screens/TripsScreen.vue'
 import { findAllByTestId, findByTestId } from './testids'
+import en from '../src/i18n/en'
+import { useSession } from '../src/stores/session'
 import { saltFor, splitShares } from '../src/lib/split'
 import type {
   ItemView,
@@ -773,6 +775,7 @@ describe('JoinScreen', () => {
   it('reads the token from the fragment, shows the free names, and claims the chosen one', async () => {
     mocked.claimable!.mockResolvedValue({
       tripName: 'Osaka',
+      you: null,
       members: [{ id: cara.id, displayName: 'Cara', personHue: 3 }],
     })
     mocked.claim!.mockResolvedValue(trip())
@@ -790,6 +793,54 @@ describe('JoinScreen', () => {
 
     expect(mocked.claim).toHaveBeenCalledWith('t-1', 'tok-abc', cara.id)
     expect(router.currentRoute.value.path).toBe('/trips/t-1')
+  })
+
+  it('tells somebody already aboard which seat is theirs and offers the trip, never the list', async () => {
+    mocked.claimable!.mockResolvedValue({
+      tripName: 'Osaka',
+      you: { id: 'm-you', displayName: 'Jack', personHue: 2 },
+      members: [],
+    })
+    await router.push('/join/t-1#token=tok-abc')
+
+    const screen = mount(JoinScreen, { props: { tripId: 't-1' }, global: global() })
+    await flushPromises()
+
+    expect(findByTestId(screen, 'join-already').text()).toContain('Jack')
+    expect(findAllByTestId(screen, 'join-member')).toHaveLength(0)
+    expect(findAllByTestId(screen, 'join-claim')).toHaveLength(0)
+    // Not the all-claimed dead end either — being aboard is its own state, not "no names left".
+    expect(screen.text()).not.toContain(en.join.allClaimed)
+
+    await findByTestId(screen, 'join-open').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/trips/t-1')
+  })
+
+  it('names the signed-in account, and sign-out routes back here for the right person', async () => {
+    mocked.claimable!.mockResolvedValue({
+      tripName: 'Osaka',
+      you: null,
+      members: [{ id: cara.id, displayName: 'Cara', personHue: 3 }],
+    })
+    const session = useSession()
+    session.me = { id: 'u-1', displayName: 'jack', email: 'jack@ledger.test', photoUrl: null, friends: [] }
+    session.checked = true
+    await router.push('/join/t-1#token=tok-abc')
+
+    const screen = mount(JoinScreen, { props: { tripId: 't-1' }, global: global() })
+    await flushPromises()
+
+    expect(findByTestId(screen, 'join-who').text()).toContain('jack')
+
+    await findByTestId(screen, 'join-signout').trigger('click')
+    await flushPromises()
+
+    expect(mocked.signOut).toHaveBeenCalled()
+    expect(router.currentRoute.value.path).toBe('/signin')
+    // The whole invite URL, fragment included — sign-in hands the next person straight back here.
+    expect(router.currentRoute.value.query.next).toBe('/join/t-1#token=tok-abc')
   })
 })
 

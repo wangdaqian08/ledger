@@ -75,6 +75,6 @@ data class InviteView(val token: String, val expiresAt: Instant)
  * names still free to claim. Deliberately not [TripView] — no items, no balances, no claimed
  * members, because the holder of a link is not yet somebody the trip's numbers belong to.
  */
-data class ClaimableView(val tripName: String, val members: List<ClaimableMemberView>)
+data class ClaimableView(val tripName: String, val you: ClaimableMemberView?, val members: List<ClaimableMemberView>)
 
 data class ClaimableMemberView(val id: UUID, val displayName: String, val personHue: Short)

@@ -159,5 +159,9 @@ export default {
     signInFirst: '请先登录，再认领名字。',
     allClaimed: '这个行程的名字都已被认领。',
     badLink: '链接已失效——请索取新的链接。',
+    alreadyOn: '你已经以{name}的身份在这个行程里了',
+    openTrip: '打开{trip}',
+    signedInAs: '当前登录：{name}',
+    notYou: '不是你？退出登录',
   },
 } as const

@@ -195,6 +195,8 @@ export interface InviteView {
 /** The roster a share link is allowed to show before its holder is on the trip. */
 export interface ClaimableView {
   tripName: string
+  /** The viewer's own seat when they already hold one — the join screen then offers the trip, not the list. */
+  you: { id: string; displayName: string; personHue: number } | null
   members: { id: string; displayName: string; personHue: number }[]
 }
 

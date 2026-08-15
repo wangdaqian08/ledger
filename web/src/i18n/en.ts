@@ -158,5 +158,9 @@ export default {
     signInFirst: 'Sign in first, then pick your name.',
     allClaimed: 'Every name on this trip is already taken.',
     badLink: 'This link is not valid any more — ask for a fresh one.',
+    alreadyOn: "You're already on this trip as {name}",
+    openTrip: 'Open {trip}',
+    signedInAs: 'Signed in as {name}',
+    notYou: 'Not you? Sign out',
   },
 } as const
