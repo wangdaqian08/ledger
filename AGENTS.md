@@ -125,6 +125,15 @@ including the two that stop a trip having two categories called "Food". A demo o
 is a demo of a different application. `docs/demo/tally-demo.html` is the original click-through
 prototype, kept for navigating the intended screens quickly.
 
+Day-to-day IDE work has a second, unseeded path: `docker compose up -d` starts the Postgres that
+`application-dev.yaml` already points at (the same `postgres:18-alpine` the tests pin), and the
+checked-in run configurations in `.run/` — `server (dev)` and `web (5173)` — boot the backend and
+frontend from IntelliJ. This database keeps its data across restarts in a named volume;
+`docker compose down -v` is the reset. The demo seed lives in test sources and cannot run here, so
+first boot is an empty app: sign in as any name and create what you need. Tests and `bootTestRun`
+never touch this container — their own Testcontainers `@ServiceConnection` beats the datasource
+properties.
+
 `web/` is a plain npm project, **not** a Gradle module, so `./gradlew check` does not touch it and
 never will. That is deliberate: the JVM build stays fast and JVM-only, and §10's `npm --prefix web`
 commands are the real ones rather than a second way of doing the same thing. CI runs both.

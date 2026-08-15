@@ -1,0 +1,13 @@
+<!-- Frontend from IntelliJ: the Vite dev server on 5173, proxying /api to the backend on 8080. -->
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="web (5173)" type="js.build_tools.npm" factoryName="npm">
+    <package-json value="$PROJECT_DIR$/web/package.json" />
+    <command value="run" />
+    <scripts>
+      <script value="dev" />
+    </scripts>
+    <node-interpreter value="project" />
+    <envs />
+    <method v="2" />
+  </configuration>
+</component>

@@ -1,0 +1,12 @@
+<!-- Backend from IntelliJ: LedgerApplication on the dev profile, against the compose Postgres.
+     `docker compose up -d` once first — application-dev.yaml points at localhost:5432. -->
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="server (dev)" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <module name="ledger.server.main" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="app.ledger.server.LedgerApplicationKt" />
+    <option name="ACTIVE_PROFILES" value="dev" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
