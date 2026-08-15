@@ -298,6 +298,25 @@ class TripApiTest : ApiTest() {
     }
 
     @Test
+    fun `the landing page tells somebody already aboard which name is theirs`() {
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip("Hokkaido")
+        alice.addMember(tripId, "Bob")
+        val invite = alice.invite(tripId)
+
+        // Creating the trip claimed Alice's own slot, so the link must say so rather than offer
+        // her names that can only be refused — every claim by a member is a guaranteed 409.
+        val aboard = alice.post("/api/trips/$tripId/claimable", mapOf("token" to invite)).json()
+        assertTrue(aboard["you"]["displayName"].asText().startsWith("Alice"))
+
+        // Somebody holding no slot gets the free names and an explicit nothing for `you` —
+        // still without learning who the claimed names belong to.
+        val fresh = signedIn("Friend").post("/api/trips/$tripId/claimable", mapOf("token" to invite)).json()
+        assertTrue(fresh["you"].isNull, "a stranger has no seat to be told about")
+        assertEquals(listOf("Bob"), fresh["members"].map { it["displayName"].asText() })
+    }
+
+    @Test
     fun `a tampered link is refused`() {
         val alice = signedIn("Alice")
         val tripId = alice.createTrip("Hokkaido")

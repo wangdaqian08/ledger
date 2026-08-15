@@ -147,9 +147,14 @@ class TripService(
      * The share link's landing page: which names are still free. Like [claim], deliberately not
      * behind [TripAccess.visibleTrip] — the token is the authorisation — and deliberately *only*
      * the unclaimed names: the link's holder is not yet somebody the trip's numbers belong to.
+     *
+     * The one exception is [ClaimableView.you]: the caller's own slot, when they already hold one.
+     * Telling somebody what they already are leaks nothing about anyone else, and it lets the join
+     * screen say "you are already aboard" instead of offering names every one of which [claim]
+     * could only refuse.
      */
     @Transactional(readOnly = true)
-    fun claimable(tripId: UUID, token: String): ClaimableView {
+    fun claimable(tripId: UUID, token: String, actor: UUID): ClaimableView {
         if (inviteTokens.verify(token) != tripId) {
             throw InvalidInviteToken("This invite link is for a different trip")
         }
@@ -158,6 +163,9 @@ class TripService(
         }
         return ClaimableView(
             tripName = trip.name,
+            you = members.findByTripIdAndUserId(tripId, actor)?.let {
+                ClaimableMemberView(it.id, it.displayName, it.personHue)
+            },
             members = members
                 .findAllByTripIdOrderByCreatedAt(tripId)
                 .filter { it.userId == null }

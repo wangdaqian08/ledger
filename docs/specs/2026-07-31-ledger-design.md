@@ -339,7 +339,8 @@ GET    /api/trips/{id}              the whole group detail screen in one call
 POST   /api/trips/{id}/members
 PATCH  /api/trips/{id}/members/{memberId}   { displayName } — creator fixes a typo'd name
 POST   /api/trips/{id}/invite       → signed share-link token
-POST   /api/trips/{id}/claimable    { token } — the link's landing page: trip name + unclaimed names
+POST   /api/trips/{id}/claimable    { token } — the link's landing page: trip name, unclaimed
+                                    names, and `you` when the caller already holds a seat
 POST   /api/trips/{id}/claim        { token, memberId }
 GET    /api/trips/{id}/categories   eight built-ins + this trip's custom ones
 POST   /api/trips/{id}/categories   { name, icon, hue }
@@ -387,7 +388,10 @@ GET    /api/activity                Activity tab — cross-group feed
   landing page has to show a friend which names are still free, and the friend is by definition
   not yet on the trip, so `GET /api/trips/{id}` correctly 404s for them. Like `claim`, the token
   is the authorisation; unlike `claim`, it answers with the trip's name and unclaimed names only —
-  no items, no balances, no claimed members. The token travels in the request body (and in the
+  no items, no balances, no claimed members. The one exception is `you`, the caller's own seat when
+  they already hold one: telling somebody what they already are leaks nothing about anyone else,
+  and it lets the join screen offer the trip instead of a list of names every one of which `claim`
+  could only refuse with a 409. The token travels in the request body (and in the
   share link's URL *fragment*), never a query string, which would copy it into access logs and
   Referer headers.
 

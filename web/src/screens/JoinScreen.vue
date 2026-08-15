@@ -6,9 +6,16 @@ import PersonAvatar from '@/components/PersonAvatar.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TallyCard from '@/components/TallyCard.vue'
 import { api, ApiError, type ClaimableView } from '@/lib/api'
+import { useSession } from '@/stores/session'
 
 /**
- * The share link's landing page: the trip's unclaimed names, pick yours, and you are on it.
+ * The share link's landing page, in one of three states decided by what the server says of the
+ * viewer: already aboard (offer the trip, never the list — every claim could only be refused),
+ * names still free (pick yours), or none left.
+ *
+ * Whoever is signed in is named at the foot, with a sign-out that leads back to this URL: a claim
+ * binds the *account*, and on a shared or long-lived browser the account is the one fact the
+ * person standing here cannot otherwise see.
  *
  * The token is the authorisation and travels in the URL fragment — never the query string, which
  * would put a claim on the trip into every access log and Referer header on the way here.
@@ -18,6 +25,7 @@ const props = defineProps<{ tripId: string }>()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const session = useSession()
 
 const token = ref('')
 const claimable = ref<ClaimableView | null>(null)
@@ -31,6 +39,9 @@ onMounted(async () => {
     error.value = t('join.badLink')
     return
   }
+  // Alongside, not before: the footer naming the account can arrive late, the list cannot wait
+  // on it. A failure here only costs that footer, so it is let go rather than surfaced.
+  if (!session.checked) session.load().catch(() => {})
   try {
     claimable.value = await api.claimable(props.tripId, token.value)
   } catch (failure) {
@@ -54,6 +65,16 @@ async function claim() {
     busy.value = false
   }
 }
+
+function openTrip() {
+  return router.push({ name: 'trip', params: { tripId: props.tripId } })
+}
+
+/** `next` carries the whole invite URL, fragment included, so the right person lands straight back here. */
+async function signOut() {
+  await session.signOut()
+  await router.push({ name: 'signin', query: { next: route.fullPath } })
+}
 </script>
 
 <template>
@@ -62,7 +83,16 @@ async function claim() {
       <h1 class="join__title">{{ t('join.title', { trip: claimable?.tripName ?? '…' }) }}</h1>
 
       <template v-if="claimable">
-        <p v-if="claimable.members.length === 0" class="join__empty">{{ t('join.allClaimed') }}</p>
+        <template v-if="claimable.you">
+          <p class="join__aboard" data-testid="join-already">
+            {{ t('join.alreadyOn', { name: claimable.you.displayName }) }}
+          </p>
+          <TallyButton variant="primary" full-width data-testid="join-open" @click="openTrip">
+            {{ t('join.openTrip', { trip: claimable.tripName }) }}
+          </TallyButton>
+        </template>
+
+        <p v-else-if="claimable.members.length === 0" class="join__empty">{{ t('join.allClaimed') }}</p>
 
         <template v-else>
           <h2 class="join__label">{{ t('join.pickYourName') }}</h2>
@@ -90,6 +120,13 @@ async function claim() {
             {{ t('join.claim') }}
           </TallyButton>
         </template>
+
+        <p v-if="session.me" class="join__who" data-testid="join-who">
+          {{ t('join.signedInAs', { name: session.me.displayName }) }}
+          <button type="button" class="join__signout" data-testid="join-signout" @click="signOut">
+            {{ t('join.notYou') }}
+          </button>
+        </p>
       </template>
 
       <p v-if="error" class="join__error" role="alert">{{ error }}</p>
@@ -154,6 +191,25 @@ async function claim() {
 
 .join__empty {
   color: var(--text-muted);
+}
+
+.join__aboard {
+  color: var(--text-body);
+}
+
+.join__who {
+  color: var(--text-muted);
+  font-size: var(--text-caption);
+}
+
+.join__signout {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--text-body);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .join__error {
