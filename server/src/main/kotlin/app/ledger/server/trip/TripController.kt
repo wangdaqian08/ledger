@@ -5,6 +5,7 @@ import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -41,6 +42,14 @@ class TripController(private val trips: TripService) {
         @Valid @RequestBody command: AddMember,
         @AuthenticationPrincipal principal: LedgerPrincipal,
     ): MemberView = trips.addMember(tripId, command, principal.userId)
+
+    @PatchMapping("/{tripId}/members/{memberId}")
+    fun renameMember(
+        @PathVariable tripId: UUID,
+        @PathVariable memberId: UUID,
+        @Valid @RequestBody command: RenameMember,
+        @AuthenticationPrincipal principal: LedgerPrincipal,
+    ): MemberView = trips.renameMember(tripId, memberId, command, principal.userId)
 
     @PostMapping("/{tripId}/invite")
     fun invite(

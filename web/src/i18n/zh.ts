@@ -150,6 +150,7 @@ export default {
     namePlaceholder: '添加名字',
     add: '添加',
     copyLink: '复制邀请链接',
+    rename: '修改{name}的名字',
   },
   join: {
     title: '加入{trip}',

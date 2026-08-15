@@ -108,6 +108,37 @@ class TripService(
         return saved.toMemberView(actor)
     }
 
+    /**
+     * Trip creator only, like [addMember] — the roster is the creator's, even for a seat somebody
+     * has claimed. A name is the roster's one hand-entered fact, so it is the one that gets typed
+     * wrong, and fixing it moves no number: nothing financial hangs off a display name.
+     */
+    @Transactional
+    fun renameMember(tripId: UUID, memberId: UUID, command: RenameMember, actor: UUID): MemberView {
+        val trip = access.creatorOnly(tripId, actor)
+        val member = members
+            .findById(memberId)
+            .filter { it.tripId == trip.id }
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No such member on this trip") }
+        val displayName = command.displayName.trim()
+
+        // Re-casing the same seat ("bobb" → "Bobb") only collides with itself; landing on another
+        // member's name is the real conflict, checked exactly like [addMember].
+        if (!member.displayName.equals(displayName, ignoreCase = true) &&
+            members.existsByTripIdAndDisplayNameIgnoreCase(trip.id, displayName)
+        ) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Somebody on this trip already has that name")
+        }
+
+        member.displayName = displayName
+        try {
+            members.flush()
+        } catch (race: DataIntegrityViolationException) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Somebody on this trip already has that name", race)
+        }
+        return member.toMemberView(actor)
+    }
+
     /** Trip creator only: the share link is how the roster gets filled, so it follows the roster rule. */
     @Transactional(readOnly = true)
     fun invite(tripId: UUID, actor: UUID): IssuedInvite = inviteTokens.issue(access.creatorOnly(tripId, actor).id)
