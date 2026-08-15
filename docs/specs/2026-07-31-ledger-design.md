@@ -634,7 +634,10 @@ Each step ends with something runnable and tested.
 ```bash
 ./gradlew :engine:test      # S1–S6. Must pass before any UI exists.
 ./gradlew :server:test      # Testcontainers Postgres. Permissions + approval state machine.
-./gradlew :server:bootRun   # dev profile: mock login, seeded 14-person trip
+./gradlew :server:bootTestRun   # dev+demo profiles: mock login, seeded 14-person trip
+docker compose up -d && \
+  ./gradlew :server:bootRun --args='--spring.profiles.active=dev'
+                            # the same app, empty, on a Postgres that keeps its data
 npm --prefix web run test   # Vitest on stores and computed shares
 npm --prefix web run e2e    # Playwright: full approval round-trip
 ```

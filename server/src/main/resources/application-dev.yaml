@@ -1,6 +1,6 @@
 # Local development: a Postgres on localhost and MockIdentityProvider, so nothing here needs
-# Google credentials or a network. `docker run --rm -e POSTGRES_USER=ledger \
-# -e POSTGRES_PASSWORD=ledger -e POSTGRES_DB=ledger -p 5432:5432 postgres:18-alpine`
+# Google credentials or a network. `docker compose up -d` at the repository root starts the
+# matching database; the `server (dev)` run configuration in `.run/` boots the app against it.
 #
 # The Testcontainers tests also run under this profile, and their @ServiceConnection container
 # overrides the datasource below — a ConnectionDetails bean beats properties.

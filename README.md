@@ -54,11 +54,16 @@ npm --prefix web run lint       # ESLint + Prettier
 npm --prefix web run build      # typechecks, then bundles
 
 ./gradlew :server:bootTestRun   # the whole app, seeded with the hotel scenario
+docker compose up -d            # Postgres for the IDE path — application-dev.yaml points at it
 ```
 
 `bootTestRun` starts a real Postgres through Testcontainers and seeds a trip mid-story: two $1,000
 hotel bills, everybody paid, and Jack on the trip but not yet on either bill's people list. Ticking
 him on is the demonstration. Sign in as any name — the dev provider asks for nothing else.
+
+For IntelliJ, `.run/` carries shared run configurations: `server (dev)` boots the backend on the
+dev profile against the compose Postgres (empty — the demo seed lives in test sources), and
+`web (5173)` starts the Vite dev server that proxies `/api` to it.
 
 `docs/demo/tally-demo.html` is the original click-through prototype. Open it in a browser to see
 the intended screens and navigation; it is a design reference, not this application.
