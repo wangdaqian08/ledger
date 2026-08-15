@@ -5,6 +5,7 @@ import PersonAvatar from '@/components/PersonAvatar.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import TallyBadge from '@/components/TallyBadge.vue'
 import TallyButton from '@/components/TallyButton.vue'
+import TallyIcon from '@/components/TallyIcon.vue'
 import TextField from '@/components/TextField.vue'
 import { api, type TripView } from '@/lib/api'
 
@@ -12,6 +13,9 @@ import { api, type TripView } from '@/lib/api'
  * The roster, and the two ways onto it: the creator writes a name down, and the share link lets
  * that person claim it. A trip's people exist before their owners do — friends who never sign in
  * still take a full share, ticked off by the payer (spec §4).
+ *
+ * Names are the roster's one hand-entered fact, so they are the one that gets typed wrong — the
+ * creator can fix one in place. Renaming moves no number; nothing financial hangs off a name.
  */
 const props = defineProps<{ open: boolean; trip: TripView }>()
 const emit = defineEmits<{ close: []; changed: [] }>()
@@ -22,6 +26,8 @@ const newName = ref('')
 const linkNote = ref('')
 const error = ref('')
 const busy = ref(false)
+const editingId = ref<string | null>(null)
+const editedName = ref('')
 
 watch(
   () => props.open,
@@ -30,8 +36,32 @@ watch(
     newName.value = ''
     linkNote.value = ''
     error.value = ''
+    editingId.value = null
   },
 )
+
+function startRename(member: { id: string; displayName: string }) {
+  editingId.value = member.id
+  editedName.value = member.displayName
+  error.value = ''
+}
+
+async function saveRename() {
+  const memberId = editingId.value
+  const name = editedName.value.trim()
+  if (!memberId || !name || busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    await api.renameMember(props.trip.id, memberId, name)
+    editingId.value = null
+    emit('changed')
+  } catch (failure) {
+    error.value = failure instanceof Error ? failure.message : String(failure)
+  } finally {
+    busy.value = false
+  }
+}
 
 async function addName() {
   if (!newName.value.trim() || busy.value) return
@@ -78,10 +108,44 @@ async function copyLink() {
           data-testid="invite-member"
         >
           <PersonAvatar :name="member.displayName" :hue="member.personHue" :size="36" />
-          <span class="invite__name">{{ member.isYou ? t('common.you') : member.displayName }}</span>
-          <TallyBadge :tone="member.claimed ? 'settled' : 'pending'">
-            {{ member.claimed ? t('invite.claimed') : t('invite.unclaimed') }}
-          </TallyBadge>
+
+          <form
+            v-if="editingId === member.id"
+            class="invite__rename"
+            data-testid="rename-form"
+            @submit.prevent="saveRename"
+          >
+            <TextField v-model="editedName" test-id="rename-name" :disabled="busy" />
+            <TallyButton
+              type="submit"
+              variant="secondary"
+              size="sm"
+              data-testid="rename-save"
+              :disabled="!editedName.trim() || busy"
+            >
+              {{ t('common.save') }}
+            </TallyButton>
+            <TallyButton variant="ghost" size="sm" data-testid="rename-cancel" @click="editingId = null">
+              {{ t('common.cancel') }}
+            </TallyButton>
+          </form>
+
+          <template v-else>
+            <span class="invite__name">{{ member.isYou ? t('common.you') : member.displayName }}</span>
+            <button
+              v-if="trip.youAreCreator"
+              type="button"
+              class="invite__edit"
+              data-testid="rename-member"
+              :aria-label="t('invite.rename', { name: member.displayName })"
+              @click="startRename(member)"
+            >
+              <TallyIcon name="pencil" :size="16" />
+            </button>
+            <TallyBadge :tone="member.claimed ? 'settled' : 'pending'">
+              {{ member.claimed ? t('invite.claimed') : t('invite.unclaimed') }}
+            </TallyBadge>
+          </template>
         </div>
       </section>
 
@@ -142,6 +206,29 @@ async function copyLink() {
   overflow-wrap: break-word;
   font-weight: var(--weight-semibold);
   color: var(--text-body);
+}
+
+.invite__rename {
+  display: flex;
+  flex: 1;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.invite__rename > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.invite__edit {
+  display: grid;
+  place-items: center;
+  padding: var(--space-1);
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
 }
 
 .invite__add {

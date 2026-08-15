@@ -149,6 +149,7 @@ export default {
     namePlaceholder: 'Add a name',
     add: 'Add',
     copyLink: 'Copy invite link',
+    rename: 'Rename {name}',
   },
   join: {
     title: 'Join {trip}',

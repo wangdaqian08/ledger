@@ -34,6 +34,13 @@ data class AddMember(
     val displayName: String,
 )
 
+/** The creator fixing a typo'd or placeholder name — the roster's one hand-entered fact. */
+data class RenameMember(
+    @field:NotBlank
+    @field:Size(max = 80)
+    val displayName: String,
+)
+
 data class ClaimMember(
     @field:NotBlank
     val token: String,

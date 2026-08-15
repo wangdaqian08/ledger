@@ -46,6 +46,7 @@ vi.mock('../src/lib/api', async () => {
       claimable: vi.fn(),
       claim: vi.fn(),
       addMember: vi.fn(),
+      renameMember: vi.fn(),
       categories: vi.fn(),
       createItem: vi.fn(),
       itemDetail: vi.fn(),
@@ -689,6 +690,33 @@ describe('InviteSheet', () => {
 
     expect(mocked.addMember).toHaveBeenCalledWith('t-1', 'Dana')
     expect(sheet.emitted('changed')).toBeTruthy()
+  })
+
+  it('lets the creator fix a name in place, and reports the change', async () => {
+    mocked.renameMember!.mockResolvedValue({ ...bob, displayName: 'Robert' })
+    const sheet = mount(InviteSheet, { props: { open: true, trip: trip() }, global: global() })
+    await nextTick()
+
+    await findAllByTestId(sheet, 'rename-member')[1]!.trigger('click')
+    const field = findByTestId(sheet, 'rename-name')
+    expect((field.element as HTMLInputElement).value).toBe('Bob')
+
+    await field.setValue('Robert')
+    await findByTestId(sheet, 'rename-form').trigger('submit')
+    await flushPromises()
+
+    expect(mocked.renameMember).toHaveBeenCalledWith('t-1', bob.id, 'Robert')
+    expect(sheet.emitted('changed')).toBeTruthy()
+  })
+
+  it('offers no rename to a plain member, whose roster is read-only', async () => {
+    const sheet = mount(InviteSheet, {
+      props: { open: true, trip: trip({ youAreCreator: false }) },
+      global: global(),
+    })
+    await nextTick()
+
+    expect(findAllByTestId(sheet, 'rename-member')).toHaveLength(0)
   })
 
   it('hands out a link with the token in the fragment, never the query string', async () => {

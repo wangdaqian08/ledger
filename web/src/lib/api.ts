@@ -246,6 +246,8 @@ export const api = {
     request<TripView>('POST', `/api/trips/${tripId}/claim`, { token, memberId }),
   addMember: (tripId: string, displayName: string) =>
     request<MemberView>('POST', `/api/trips/${tripId}/members`, { displayName }),
+  renameMember: (tripId: string, memberId: string, displayName: string) =>
+    request<MemberView>('PATCH', `/api/trips/${tripId}/members/${memberId}`, { displayName }),
 
   categories: (tripId: string) => request<CategoryView[]>('GET', `/api/trips/${tripId}/categories`),
   createItem: (tripId: string, body: CreateItemBody) =>

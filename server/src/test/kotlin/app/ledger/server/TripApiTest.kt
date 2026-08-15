@@ -126,6 +126,65 @@ class TripApiTest : ApiTest() {
         assertEquals(HttpStatus.CONFLICT, duplicate.statusCode)
     }
 
+    @Test
+    fun `the creator can fix a typo'd name, and everybody sees the correction`() {
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip("Hokkaido")
+        val memberId = alice.addMember(tripId, "Bobb")
+
+        val renamed = alice.patch("/api/trips/$tripId/members/$memberId", mapOf("displayName" to " Bob "))
+
+        assertEquals(HttpStatus.OK, renamed.statusCode)
+        assertEquals("Bob", renamed.json()["displayName"].asText())
+        val roster = alice.get("/api/trips/$tripId").json()["members"].map { it["displayName"].asText() }
+        assertTrue("Bob" in roster, "the fixed name is on the roster: $roster")
+        assertFalse("Bobb" in roster, "the typo is gone from the roster: $roster")
+    }
+
+    @Test
+    fun `a name fix cannot land on somebody else's name, but re-casing your own is no collision`() {
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip("Hokkaido")
+        alice.addMember(tripId, "Bob")
+        val caraId = alice.addMember(tripId, "cara")
+
+        val stolen = alice.patch("/api/trips/$tripId/members/$caraId", mapOf("displayName" to "BOB"))
+        assertEquals(HttpStatus.CONFLICT, stolen.statusCode)
+
+        // "cara" → "Cara" collides only with itself, which is exactly what a typo fix looks like.
+        val recased = alice.patch("/api/trips/$tripId/members/$caraId", mapOf("displayName" to "Cara"))
+        assertEquals(HttpStatus.OK, recased.statusCode)
+        assertEquals("Cara", recased.json()["displayName"].asText())
+    }
+
+    @Test
+    fun `renaming follows the roster rule — creator only, and strangers see nothing`() {
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip("Hokkaido")
+        val bobMember = alice.addMember(tripId, "Bob")
+        val bob = signedIn("Bob")
+        bob.claim(tripId, alice.invite(tripId), bobMember)
+
+        // Even the person the seat belongs to: the roster is the creator's (spec §5).
+        val ownSeat = bob.patch("/api/trips/$tripId/members/$bobMember", mapOf("displayName" to "Bobby"))
+        assertEquals(HttpStatus.FORBIDDEN, ownSeat.statusCode)
+
+        val stranger = signedIn("Mallory").patch("/api/trips/$tripId/members/$bobMember", mapOf("displayName" to "X"))
+        assertEquals(HttpStatus.NOT_FOUND, stranger.statusCode)
+    }
+
+    @Test
+    fun `a member of another trip cannot be renamed through this trip`() {
+        val alice = signedIn("Alice")
+        val hokkaido = alice.createTrip("Hokkaido")
+        val kyoto = alice.createTrip("Kyoto")
+        val kyotoMember = alice.addMember(kyoto, "Bob")
+
+        val crossed = alice.patch("/api/trips/$hokkaido/members/$kyotoMember", mapOf("displayName" to "Ben"))
+
+        assertEquals(HttpStatus.NOT_FOUND, crossed.statusCode)
+    }
+
     // --- the claim flow ------------------------------------------------------------------------
 
     @Test

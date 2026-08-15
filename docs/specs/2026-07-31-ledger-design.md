@@ -337,6 +337,7 @@ GET    /api/trips                   every group: icon, hue, members, your net
 POST   /api/trips                   "New group" chip on GroupsHome
 GET    /api/trips/{id}              the whole group detail screen in one call
 POST   /api/trips/{id}/members
+PATCH  /api/trips/{id}/members/{memberId}   { displayName } — creator fixes a typo'd name
 POST   /api/trips/{id}/invite       → signed share-link token
 POST   /api/trips/{id}/claimable    { token } — the link's landing page: trip name + unclaimed names
 POST   /api/trips/{id}/claim        { token, memberId }
@@ -377,6 +378,11 @@ GET    /api/activity                Activity tab — cross-group feed
   used on a phone during a trip. Without server-side revocation that also means a lost handset
   stays signed in long after the trip ends, and the money it can move is real. Sessions live in
   Postgres, so ending all of a user's is a lookup on the indexed `PRINCIPAL_NAME` column.
+- **`PATCH /api/trips/{id}/members/{memberId}`** — added from live use: a member's name is the
+  roster's one hand-entered fact, so it is the one that gets typed wrong, and before this the
+  only fix was living with the typo. Renaming follows the roster rule (creator only, even for a
+  claimed seat) and moves no number — nothing financial hangs off a display name. Re-casing a
+  seat's own name is not a collision; landing on somebody else's is the same 409 as adding it.
 - **`POST /api/trips/{id}/claimable`** — added with the screens (step 9). The claim flow's
   landing page has to show a friend which names are still free, and the friend is by definition
   not yet on the trip, so `GET /api/trips/{id}` correctly 404s for them. Like `claim`, the token
