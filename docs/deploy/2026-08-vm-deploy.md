@@ -8,17 +8,23 @@ Werewolf app at the domain root, with Postgres 18 on the same free-tier VM.
 
 ```
 browser ── https ──> nginx (TLS, VM werewolf-server, e2-micro us-east1-d)
-                       ├── /            → Werewolf (untouched)
-                       └── /ledger/     → 127.0.0.1:8081  Spring Boot, context-path /ledger,
-                                          SPA embedded in the jar, Postgres 18 on loopback
+                       ├── /            → Werewolf (untouched: backend :8080, frontend :8081,
+                       │                  all Docker Compose under /opt/werewolf-simple)
+                       └── /ledger/     → 127.0.0.1:8082  Spring Boot, context-path /ledger,
+                                          SPA embedded in the jar, Postgres on loopback :5432
 ```
 
 - One artifact: `ledger.jar` (bootJar with `web/dist` at `BOOT-INF/classes/static`).
 - All environment lives in `/etc/ledger/env` (root-only, 0600): profiles `prod,name-signin`,
   port/address/context-path, datasource, Hikari pool, invite secret.
 - The unit is `ledger.service`; `OOMScoreAdjust=500` makes Ledger the OOM victim before Werewolf.
-- Postgres role/db `ledger`, tuned small (`conf.d/ledger-tiny.conf`); nightly `pg_dump` cron in
-  `/etc/cron.daily/ledger-backup`, 7-day retention, same disk (accepted single point of failure).
+- **The database is a second database inside Werewolf's existing `postgres:16-alpine` container**
+  (role/db `ledger`), not a new instance: the box was already 650 MB into swap, and a second
+  Postgres would spend memory to buy nothing but version purity. The 16-vs-18 skew against the
+  test-pinned image is a recorded trade — the schema uses nothing newer than either. The cost is
+  a shared lifecycle: `docker compose down` in /opt/werewolf-simple takes Ledger's database too.
+- Nightly `pg_dump` cron in `/etc/cron.daily/ledger-backup` (runs inside the container), 7-day
+  retention, same disk (accepted single point of failure).
 
 ## Releasing a new version
 
@@ -34,7 +40,7 @@ gcloud compute ssh werewolf-server --zone=us-east1-d --command='
   sudo systemctl restart ledger'
 # health: poll for 401 on loopback, then check the public URL
 gcloud compute ssh werewolf-server --zone=us-east1-d \
-  --command='curl -s -o /dev/null -w %{http_code}\\n http://127.0.0.1:8081/ledger/api/me'
+  --command='curl -s -o /dev/null -w %{http_code}\\n http://127.0.0.1:8082/ledger/api/me'
 ```
 
 Sessions and data survive restarts (both live in Postgres). Open tabs may need one refresh —
@@ -50,7 +56,25 @@ index.html is `no-cache`, assets are content-hashed.
 - Full retreat: stop+disable the unit, remove the two `/ledger` location blocks from the nginx
   site file, `nginx -t && systemctl reload nginx` — the host is exactly as before Ledger.
 
-## Facts from the first deployment
+## Facts from the first deployment (2026-08-17, main @ 4a000ac)
 
-<!-- filled in by the close-out after Phase F: werewolf's port, chosen PG port, measured RAM
-     headroom under load, nginx site file path, first deployed sha -->
+- Ports on the VM: werewolf backend 8080, werewolf frontend container 8081, **ledger 8082**,
+  postgres 5432 — all loopback-published; nothing new faces the network.
+- Java: Temurin **25.0.4** at `/usr/lib/jvm/temurin-25-jre-amd64/bin/java` (host `java` is
+  a pre-existing 17 — the unit uses the full path).
+- Database: `ledger` role + database inside `werewolf-simple-postgres-1` (PostgreSQL **16.14**).
+  Flyway applied V1→V3 on first boot in 0.45 s.
+- nginx site file: `/etc/nginx/sites-enabled/werewolf` → `/etc/nginx/sites-available/werewolf`
+  (backup `werewolf.pre-ledger.2026-08-17` beside it). The two `/ledger` blocks sit above the
+  SPA catch-all. `certbot renew --dry-run` passes with them in place.
+- Memory: 2 G swapfile pre-existed. After start + a browser session: ~160–230 MB available,
+  swap steady, no thrashing (`vmstat` si/so ≈ 0). Ledger JVM ~24 s to start on the shared vCPU.
+- Werewolf regression: root page byte-identical to the pre-deploy baseline; `/api/health` 200;
+  `/api/` 403 — unchanged.
+- Verified live: sign-in (name provider, `@name.invalid` emails), trip + members + invite link
+  `https://youplay123.online/ledger/join/<id>#token=…`, the already-aboard card, sign-out
+  round-trip with the fragment intact, seat claim, CSV export at `/ledger/api/...` (200,
+  `text/csv`). `Set-Cookie: LEDGER-XSRF=…; Path=/ledger; Secure` proves the forward-headers
+  chain.
+- Quirk, accepted: `HEAD /ledger/` answers 401 (the shell's permitAll is GET-only). Browsers
+  send GET; if an uptime checker ever wants HEAD, widen the matcher deliberately.
