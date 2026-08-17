@@ -4,6 +4,9 @@ import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // '/' for dev, CI and tests. The production build sets VITE_BASE=/ledger/ — the app lives under
+  // a sub-path on a host it shares, and this one value repoints assets, router and API calls.
+  base: process.env.VITE_BASE ?? '/',
   plugins: [vue()],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },

@@ -68,7 +68,7 @@ class SessionAwareClient(baseUrl: String) {
 
     companion object {
         const val SESSION_COOKIE = "LEDGER_SESSION"
-        const val CSRF_COOKIE = "XSRF-TOKEN"
+        const val CSRF_COOKIE = "LEDGER-XSRF"
         const val CSRF_HEADER = "X-XSRF-TOKEN"
     }
 }

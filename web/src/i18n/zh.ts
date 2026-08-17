@@ -49,7 +49,7 @@ export default {
     tagline: '分账，搞定',
     namePlaceholder: '你的名字',
     button: '登录',
-    devNote: '开发版本：任意名字均可登录。',
+    note: '名字就是登录方式，没有密码。谁输入这个名字谁就是你，请只在朋友之间使用。',
   },
   trips: {
     title: '你的群组',

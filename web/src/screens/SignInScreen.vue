@@ -9,8 +9,9 @@ import { ApiError } from '@/lib/api'
 import { useSession } from '@/stores/session'
 
 /**
- * Screen 1. In production this is one Google button (build order step 10); against the dev
- * identity provider any name is an identity, so the dev build shows a name field and says so.
+ * Screen 1. A name is the whole sign-in — the dev provider and production's interim `name-signin`
+ * provider both work this way, and the note below says so honestly. Google Sign-In (build order
+ * step 10) will replace the field with one button behind the same identity seam.
  */
 const { t } = useI18n()
 const route = useRoute()
@@ -74,7 +75,7 @@ async function submit() {
         {{ t('signin.button') }}
       </TallyButton>
       <p v-if="error" class="signin__error" role="alert">{{ error }}</p>
-      <p class="signin__note">{{ t('signin.devNote') }}</p>
+      <p class="signin__note">{{ t('signin.note') }}</p>
     </form>
   </main>
 </template>

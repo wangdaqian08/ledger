@@ -19,6 +19,7 @@ import SettleUpSheet from '@/screens/sheets/SettleUpSheet.vue'
 import {
   api,
   ApiError,
+  apiHref,
   type CategoryView,
   type ItemView,
   type SettlementView,
@@ -265,7 +266,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
                  file is the outward spend only — expenses, never the internal who-paid-who. -->
             <a
               class="trip__filter trip__export"
-              :href="`/api/trips/${tripId}/expenses.csv`"
+              :href="apiHref(`/api/trips/${tripId}/expenses.csv`)"
               download
               data-testid="export-csv"
             >

@@ -152,6 +152,16 @@ is reproducible regardless of the developer's default JDK.
 no CORS, and the session cookie is `HttpOnly` + `SameSite=Lax` with no token ever touching
 JavaScript. Cloud SQL Postgres, Cloud Storage for screenshots, Secret Manager for the OAuth secret.
 
+*What actually shipped first (2026-08, zero-budget interim — the Cloud Run shape above remains the
+target):* the boot jar with the SPA embedded runs under systemd on the owner's existing free-tier
+VM, behind the nginx that already serves another app at the domain root; Ledger lives at the
+sub-path `/ledger` (`server.servlet.context-path`, Vite `base`, both set at deploy time). Postgres
+18 runs on the same VM over loopback instead of Cloud SQL; secrets come from a root-only env file
+instead of Secret Manager; TLS terminates at nginx, so prod sets `forward-headers-strategy: native`.
+Same-origin, cookie posture and derive-on-read are unchanged. The CSRF cookie is named
+`LEDGER-XSRF` because the host is shared with another Spring app. See
+`docs/deploy/2026-08-vm-deploy.md` for the runbook.
+
 ### `engine` — the whole business rule set
 
 ```kotlin
@@ -613,8 +623,13 @@ Each step ends with something runnable and tested.
    bounced through sign-in with its fragment intact, and a 中文 browser getting the whole app in
    Chinese. `Σ rows == hero` is asserted off the screen after every mutation — invariant 2 at
    the last boundary there is.
-10. **Google Sign-In** — swap in `GoogleIdentityProvider` behind the same seam.
-11. **Deploy** — Cloud Run + Cloud SQL + Secret Manager.
+10. **Google Sign-In** — swap in `GoogleIdentityProvider` behind the same seam. Note: the interim
+    deployment signs people in by name under the `name-signin` profile (`provider = "name"` in
+    `users`); Google identities will be new rows, and linking them is part of this step.
+11. **Deploy** — Cloud Run + Cloud SQL + Secret Manager. *Shipped 2026-08 in an interim shape:*
+    free-tier VM + nginx sub-path `/ledger` + local Postgres 18 + env-file secrets + `name-signin`
+    (owner's explicit zero-cost call; deviations recorded in §4). Moving to the Cloud Run shape
+    stays open under this step.
 12. **Motion pass** — Tally's spring curve on every state change, once behaviour is settled.
 
 ---

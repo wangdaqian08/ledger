@@ -39,9 +39,15 @@ class SecurityConfig {
      *
      * withHttpOnlyFalse is required, not sloppy: the SPA has to read this cookie to echo it back in
      * the X-XSRF-TOKEN header. It is the CSRF token, not the session.
+     *
+     * Named LEDGER-XSRF rather than Spring's default XSRF-TOKEN because production shares its host
+     * with another Spring app at the root path: two same-named cookies on one page would make which
+     * token the SPA reads a coin toss, and every losing write a 403.
      */
     @Bean
-    fun csrfTokenRepository(): CsrfTokenRepository = CookieCsrfTokenRepository.withHttpOnlyFalse()
+    fun csrfTokenRepository(): CsrfTokenRepository = CookieCsrfTokenRepository
+        .withHttpOnlyFalse()
+        .apply { setCookieName("LEDGER-XSRF") }
 
     /**
      * Opts out of deferred token loading. Deferred is the faster default, but it only writes the
@@ -68,6 +74,12 @@ class SecurityConfig {
         // configuration. Each of these is a separate decision and reads better argued separately.
         http.authorizeHttpRequests {
             it.requestMatchers(HttpMethod.POST, "/api/auth/session").permitAll()
+            // The SPA shell and its hashed assets: without these a signed-out browser could never
+            // load the bundle that shows the sign-in screen. GETs of static content only — every
+            // number still sits behind the authenticated API below.
+            it
+                .requestMatchers(HttpMethod.GET, "/", "/index.html", "/signin", "/trips/*", "/join/*", "/assets/**")
+                .permitAll()
             it.anyRequest().authenticated()
         }
 

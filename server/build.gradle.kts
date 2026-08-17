@@ -58,3 +58,26 @@ tasks.test {
         events("passed", "failed", "skipped")
     }
 }
+
+// The deployable jar carries the SPA (spec §4). web/ stays a plain npm project — this copies its
+// *build output*, it does not make it a Gradle module. The target must be BOOT-INF/classes/static:
+// a jar-root static/ is invisible to the boot loader's classpath. Deploy builds pass
+// -PrequireSpa=<base> to refuse a jar whose bundle is missing or built for the wrong base;
+// without the flag (CI, local checks) an absent web/dist is simply not embedded.
+tasks.bootJar {
+    archiveFileName = "ledger.jar"
+    val spaDist = layout.projectDirectory.dir("../web/dist")
+    from(spaDist) { into("BOOT-INF/classes/static") }
+    val requiredBase = providers.gradleProperty("requireSpa")
+    doFirst {
+        if (requiredBase.isPresent) {
+            val index = spaDist.file("index.html").asFile
+            check(index.exists()) {
+                "web/dist is missing — run: VITE_BASE=${requiredBase.get()} npm --prefix web run build"
+            }
+            check(index.readText().contains("${requiredBase.get()}assets/")) {
+                "web/dist was not built with base=${requiredBase.get()} — rebuild before packaging"
+            }
+        }
+    }
+}
