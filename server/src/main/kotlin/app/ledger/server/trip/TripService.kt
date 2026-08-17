@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
+import java.time.Clock
 import java.util.Currency
 import java.util.UUID
 
@@ -21,6 +22,7 @@ class TripService(
     private val inviteTokens: InviteTokens,
     private val snapshots: TripSnapshots,
     private val access: TripAccess,
+    private val clock: Clock,
 ) {
     /** Anyone signed in. Creating a trip makes you its first member, already claimed. */
     @Transactional
@@ -144,6 +146,35 @@ class TripService(
     fun invite(tripId: UUID, actor: UUID): IssuedInvite = inviteTokens.issue(access.creatorOnly(tripId, actor).id)
 
     /**
+     * Trip creator only. Ending a trip closes its spending record — no new or changed expenses —
+     * while paybacks and settle-up stay open, because squaring up happens after everyone flies
+     * home. It also starts the 14-day clock after which receipt images are deleted.
+     */
+    @Transactional
+    fun close(tripId: UUID, actor: UUID): TripView {
+        val trip = access.creatorOnly(tripId, actor)
+        if (trip.closedAt != null) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "This trip has already ended")
+        }
+        trip.closedAt = clock.instant()
+        return view(trip, actor)
+    }
+
+    /**
+     * Trip creator only, and the undo for [close] — nobody gets trapped in a wrong record. It does
+     * not resurrect receipts the retention sweep has already deleted.
+     */
+    @Transactional
+    fun reopen(tripId: UUID, actor: UUID): TripView {
+        val trip = access.creatorOnly(tripId, actor)
+        if (trip.closedAt == null) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "This trip has not ended")
+        }
+        trip.closedAt = null
+        return view(trip, actor)
+    }
+
+    /**
      * The share link's landing page: which names are still free. Like [claim], deliberately not
      * behind [TripAccess.visibleTrip] — the token is the authorisation — and deliberately *only*
      * the unclaimed names: the link's holder is not yet somebody the trip's numbers belong to.
@@ -255,6 +286,7 @@ private fun TripEntity.toView(snapshot: TripSnapshot, actor: UUID): TripView {
         youFrontedMinor =
             you?.let { me -> snapshot.items.filter { it.payerMemberId == me.id }.sumOf { it.amountMinor } } ?: 0L,
         youAreCreator = createdByUserId == actor,
+        closedAt = closedAt,
     )
 }
 

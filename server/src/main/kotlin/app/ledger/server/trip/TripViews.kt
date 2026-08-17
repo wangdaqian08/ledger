@@ -53,6 +53,11 @@ data class TripView(
      * a write and being refused.
      */
     val youAreCreator: Boolean,
+    /**
+     * When the creator ended the trip; null while it is live. The client hides the expense-editing
+     * affordances of an ended trip rather than offering buttons the server will refuse with 409.
+     */
+    val closedAt: Instant?,
 )
 
 /** GroupsHome: every group, the per-currency overall figures, and how many are settled. */

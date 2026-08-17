@@ -4,10 +4,13 @@ import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan
 import org.springframework.boot.runApplication
 import org.springframework.context.annotation.Bean
+import org.springframework.scheduling.annotation.EnableScheduling
 import java.time.Clock
 
+/** Scheduling exists for exactly one job — the receipt retention sweep. See [ReceiptRetention]. */
 @SpringBootApplication
 @ConfigurationPropertiesScan
+@EnableScheduling
 class LedgerApplication {
     /**
      * Explicit rather than relying on Kotlin's default argument being honoured during constructor

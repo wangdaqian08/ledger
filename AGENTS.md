@@ -93,6 +93,27 @@ and carries `trip_id`, pointing at the `UNIQUE (trip_id, id)` constraints on `tr
 trip B on trip A's item, which hands them a share of money they are not part of and breaks
 invariant 1 on both trips at once. `TripScopingTest` holds this, positive control included.
 
+**`receipt/` storage is the second seam, and rows are pointers, never bytes.** `ReceiptStorage`
+mirrors `identity/`: `LocalReceiptStorage` on `dev`, `GcsReceiptStorage` on `gcs-receipts`, and a
+profile set with neither refuses to start rather than quietly storing nothing. `item_receipts`
+records where bytes live, never the bytes. Storage deletes ride `afterCommit` on writes so a
+rollback cannot leave a row pointing at nothing; the sweep deletes object-then-row so its failure
+mode is a retry, not an orphan. `ReceiptStorageContract` runs against both adapters — the GCS one
+against fake-gcs-server, started PostgresTest-style (no `@Testcontainers` annotation, same reason).
+
+**An ended trip closes the spending record, not the debts.** `closed_at` makes item and receipt
+writes a 409; paybacks and settle-up stay open on purpose, because people square up after a trip
+ends — which is also why receipts stay *readable* on an ended trip. `ReceiptRetention` deletes
+receipt images 14 days after `closed_at` (a `Duration` property, default in `ReceiptProperties`).
+It runs in-process on `@Scheduled` because production is a single instance; a second instance or
+the Cloud Run shape needs a lock first. No bucket lifecycle rule: an age-based one would delete
+the receipts of any trip that simply runs long.
+
+**Receipt image URLs are versioned, so the bytes can be immutable.** The GET answers
+`private, max-age, immutable`, and that is only honest because the object name — and with it the
+client's `?v=` — rotates on every replace. Do not "simplify" to a stable URL: a replaced photo
+would keep showing from cache for a year.
+
 ## The two invariants
 
 If a change breaks either of these, the change is wrong — not the test.

@@ -1,10 +1,13 @@
 package app.ledger.server
 
+import org.springframework.core.io.ByteArrayResource
+import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.http.client.JdkClientHttpRequestFactory
+import org.springframework.util.LinkedMultiValueMap
 import org.springframework.web.client.RestClient
 
 /**
@@ -31,7 +34,23 @@ class SessionAwareClient(baseUrl: String) {
 
     fun get(path: String): ResponseEntity<String> = exchange(HttpMethod.GET, path, null)
 
+    /** GETs that answer an image: bytes read back through a String decode come back mangled. */
+    fun getBytes(path: String): ResponseEntity<ByteArray> = send(decorated(HttpMethod.GET, path), ByteArray::class.java)
+
     fun post(path: String, body: Any): ResponseEntity<String> = exchange(HttpMethod.POST, path, body)
+
+    /** One file, as `multipart/form-data` under the part name the receipt endpoint expects. */
+    fun postFile(path: String, filename: String, contentType: String, bytes: ByteArray): ResponseEntity<String> {
+        val part = HttpEntity(
+            object : ByteArrayResource(bytes) {
+                override fun getFilename(): String = filename
+            },
+            HttpHeaders().apply { this.contentType = MediaType.parseMediaType(contentType) },
+        )
+        val form = LinkedMultiValueMap<String, Any>().apply { add("file", part) }
+        val spec = decorated(HttpMethod.POST, path).contentType(MediaType.MULTIPART_FORM_DATA).body(form)
+        return send(spec, String::class.java)
+    }
 
     fun patch(path: String, body: Any): ResponseEntity<String> = exchange(HttpMethod.PATCH, path, body)
 
@@ -40,15 +59,23 @@ class SessionAwareClient(baseUrl: String) {
     fun cookie(name: String): String? = cookies[name]
 
     private fun exchange(method: HttpMethod, path: String, body: Any?): ResponseEntity<String> {
-        var spec = http.method(method).uri(path).contentType(MediaType.APPLICATION_JSON)
+        var spec = decorated(method, path).contentType(MediaType.APPLICATION_JSON)
+        if (body != null) spec = spec.body(body)
+        return send(spec, String::class.java)
+    }
 
+    /** The cookie jar and the CSRF echo, applied the same way to every request this client makes. */
+    private fun decorated(method: HttpMethod, path: String): RestClient.RequestBodySpec {
+        var spec = http.method(method).uri(path)
         if (cookies.isNotEmpty()) {
             spec = spec.header(HttpHeaders.COOKIE, cookies.entries.joinToString("; ") { "${it.key}=${it.value}" })
         }
         cookies[CSRF_COOKIE]?.let { spec = spec.header(CSRF_HEADER, it) }
-        if (body != null) spec = spec.body(body)
+        return spec
+    }
 
-        val response = spec.retrieve().toEntity(String::class.java)
+    private fun <T : Any> send(spec: RestClient.RequestBodySpec, type: Class<T>): ResponseEntity<T> {
+        val response = spec.retrieve().toEntity(type)
         response.headers[HttpHeaders.SET_COOKIE].orEmpty().forEach(::remember)
         return response
     }

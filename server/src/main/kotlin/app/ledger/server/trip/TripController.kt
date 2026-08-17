@@ -57,6 +57,18 @@ class TripController(private val trips: TripService) {
         @AuthenticationPrincipal principal: LedgerPrincipal,
     ): InviteView = trips.invite(tripId, principal.userId).let { InviteView(it.token, it.expiresAt) }
 
+    @PostMapping("/{tripId}/close")
+    fun close(
+        @PathVariable tripId: UUID,
+        @AuthenticationPrincipal principal: LedgerPrincipal,
+    ): TripView = trips.close(tripId, principal.userId)
+
+    @PostMapping("/{tripId}/reopen")
+    fun reopen(
+        @PathVariable tripId: UUID,
+        @AuthenticationPrincipal principal: LedgerPrincipal,
+    ): TripView = trips.reopen(tripId, principal.userId)
+
     @PostMapping("/{tripId}/claim")
     fun claim(
         @PathVariable tripId: UUID,

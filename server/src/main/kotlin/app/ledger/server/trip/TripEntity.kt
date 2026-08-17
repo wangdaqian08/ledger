@@ -44,8 +44,12 @@ class TripEntity(
     var endsOn: LocalDate? = null,
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant = Instant.now(),
-    @Column(name = "archived_at")
-    var archivedAt: Instant? = null,
+    /**
+     * When the creator ended the trip; null while it is live. An ended trip refuses changes to
+     * its spending record but keeps settling open, and its receipt images are deleted 14 days on.
+     */
+    @Column(name = "closed_at")
+    var closedAt: Instant? = null,
 )
 
 /**

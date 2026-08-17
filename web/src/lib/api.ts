@@ -21,6 +21,14 @@ const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, '')
 /** For plain hrefs (downloads) that must reach the API without going through [request]. */
 export const apiHref = (path: string): string => API_BASE + path
 
+/**
+ * The `<img>` src for an expense's receipt: same-origin and cookie-authenticated, so it needs no
+ * JS at all. The version rides as a cache-buster — the server answers `immutable`, and a replace
+ * mints a new version, so the old cache entry is simply never asked for again.
+ */
+export const receiptHref = (itemId: string, version: string): string =>
+  apiHref(`/api/items/${itemId}/receipt`) + `?v=${encodeURIComponent(version)}`
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -43,14 +51,17 @@ function csrfToken(): string | null {
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {}
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  // A FormData body sets its own multipart Content-Type with the boundary in it; stamping one
+  // here would strip the boundary and hand the server an unreadable request.
+  const form = body instanceof FormData
+  if (body !== undefined && !form) headers['Content-Type'] = 'application/json'
   const token = csrfToken()
   if (token) headers['X-XSRF-TOKEN'] = token
 
   const response = await fetch(API_BASE + path, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : form ? body : JSON.stringify(body),
     credentials: 'same-origin',
   })
 
@@ -89,6 +100,12 @@ export interface SplitView {
 export type SplitRule = 'EQUAL' | 'WEIGHTED' | 'EXACT'
 export type ItemState = 'OPEN' | 'ALL_SQUARE'
 
+/** The pointer to an expense's receipt image; the bytes live behind [receiptHref]. */
+export interface ReceiptView {
+  /** Rotates on every replace — it is the cache-busting half of the image URL. */
+  version: string
+}
+
 export interface ItemView {
   id: string
   tripId: string
@@ -102,6 +119,7 @@ export interface ItemView {
   splits: SplitView[]
   yourShareMinor: number
   state: ItemState
+  receipt: ReceiptView | null
 }
 
 export interface TripView {
@@ -121,6 +139,12 @@ export interface TripView {
   youFrontedMinor: number
   /** Whether the viewer created the trip — gates the creator's edit / approve / roster powers. */
   youAreCreator: boolean
+  /**
+   * When the creator ended the trip; null while it is live. Ended trips take no expense changes
+   * (the UI hides those affordances rather than offering a 409), settle up as normal, and lose
+   * their receipt images 14 days on.
+   */
+  closedAt: string | null
 }
 
 /** One overall total per currency the viewer holds a trip in — never summed across currencies. */
@@ -261,6 +285,8 @@ export const api = {
     request<MemberView>('POST', `/api/trips/${tripId}/members`, { displayName }),
   renameMember: (tripId: string, memberId: string, displayName: string) =>
     request<MemberView>('PATCH', `/api/trips/${tripId}/members/${memberId}`, { displayName }),
+  closeTrip: (tripId: string) => request<TripView>('POST', `/api/trips/${tripId}/close`, {}),
+  reopenTrip: (tripId: string) => request<TripView>('POST', `/api/trips/${tripId}/reopen`, {}),
 
   categories: (tripId: string) => request<CategoryView[]>('GET', `/api/trips/${tripId}/categories`),
   createItem: (tripId: string, body: CreateItemBody) =>
@@ -271,6 +297,13 @@ export const api = {
   patchItem: (itemId: string, body: PatchItemBody) =>
     request<ItemView>('PATCH', `/api/items/${itemId}`, body),
   deleteItem: (itemId: string) => request<void>('DELETE', `/api/items/${itemId}`),
+
+  uploadReceipt: (itemId: string, image: Blob, filename: string) => {
+    const form = new FormData()
+    form.append('file', image, filename)
+    return request<ItemView>('POST', `/api/items/${itemId}/receipt`, form)
+  },
+  deleteReceipt: (itemId: string) => request<void>('DELETE', `/api/items/${itemId}/receipt`),
 
   submitItemPayback: (
     itemId: string,

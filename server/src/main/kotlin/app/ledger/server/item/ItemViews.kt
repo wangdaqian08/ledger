@@ -30,7 +30,15 @@ data class ItemView(
      * their portion with *approved* paybacks. A derived state, never a button (§7a).
      */
     val state: String,
+    /** Present when a receipt image is attached; the bytes live behind GET /api/items/{id}/receipt. */
+    val receipt: ReceiptView?,
 )
+
+/**
+ * The pointer to an expense's receipt image. [version] rotates on every replace; the client
+ * appends it to the image URL (`?v=`), which is what lets the bytes be served as immutable.
+ */
+data class ReceiptView(val version: String)
 
 /**
  * An item, and whether this request is what created it.

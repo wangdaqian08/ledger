@@ -5,6 +5,9 @@ springBoot = "4.1.0"
 java = "25"
 spotless = "8.9.0"
 ktlint = "1.8.0"
+# Google's cloud clients are not managed by the Boot BOM, so they bring their own platform —
+# the one deliberate second BOM in the build.
+gcpLibraries = "26.86.0"
 
 [libraries]
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
@@ -28,6 +31,8 @@ flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql
 postgresql = { module = "org.postgresql:postgresql" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
 testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter" }
+gcp-libraries-bom = { module = "com.google.cloud:libraries-bom", version.ref = "gcpLibraries" }
+gcp-storage = { module = "com.google.cloud:google-cloud-storage" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

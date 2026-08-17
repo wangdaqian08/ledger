@@ -3,14 +3,17 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CategoryPicker from '@/components/CategoryPicker.vue'
 import PersonToggleRow from '@/components/PersonToggleRow.vue'
+import ReceiptLightbox from '@/components/ReceiptLightbox.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import SplitBar, { type SplitPerson } from '@/components/SplitBar.vue'
 import TallyButton from '@/components/TallyButton.vue'
+import TallyIcon from '@/components/TallyIcon.vue'
 import TallyKeypad, { type KeypadKey } from '@/components/TallyKeypad.vue'
 import TextField from '@/components/TextField.vue'
 import { api, type CategoryView, type TripView } from '@/lib/api'
 import { todayLocal } from '@/lib/dates'
 import { currencySymbol, formatMinor } from '@/lib/money'
+import { prepareReceipt } from '@/lib/receipt'
 import { newItemId, saltFor, splitShares } from '@/lib/split'
 import { pressKey } from '@/lib/till'
 import { DRAG_SCALE, normalizedWeights } from '@/lib/weights'
@@ -38,6 +41,10 @@ const custom = ref(false)
 const weights = ref<Record<string, number>>({})
 const busy = ref(false)
 const error = ref('')
+const receiptFile = ref<File | null>(null)
+const receiptUrl = ref('')
+const receiptInput = ref<HTMLInputElement | null>(null)
+const reviewOpen = ref(false)
 
 const symbol = computed(() => currencySymbol(props.trip.currencyCode))
 
@@ -57,8 +64,26 @@ watch(
     ticked.value = Object.fromEntries(props.trip.members.map((m) => [m.id, true]))
     // Scaled up so the bar has room to move (see weights.ts); saved weights normalise back down.
     weights.value = Object.fromEntries(props.trip.members.map((m) => [m.id, DRAG_SCALE]))
+    clearReceipt()
   },
 )
+
+function onReceiptPicked(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  if (receiptUrl.value) URL.revokeObjectURL(receiptUrl.value)
+  receiptFile.value = file
+  // The preview shows the original straight away; the downscale happens once, at save time.
+  receiptUrl.value = URL.createObjectURL(file)
+}
+
+function clearReceipt() {
+  if (receiptUrl.value) URL.revokeObjectURL(receiptUrl.value)
+  receiptFile.value = null
+  receiptUrl.value = ''
+  reviewOpen.value = false
+  if (receiptInput.value) receiptInput.value.value = ''
+}
 
 function onKey(key: KeypadKey) {
   amountMinor.value = pressKey(amountMinor.value, key)
@@ -127,6 +152,12 @@ async function save() {
         custom.value ? { memberId: m.id, weight: saved[index] } : { memberId: m.id },
       ),
     })
+    // The photo rides behind the expense, against the same minted id — so if this upload fails,
+    // pressing save again replays the create (a 200, nothing doubled) and just retries the photo.
+    if (receiptFile.value) {
+      const prepared = await prepareReceipt(receiptFile.value)
+      await api.uploadReceipt(itemId.value, prepared.image, prepared.filename)
+    }
     emit('saved')
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : String(failure)
@@ -252,7 +283,46 @@ async function save() {
         />
       </section>
 
+      <section class="add__section">
+        <h3 class="add__label">{{ t('receipt.section') }}</h3>
+        <div v-if="receiptUrl" class="add__receipt">
+          <!-- Tapping the preview opens it full screen — the photo gets reviewed before it is
+               saved, not discovered blurry a week later. -->
+          <button
+            type="button"
+            class="add__thumb-button"
+            data-testid="receipt-preview"
+            @click="reviewOpen = true"
+          >
+            <img class="add__thumb" :src="receiptUrl" :alt="t('receipt.alt')" />
+          </button>
+          <TallyButton variant="ghost" size="sm" data-testid="receipt-clear" @click="clearReceipt">
+            {{ t('receipt.remove') }}
+          </TallyButton>
+        </div>
+        <TallyButton
+          v-else
+          variant="secondary"
+          size="sm"
+          data-testid="receipt-add"
+          @click="receiptInput?.click()"
+        >
+          <TallyIcon name="camera" :size="16" />
+          {{ t('receipt.add') }}
+        </TallyButton>
+        <input
+          ref="receiptInput"
+          class="add__file"
+          type="file"
+          accept="image/*"
+          data-testid="receipt-input"
+          @change="onReceiptPicked"
+        />
+      </section>
+
       <p v-if="error" class="add__error" role="alert">{{ error }}</p>
+
+      <ReceiptLightbox :open="reviewOpen" :src="receiptUrl" :can-edit="false" @close="reviewOpen = false" />
 
       <div class="add__actions add__footer">
         <TallyButton variant="secondary" data-testid="back-step" @click="step = 1">{{
@@ -389,6 +459,35 @@ async function save() {
   border-color: var(--ink);
   background: var(--grape-tint);
   color: var(--ink);
+}
+
+.add__receipt {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.add__thumb-button {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.add__thumb {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-md);
+  box-shadow: var(--slab-1);
+}
+
+/* In the DOM for the picker dialog, out of the layout — the camera button is its whole face. */
+.add__file {
+  display: none;
 }
 
 .add__error {

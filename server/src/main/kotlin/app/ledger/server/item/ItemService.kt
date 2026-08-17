@@ -2,6 +2,7 @@ package app.ledger.server.item
 
 import app.ledger.server.category.CategoryRepository
 import app.ledger.server.payback.toView
+import app.ledger.server.receipt.ReceiptService
 import app.ledger.server.trip.TripAccess
 import app.ledger.server.trip.TripEntity
 import app.ledger.server.trip.TripMemberRepository
@@ -31,6 +32,7 @@ class ItemService(
     private val categories: CategoryRepository,
     private val snapshots: TripSnapshots,
     private val access: TripAccess,
+    private val receipts: ReceiptService,
     private val entityManager: EntityManager,
 ) {
     /** Any trip member can record what they spent (spec §5). */
@@ -48,6 +50,10 @@ class ItemService(
                 return CreatedItem(viewOf(existing.id, trip.id, actor), fresh = false)
             }
         }
+
+        // After the replay check on purpose: a retry of a create that landed just before the trip
+        // ended deserves its idempotent 200, not a refusal for something that already happened.
+        access.requireOpen(trip)
 
         validateAgainstRoster(trip, command.payerMemberId, command.sharedBy)
         validateSplit(command.splitRule, command.amountMinor, command.sharedBy)
@@ -108,6 +114,7 @@ class ItemService(
     fun patch(itemId: UUID, command: PatchItem, actor: UUID): ItemView {
         val item = items.findById(itemId).orElseThrow { noSuchItem() }
         val trip = editableTrip(item, actor)
+        access.requireOpen(trip)
 
         val payerMemberId = command.payerMemberId ?: item.payerMemberId
         val sharedBy = command.sharedBy
@@ -156,23 +163,14 @@ class ItemService(
     @Transactional
     fun delete(itemId: UUID, actor: UUID) {
         val item = items.findById(itemId).orElseThrow { noSuchItem() }
-        editableTrip(item, actor)
+        access.requireOpen(editableTrip(item, actor))
+        // The cascade takes the receipt row; the object it points at is reachable by no cascade.
+        receipts.removeForDeletedItem(item.id)
         items.delete(item)
     }
 
-    private fun editableTrip(item: ItemEntity, actor: UUID): TripEntity {
-        val trip = access.visibleTrip(item.tripId, actor)
-        val payer = members.findById(item.payerMemberId).orElseThrow { noSuchItem() }
-        // The payer fronted the money, so it is theirs to correct; the trip creator can correct
-        // anything. Everybody else views and claims.
-        if (payer.userId != actor && trip.createdByUserId != actor) {
-            throw ResponseStatusException(
-                HttpStatus.FORBIDDEN,
-                "Only the person who paid, or the trip's creator, can change this expense",
-            )
-        }
-        return trip
-    }
+    private fun editableTrip(item: ItemEntity, actor: UUID): TripEntity =
+        access.expenseEditorOnly(item.tripId, item.payerMemberId, actor)
 
     private fun validateAgainstRoster(
         trip: TripEntity,
@@ -320,5 +318,6 @@ fun TripSnapshot.toView(item: ItemEntity, actor: UUID): ItemView {
         },
         yourShareMinor = you?.let { amounts[it] } ?: 0L,
         state = stateOf(item).name,
+        receipt = receiptVersionFor(item)?.let(::ReceiptView),
     )
 }

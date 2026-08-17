@@ -3,13 +3,23 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AmountText from '@/components/AmountText.vue'
 import PersonAvatar from '@/components/PersonAvatar.vue'
+import ReceiptLightbox from '@/components/ReceiptLightbox.vue'
 import SettledBanner from '@/components/SettledBanner.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import TallyBadge from '@/components/TallyBadge.vue'
 import TallyButton from '@/components/TallyButton.vue'
+import TallyIcon from '@/components/TallyIcon.vue'
 import TextField from '@/components/TextField.vue'
-import { api, type CategoryView, type ItemDetail, type PaybackView, type TripView } from '@/lib/api'
+import {
+  api,
+  receiptHref,
+  type CategoryView,
+  type ItemDetail,
+  type PaybackView,
+  type TripView,
+} from '@/lib/api'
 import { currencySymbol, formatMinor } from '@/lib/money'
+import { prepareReceipt } from '@/lib/receipt'
 
 /**
  * Screen 5 — one bill, whole: the split, and the approval section.
@@ -37,6 +47,8 @@ const rejecting = ref<string | null>(null)
 const rejectReason = ref('')
 const error = ref('')
 const busy = ref(false)
+const lightboxOpen = ref(false)
+const receiptInput = ref<HTMLInputElement | null>(null)
 
 const symbol = computed(() => currencySymbol(props.trip.currencyCode))
 const me = computed(() => props.trip.members.find((m) => m.isYou) ?? null)
@@ -45,6 +57,10 @@ const iAmPayer = computed(() => detail.value?.payerMemberId === me.value?.id)
 // The server lets the trip's creator correct or decide anything, not only the payer; the UI now
 // offers what the server allows instead of making the creator discover it through a 403.
 const iCanEdit = computed(() => iAmPayer.value || props.trip.youAreCreator)
+// An ended trip's spending record is read-only (the server answers 409); viewing — receipts
+// included — stays, because the retention window exists to be looked at while people settle.
+const tripStillOpen = computed(() => !props.trip.closedAt)
+const iCanEditReceipt = computed(() => iCanEdit.value && tripStillOpen.value)
 
 const categoryName = computed(() => {
   const category = props.categories.find((c) => c.id === detail.value?.categoryId)
@@ -89,9 +105,33 @@ watch(
     detail.value = null
     error.value = ''
     rejecting.value = null
+    lightboxOpen.value = false
     detail.value = await api.itemDetail(itemId)
   },
 )
+
+function pickReceipt() {
+  receiptInput.value?.click()
+}
+
+async function onReceiptPicked(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || !detail.value) return
+  const itemId = detail.value.id
+  await act(async () => {
+    const prepared = await prepareReceipt(file)
+    await api.uploadReceipt(itemId, prepared.image, prepared.filename)
+  })
+}
+
+async function removeReceipt() {
+  if (!detail.value || !confirm(t('receipt.removeConfirm'))) return
+  const itemId = detail.value.id
+  lightboxOpen.value = false
+  await act(() => api.deleteReceipt(itemId))
+}
 
 const memberName = (memberId: string) => props.trip.members.find((m) => m.id === memberId)?.displayName ?? '?'
 
@@ -201,6 +241,44 @@ async function remove() {
       <p v-if="categoryName || spentOnLabel" class="detail__meta">
         {{ [categoryName, spentOnLabel, splitRuleLabel].filter(Boolean).join(' · ') }}
       </p>
+
+      <section v-if="detail.receipt || iCanEditReceipt" class="detail__section">
+        <h3 class="detail__label">{{ t('receipt.section') }}</h3>
+        <!-- Tapping the thumbnail opens the actual bill full screen for review. -->
+        <button
+          v-if="detail.receipt"
+          type="button"
+          class="detail__thumb-button"
+          data-testid="receipt-thumb"
+          @click="lightboxOpen = true"
+        >
+          <img
+            class="detail__thumb"
+            data-testid="receipt-image"
+            :src="receiptHref(detail.id, detail.receipt.version)"
+            :alt="t('receipt.alt')"
+          />
+        </button>
+        <TallyButton
+          v-else
+          variant="secondary"
+          size="sm"
+          data-testid="receipt-add"
+          :disabled="busy"
+          @click="pickReceipt"
+        >
+          <TallyIcon name="camera" :size="16" />
+          {{ t('receipt.add') }}
+        </TallyButton>
+        <input
+          ref="receiptInput"
+          class="detail__file"
+          type="file"
+          accept="image/*"
+          data-testid="receipt-input"
+          @change="onReceiptPicked"
+        />
+      </section>
 
       <section class="detail__section">
         <h3 class="detail__label">{{ t('itemDetail.paidBy') }}</h3>
@@ -343,9 +421,9 @@ async function remove() {
       <div class="detail__actions">
         <!-- The people list is the whole fix for the hotel case; the payer (the server also lets
              the creator) corrects it. EXACT bills stay out: their people change means retyping
-             amounts, a different conversation. -->
+             amounts, a different conversation. An ended trip hides both — the server would 409. -->
         <TallyButton
-          v-if="iCanEdit && detail.splitRule !== 'EXACT'"
+          v-if="iCanEdit && tripStillOpen && detail.splitRule !== 'EXACT'"
           variant="secondary"
           size="sm"
           data-testid="edit-split-open"
@@ -353,7 +431,13 @@ async function remove() {
         >
           {{ t('editSplit.title') }}
         </TallyButton>
-        <TallyButton v-if="iCanEdit" variant="danger" size="sm" data-testid="delete-item" @click="remove">
+        <TallyButton
+          v-if="iCanEdit && tripStillOpen"
+          variant="danger"
+          size="sm"
+          data-testid="delete-item"
+          @click="remove"
+        >
           {{ t('itemDetail.delete') }}
         </TallyButton>
         <!-- Never for the payer: their own share is not a debt, and the server refuses a
@@ -368,6 +452,17 @@ async function remove() {
           {{ t('itemDetail.payBack') }}
         </TallyButton>
       </div>
+
+      <ReceiptLightbox
+        v-if="detail.receipt"
+        :open="lightboxOpen"
+        :src="receiptHref(detail.id, detail.receipt.version)"
+        :can-edit="iCanEditReceipt"
+        :busy="busy"
+        @close="lightboxOpen = false"
+        @replace="pickReceipt"
+        @remove="removeReceipt"
+      />
     </div>
   </SheetPanel>
 </template>
@@ -393,6 +488,29 @@ async function remove() {
   font-size: var(--text-caption);
   color: var(--text-muted);
   overflow-wrap: break-word;
+}
+
+.detail__thumb-button {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.detail__thumb {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-md);
+  box-shadow: var(--slab-1);
+}
+
+/* In the DOM for the picker dialog, out of the layout. */
+.detail__file {
+  display: none;
 }
 
 .detail__label {
