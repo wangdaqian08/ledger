@@ -2,13 +2,24 @@
  * The one place the app talks HTTP.
  *
  * Sessions ride in an HttpOnly cookie, so there is no token handling here — only the CSRF echo:
- * Spring writes XSRF-TOKEN as a readable cookie and expects it back in a header on every write.
- * Errors arrive as RFC 7807 problem details; `detail` is the human sentence the server composed,
- * and it is the message screens show, because the server is the one that knows why it refused.
+ * Spring writes LEDGER-XSRF as a readable cookie (named for this app, because another Spring app
+ * shares the production host and two XSRF-TOKENs on one page make writes a coin toss) and expects
+ * it back in a header on every write. Errors arrive as RFC 7807 problem details; `detail` is the
+ * human sentence the server composed, and it is the message screens show, because the server is
+ * the one that knows why it refused.
  *
  * Amounts are integer minor units in every type below. There is no float money on the wire and
  * none in the app.
  */
+
+/**
+ * Everything below is written root-relative and prefixed here: in production the app lives under
+ * a sub-path (`/ledger`), and the build's base is the single fact that moves it there.
+ */
+const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, '')
+
+/** For plain hrefs (downloads) that must reach the API without going through [request]. */
+export const apiHref = (path: string): string => API_BASE + path
 
 export class ApiError extends Error {
   constructor(
@@ -26,7 +37,7 @@ export function handleUnauthorized(handler: () => void) {
 }
 
 function csrfToken(): string | null {
-  const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]*)/)
+  const match = document.cookie.match(/(?:^|;\s*)LEDGER-XSRF=([^;]*)/)
   return match?.[1] ? decodeURIComponent(match[1]) : null
 }
 
@@ -36,7 +47,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const token = csrfToken()
   if (token) headers['X-XSRF-TOKEN'] = token
 
-  const response = await fetch(path, {
+  const response = await fetch(API_BASE + path, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),

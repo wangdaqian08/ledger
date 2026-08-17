@@ -7,7 +7,8 @@ import { handleUnauthorized } from '@/lib/api'
  * screen, not a place, and Back must close it rather than leave the trip.
  */
 export const router = createRouter({
-  history: createWebHistory(),
+  // The build's base (`/` in dev, `/ledger/` in production) — routes below stay base-relative.
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/signin', name: 'signin', component: () => import('@/screens/SignInScreen.vue') },
     { path: '/', name: 'trips', component: () => import('@/screens/TripsScreen.vue') },

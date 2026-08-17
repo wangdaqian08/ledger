@@ -8,7 +8,7 @@ describe('api client', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', fetchMock)
     fetchMock.mockReset()
-    document.cookie = 'XSRF-TOKEN=token-123'
+    document.cookie = 'LEDGER-XSRF=token-123'
   })
 
   afterEach(() => {
@@ -50,6 +50,20 @@ describe('api client', () => {
 
     await expect(api.me()).rejects.toBeInstanceOf(ApiError)
     expect(bounced).toHaveBeenCalledTimes(1)
+  })
+
+  it('prefixes every call with the build base, so a sub-path deploy reaches its own API', async () => {
+    // The base is baked in at module load, so a fresh import is needed to see the stubbed value.
+    vi.stubEnv('BASE_URL', '/ledger/')
+    vi.resetModules()
+    const { api: rebased } = await import('../src/lib/api')
+    respond(200, { trips: [], overalls: [], settledTripCount: 0 })
+
+    await rebased.trips()
+
+    expect(fetchMock.mock.calls[0]![0]).toBe('/ledger/api/trips')
+    vi.unstubAllEnvs()
+    vi.resetModules()
   })
 
   it('serialises the body it was given, verbatim', async () => {

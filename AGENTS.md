@@ -136,11 +136,17 @@ properties.
 
 `web/` is a plain npm project, **not** a Gradle module, so `./gradlew check` does not touch it and
 never will. That is deliberate: the JVM build stays fast and JVM-only, and §10's `npm --prefix web`
-commands are the real ones rather than a second way of doing the same thing. CI runs both.
+commands are the real ones rather than a second way of doing the same thing. CI runs both. The one
+sanctioned crossing is `:server:bootJar`, which copies an already-built `web/dist` into
+`BOOT-INF/classes/static` so the deployable jar carries the SPA (spec §4) — copying an artifact,
+not adding a module. Deploy builds pass `-PrequireSpa=<base>` so a missing or wrong-base bundle
+fails the build instead of shipping.
 
 Inside `server/`, `identity/` is the one seam to whoever vouches for a user — `MockIdentityProvider`
 on the dev profile today, Google at build order step 10. Nothing above that interface knows which is
-in play, and nothing should learn.
+in play, and nothing should learn. Production interim: `NameIdentityProvider` under the explicit
+`name-signin` profile — same name-is-identity semantics, minting `provider = "name"`, chosen eyes
+open for a friends-scale deployment. The mock stays fenced to `dev`; do not widen either profile.
 
 **Server packages are by feature, never by layer, and a file is named for exactly what it holds:**
 `XController.kt` holds only the controller, `XService.kt` only the service, `XCommands.kt` and
@@ -164,6 +170,11 @@ is, and "we'll override it in production" is not a mechanism.
 **Kotlin Boolean properties named `isX` reach the wire as `x`.** Jackson strips the prefix. Anything
 in a `*View` that starts with `is` needs `@get:JsonProperty` pinning the name, or the client silently
 reads a field that is not there — `MemberView.isYou` is the worked example.
+
+The CSRF cookie is named `LEDGER-XSRF`, not Spring's default `XSRF-TOKEN`: production shares its
+host with another Spring app at the root path, and two same-named cookies on one page make which
+token the SPA echoes a coin toss. The name lives in exactly three places — `SecurityConfig`, the
+regex in `web/src/lib/api.ts`, and the test client — and must move together.
 
 `SecurityConfig` publishes the `CsrfTokenRepository` and `CsrfTokenRequestHandler` as beans because
 `AuthController` rotates the token at sign-in and the filter chain validates against it. Two

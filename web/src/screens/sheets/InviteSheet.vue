@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import PersonAvatar from '@/components/PersonAvatar.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import TallyBadge from '@/components/TallyBadge.vue'
@@ -21,6 +22,7 @@ const props = defineProps<{ open: boolean; trip: TripView }>()
 const emit = defineEmits<{ close: []; changed: [] }>()
 
 const { t } = useI18n()
+const router = useRouter()
 
 const newName = ref('')
 const linkNote = ref('')
@@ -83,8 +85,10 @@ async function copyLink() {
   try {
     const issued = await api.invite(props.trip.id)
     // The token rides in the fragment: browsers keep fragments out of server logs and Referer
-    // headers, which is where a query-string token would leak.
-    const link = `${location.origin}/join/${props.trip.id}#token=${issued.token}`
+    // headers, which is where a query-string token would leak. The path comes from the router so
+    // it carries the build's base — under `/ledger` a hand-built root path would 404.
+    const joinPath = router.resolve({ name: 'join', params: { tripId: props.trip.id } }).href
+    const link = `${location.origin}${joinPath}#token=${issued.token}`
     try {
       await navigator.clipboard.writeText(link)
       linkNote.value = t('trip.linkCopied')

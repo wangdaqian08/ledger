@@ -48,7 +48,7 @@ export default {
     tagline: 'Split it, sorted',
     namePlaceholder: 'Your name',
     button: 'Sign in',
-    devNote: 'Development build: any name signs in.',
+    note: 'Your name is the whole sign-in — no password. Whoever types it is you, so keep it to friends.',
   },
   trips: {
     title: 'Your groups',

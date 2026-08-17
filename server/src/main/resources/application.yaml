@@ -38,8 +38,9 @@ server:
         http-only: true
         # Lax, not Strict: the share link in the claim flow is a cross-site top-level navigation,
         # and Strict would drop the session on arrival and bounce a signed-in friend to sign-in.
+        # No `path`, deliberately: it follows the servlet context — `/` in dev, and the sub-path
+        # when production mounts the app under one, keeping the cookie off the host's other app.
         same-site: lax
-        path: /
 
 ---
 spring:
@@ -48,6 +49,20 @@ spring:
       on-profile: prod
 
 server:
+  # Behind nginx, which terminates TLS on the same box. NATIVE (Tomcat's RemoteIpValve) trusts
+  # X-Forwarded-* only from loopback; FRAMEWORK's filter would also honour a client-spoofable
+  # `Forwarded:` header, which nginx passes through untouched.
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      remote-ip-header: X-Forwarded-For
+      protocol-header: X-Forwarded-Proto
+    threads:
+      # The production box is 1 GB shared with another JVM; 200 idle threads is pure stack cost.
+      max: 25
+  shutdown: graceful
+  compression:
+    enabled: true
   servlet:
     session:
       cookie:
