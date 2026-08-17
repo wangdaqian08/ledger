@@ -163,8 +163,10 @@ JavaScript. Cloud SQL Postgres, Cloud Storage for screenshots, Secret Manager fo
 *What actually shipped first (2026-08, zero-budget interim — the Cloud Run shape above remains the
 target):* the boot jar with the SPA embedded runs under systemd on the owner's existing free-tier
 VM, behind the nginx that already serves another app at the domain root; Ledger lives at the
-sub-path `/ledger` (`server.servlet.context-path`, Vite `base`, both set at deploy time). Postgres
-18 runs on the same VM over loopback instead of Cloud SQL; secrets come from a root-only env file
+sub-path `/ledger` (`server.servlet.context-path`, Vite `base`, both set at deploy time). Instead
+of Cloud SQL, a separate `ledger` database lives inside the host's existing Postgres 16 container
+— one instance, two databases, zero additional memory on a 1 GB box, with the 16-vs-18 skew
+against the test-pinned image a recorded trade; secrets come from a root-only env file
 instead of Secret Manager; TLS terminates at nginx, so prod sets `forward-headers-strategy: native`.
 Same-origin, cookie posture and derive-on-read are unchanged. The CSRF cookie is named
 `LEDGER-XSRF` because the host is shared with another Spring app. See
