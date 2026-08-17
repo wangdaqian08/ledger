@@ -51,6 +51,12 @@ abstract class ApiTest : PostgresTest() {
     protected fun SessionAwareClient.addMember(tripId: UUID, displayName: String): UUID =
         post("/api/trips/$tripId/members", mapOf("displayName" to displayName)).id()
 
+    /** The caller's own member id on a trip — the payer most expenses in these tests need. */
+    protected fun SessionAwareClient.yourMemberId(tripId: UUID): UUID {
+        val you = get("/api/trips/$tripId").json()["members"].first { it["isYou"].asBoolean() }
+        return UUID.fromString(you["id"].asText())
+    }
+
     protected fun SessionAwareClient.invite(tripId: UUID): String {
         val response = post("/api/trips/$tripId/invite", emptyMap<String, String>())
         check(response.statusCode == HttpStatus.OK) { "could not issue an invite: ${response.statusCode}" }

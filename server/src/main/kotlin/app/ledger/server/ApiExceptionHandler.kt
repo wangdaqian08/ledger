@@ -2,13 +2,22 @@ package app.ledger.server
 
 import app.ledger.server.identity.InvalidIdentityToken
 import app.ledger.server.invite.InvalidInviteToken
+import org.springframework.core.Ordered
+import org.springframework.core.annotation.Order
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.multipart.MaxUploadSizeExceededException
 
+/**
+ * Ordered first because Spring's own problemdetails advice also claims
+ * [MaxUploadSizeExceededException] — first advice with a match wins, and the framework's body
+ * ("Maximum upload size exceeded") names no limit the person could act on.
+ */
 @RestControllerAdvice
+@Order(Ordered.HIGHEST_PRECEDENCE)
 class ApiExceptionHandler {
     /**
      * 401, not 400. A token the provider will not vouch for is a failure to authenticate, and the
@@ -38,4 +47,13 @@ class ApiExceptionHandler {
             HttpStatus.CONFLICT,
             "This expense was changed while you were editing it. Reopen it and try again.",
         )
+
+    /**
+     * 413 with the limit named — the framework's own body carries no message. Reaching the client
+     * at all also needs `server.tomcat.max-swallow-size` above the cap (application.yaml), or
+     * Tomcat drops the connection mid-upload and the phone sees a network error, not an answer.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException::class)
+    fun imageTooBig(e: MaxUploadSizeExceededException): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONTENT_TOO_LARGE, "That image is too big — keep it under 5 MB")
 }

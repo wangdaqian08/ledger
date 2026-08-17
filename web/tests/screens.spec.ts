@@ -61,6 +61,10 @@ vi.mock('../src/lib/api', async () => {
       settlement: vi.fn(),
       submitSettlement: vi.fn(),
       remind: vi.fn(),
+      closeTrip: vi.fn(),
+      reopenTrip: vi.fn(),
+      uploadReceipt: vi.fn(),
+      deleteReceipt: vi.fn(),
     },
   }
 })
@@ -92,6 +96,7 @@ function item(overrides: Partial<ItemView>): ItemView {
     ],
     yourShareMinor: 3_000,
     state: 'OPEN',
+    receipt: null,
     ...overrides,
   }
 }
@@ -112,6 +117,7 @@ function trip(overrides: Partial<TripView> = {}): TripView {
     yourShareMinor: 0,
     youFrontedMinor: 0,
     youAreCreator: true,
+    closedAt: null,
     ...overrides,
   }
 }
@@ -994,5 +1000,204 @@ describe('SettleUpSheet', () => {
     // Retrying speaks for itself — the old decline should not sit beside the new pending claim.
     expect(findAllByTestId(sheet, 'declined-claim')).toHaveLength(0)
     expect(findByTestId(sheet, 'pending-claim')).toBeTruthy()
+  })
+})
+
+describe('TripScreen after the trip ends', () => {
+  it('shows the ended badge and puts the add button away', async () => {
+    mocked.trip!.mockResolvedValue(trip({ closedAt: '2026-08-18T03:00:00Z' }))
+    mocked.settlement!.mockResolvedValue(emptySettlement)
+    mocked.categories!.mockResolvedValue([])
+
+    const screen = mount(TripScreen, { props: { tripId: 't-1' }, global: global() })
+    await flushPromises()
+
+    expect(findByTestId(screen, 'trip-ended').exists()).toBe(true)
+    expect(findByTestId(screen, 'add-expense').exists()).toBe(false)
+  })
+})
+
+describe('AddExpenseSheet with a receipt', () => {
+  const categories = [
+    { id: 'c-food', key: 'food', nameEn: 'Food', nameZh: '餐饮', icon: 'utensils', hue: 1, builtIn: true },
+  ]
+
+  async function sheetOnStepTwo() {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:receipt-preview')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const sheet = mount(AddExpenseSheet, {
+      props: { open: false, trip: trip(), categories },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await nextTick()
+    await findByTestId(sheet, 'key-5').trigger('click')
+    await findByTestId(sheet, 'next-step').trigger('click')
+    return sheet
+  }
+
+  async function pickPhoto(sheet: ReturnType<typeof mount>, name = 'bill.png') {
+    const input = findByTestId(sheet, 'receipt-input')
+    const photo = new File([new Uint8Array([1, 2, 3])], name, { type: 'image/png' })
+    Object.defineProperty(input.element, 'files', { value: [photo] })
+    await input.trigger('change')
+    return photo
+  }
+
+  it('previews the picked photo and uploads it against the minted id after saving', async () => {
+    const pinned = 'cafebabe-dead-4eef-cafe-babedead4eef'
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(pinned)
+    mocked.createItem!.mockResolvedValue(item({}))
+    mocked.uploadReceipt!.mockResolvedValue(item({}))
+
+    const sheet = await sheetOnStepTwo()
+    const photo = await pickPhoto(sheet)
+    expect(findByTestId(sheet, 'receipt-preview').exists()).toBe(true)
+
+    await findByTestId(sheet, 'save-expense').trigger('click')
+    await flushPromises()
+
+    expect(mocked.createItem).toHaveBeenCalled()
+    // happy-dom decodes no images, so prepareReceipt falls back to the original file here — the
+    // real downscale pipeline is proven in a browser by the e2e suite.
+    expect(mocked.uploadReceipt).toHaveBeenCalledWith(pinned, photo, 'bill.png')
+    expect(sheet.emitted('saved')).toBeTruthy()
+  })
+
+  it('keeps the sheet open with the reason when the photo upload fails', async () => {
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('cafebabe-dead-4eef-cafe-babedead4eef')
+    mocked.createItem!.mockResolvedValue(item({}))
+    mocked.uploadReceipt!.mockRejectedValue(new Error('That image is too big — keep it under 5 MB'))
+
+    const sheet = await sheetOnStepTwo()
+    await pickPhoto(sheet)
+    await findByTestId(sheet, 'save-expense').trigger('click')
+    await flushPromises()
+
+    // The expense itself saved; retrying the save replays it (client-minted id) and re-uploads.
+    expect(sheet.emitted('saved')).toBeFalsy()
+    expect(sheet.text()).toContain('too big')
+  })
+})
+
+describe('ItemDetailSheet receipt', () => {
+  const detailWith = (over: Partial<ItemView> = {}) => ({
+    ...item({ receipt: { version: 'v-1' }, ...over }),
+    paybacks: [],
+  })
+
+  async function openSheet(tripView: TripView = trip()) {
+    const sheet = mount(ItemDetailSheet, {
+      props: { open: false, itemId: 'i-1', trip: tripView, categories: [] },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await flushPromises()
+    return sheet
+  }
+
+  it('shows the thumbnail, and tapping it opens the full-screen review', async () => {
+    mocked.itemDetail!.mockResolvedValue(detailWith())
+    const sheet = await openSheet()
+
+    expect(findByTestId(sheet, 'receipt-image').attributes('src')).toBe('/api/items/i-1/receipt?v=v-1')
+
+    await findByTestId(sheet, 'receipt-thumb').trigger('click')
+
+    expect(findByTestId(sheet, 'receipt-lightbox').exists()).toBe(true)
+    expect(findByTestId(sheet, 'receipt-full').exists()).toBe(true)
+    expect(findByTestId(sheet, 'receipt-replace').exists()).toBe(true)
+  })
+
+  it('Escape closes the review, never the sheet under it', async () => {
+    mocked.itemDetail!.mockResolvedValue(detailWith())
+    const sheet = await openSheet()
+    await findByTestId(sheet, 'receipt-thumb').trigger('click')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
+    await nextTick()
+
+    expect(findAllByTestId(sheet, 'receipt-lightbox')).toHaveLength(0)
+    expect(sheet.emitted('close')).toBeFalsy()
+  })
+
+  it('removes the receipt from the review, through the API', async () => {
+    mocked.itemDetail!.mockResolvedValue(detailWith())
+    mocked.deleteReceipt!.mockResolvedValue(undefined)
+    vi.stubGlobal('confirm', () => true)
+
+    const sheet = await openSheet()
+    await findByTestId(sheet, 'receipt-thumb').trigger('click')
+    await findByTestId(sheet, 'receipt-remove').trigger('click')
+    await flushPromises()
+
+    expect(mocked.deleteReceipt).toHaveBeenCalledWith('i-1')
+    expect(sheet.emitted('changed')).toBeTruthy()
+    vi.unstubAllGlobals()
+  })
+
+  it('offers a plain viewer the review but none of the editing', async () => {
+    mocked.itemDetail!.mockResolvedValue(detailWith({ payerMemberId: bob.id }))
+    const sheet = await openSheet(trip({ youAreCreator: false }))
+
+    await findByTestId(sheet, 'receipt-thumb').trigger('click')
+
+    expect(findByTestId(sheet, 'receipt-lightbox').exists()).toBe(true)
+    expect(findAllByTestId(sheet, 'receipt-replace')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'receipt-remove')).toHaveLength(0)
+  })
+
+  it('offers no expense or receipt editing on an ended trip', async () => {
+    mocked.itemDetail!.mockResolvedValue({ ...item({}), paybacks: [] })
+    const sheet = await openSheet(trip({ closedAt: '2026-08-18T03:00:00Z' }))
+
+    expect(findAllByTestId(sheet, 'edit-split-open')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'delete-item')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'receipt-add')).toHaveLength(0)
+  })
+})
+
+describe('InviteSheet trip lifecycle', () => {
+  it('the creator ends the trip behind a confirm that names the retention window', async () => {
+    mocked.closeTrip!.mockResolvedValue(trip({ closedAt: '2026-08-18T03:00:00Z' }))
+    const asked: string[] = []
+    vi.stubGlobal('confirm', (message: string) => (asked.push(message), true))
+
+    const sheet = mount(InviteSheet, { props: { open: true, trip: trip() }, global: global() })
+    await nextTick()
+    await findByTestId(sheet, 'end-trip').trigger('click')
+    await flushPromises()
+
+    expect(asked[0]).toContain('14')
+    expect(mocked.closeTrip).toHaveBeenCalledWith('t-1')
+    expect(sheet.emitted('changed')).toBeTruthy()
+    vi.unstubAllGlobals()
+  })
+
+  it('a plain member sees no end button at all', async () => {
+    const sheet = mount(InviteSheet, {
+      props: { open: true, trip: trip({ youAreCreator: false }) },
+      global: global(),
+    })
+    await nextTick()
+
+    expect(findAllByTestId(sheet, 'end-trip')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'reopen-trip')).toHaveLength(0)
+  })
+
+  it('an ended trip offers reopen instead of end', async () => {
+    mocked.reopenTrip!.mockResolvedValue(trip())
+    const sheet = mount(InviteSheet, {
+      props: { open: true, trip: trip({ closedAt: '2026-08-18T03:00:00Z' }) },
+      global: global(),
+    })
+    await nextTick()
+
+    expect(findAllByTestId(sheet, 'end-trip')).toHaveLength(0)
+    await findByTestId(sheet, 'reopen-trip').trigger('click')
+    await flushPromises()
+
+    expect(mocked.reopenTrip).toHaveBeenCalledWith('t-1')
+    expect(sheet.emitted('changed')).toBeTruthy()
   })
 })

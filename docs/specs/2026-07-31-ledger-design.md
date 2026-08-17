@@ -98,6 +98,11 @@ and the person who left shows a positive net.
 **S6 · Property.** Random trips, random edits → `Σ net == 0`, and every item's shares sum to
 that item's exact amount.
 
+**S7 · The receipt outlives the trip by exactly 14 days.** Jack photographs the hotel bill onto
+the expense. The creator ends the trip: new expenses are refused, settling continues, and the
+photo stays readable — that window is what it exists for. Fourteen days after the end, the sweep
+deletes the image, and only the image: every number on the expense survives.
+
 ---
 
 ## 3. Decisions
@@ -119,6 +124,9 @@ that item's exact amount.
 | Remind | A nudge to someone who owes you. Changes no balance. |
 | Recalculation | Live everywhere, plus a dedicated Settle up screen. |
 | Edit rights | Item payer + trip creator. Everyone else views and claims. |
+| Receipts | **One photo per expense**, attached by its payer or the creator, viewable by any member. The image is evidence, not input: no OCR, and no number is ever read out of it. The client downscales and re-encodes before upload (privacy: EXIF, including GPS, is stripped by the re-encode). |
+| Ending a trip | **The creator ends a trip, and can reopen it.** Ended means the spending record is closed — no new or changed expenses (409) — while paybacks and settle-up stay open, because squaring up happens after everyone flies home. |
+| Receipt retention | Images are deleted **14 days after the trip ends**: long enough to check them while settling, short enough that the store keeps no photo archive nobody asked for. The money record is never deleted, and reopening inside the window stops the clock. |
 | Currency | One per trip, ISO-4217. |
 | Language | English + 中文 switchable. i18n from commit one; English strings first, Chinese voice pass as its own task. |
 | Auth | **Google Sign-In.** Mock provider in dev. |
@@ -213,6 +221,18 @@ class GoogleIdentityProvider  // verifies the Google ID token (OIDC)
 class MockIdentityProvider    // @Profile("dev") — log in as any name, no network
 ```
 
+Receipt images sit behind the same kind of seam — nothing above it knows where bytes live:
+
+```kotlin
+interface ReceiptStorage { fun put(...); fun fetch(...); fun delete(...) }
+class GcsReceiptStorage    // @Profile("gcs-receipts") — a Cloud Storage bucket, ADC credentials
+class LocalReceiptStorage  // @Profile("dev") — plain files, no bucket, no network
+```
+
+A profile set with neither adapter refuses to start, exactly like a profile without an identity
+provider. Tests run the same contract against both — the GCS adapter against fake-gcs-server in
+a Testcontainer, so the suite stays offline and free.
+
 **Claim flow.** Trip creator types member names, generating a signed share link. A friend opens
 it, signs in, and picks which name is them — that sets `trip_members.user_id`. Friends who never
 sign in still work; the payer just ticks them off directly.
@@ -233,9 +253,12 @@ users(id, provider, subject, email, display_name, photo_url, created_at)
     unique(provider, subject)
 
 trips(id, name, icon, hue, currency_code, created_by_user_id,
-      starts_on, ends_on, created_at, archived_at)
+      starts_on, ends_on, created_at, closed_at)
                                            -- icon: a Lucide slug (plane, house, coffee)
                                            -- hue:  1..8, the disc colour on GroupCard
+                                           -- closed_at: when the creator ended the trip; null
+                                           -- while live. V4 renamed V1's never-read archived_at
+                                           -- sketch to this. Starts the receipt retention clock.
 
 trip_members(id, trip_id, display_name, person_hue, user_id NULL, created_at)
     unique(trip_id, display_name)          -- user_id NULL until claimed
@@ -266,6 +289,13 @@ item_shares(trip_id, item_id, member_id, weight NULL, exact_amount_minor NULL)
                                            -- browser's split port. Only a negative is refused.
                                            -- trip_id is here so both foreign keys can be
                                            -- composite — see "Trip scoping" below.
+
+item_receipts(trip_id, item_id, object_name, content_type, size_bytes,
+              uploaded_by_user_id, uploaded_at)
+                                           -- PK(item_id): one receipt photo per expense. The
+                                           -- bytes live behind ReceiptStorage; this row is the
+                                           -- pointer — deleted with its expense, and by the
+                                           -- 14-day sweep after the trip ends (V4).
 
 paybacks(id, trip_id, item_id NULL, from_member_id, to_member_id,
          amount_minor BIGINT, paid_on, proof_object_name NULL, note, status,
@@ -311,9 +341,11 @@ hue from the person ramp. Custom categories are scoped to their trip. **No emoji
 | claim a member slot | anybody holding a valid link for that trip; the link *is* the authorisation |
 | create item, add a custom category | any trip member |
 | edit or delete item (amount, category, date, **people list**) | item payer + trip creator |
+| attach / replace / remove an expense's receipt | item payer + trip creator, while the trip is open |
+| end or reopen a trip | trip creator |
 | submit a payback claim | the claiming member |
 | approve / reject a payback | item payer + trip creator |
-| view everything | any trip member |
+| view everything | any trip member — receipts included, and still after the trip ends |
 
 ---
 
@@ -354,6 +386,8 @@ POST   /api/trips/{id}/invite       → signed share-link token
 POST   /api/trips/{id}/claimable    { token } — the link's landing page: trip name, unclaimed
                                     names, and `you` when the caller already holds a seat
 POST   /api/trips/{id}/claim        { token, memberId }
+POST   /api/trips/{id}/close        creator ends the trip — expense writes 409 from here
+POST   /api/trips/{id}/reopen       …and takes it back; already-swept receipts stay gone
 GET    /api/trips/{id}/categories   eight built-ins + this trip's custom ones
 POST   /api/trips/{id}/categories   { name, icon, hue }
 
@@ -362,6 +396,11 @@ POST   /api/trips/{id}/items        AddExpenseSheet save; optional client-suppli
 GET    /api/items/{id}              paybacks in full: status, proof, dates, reject reasons
 PATCH  /api/items/{id}              ← this is where the people list gets fixed
 DELETE /api/items/{id}              the bin button on ExpenseDetailSheet
+
+POST   /api/items/{id}/receipt      multipart photo → ReceiptStorage; payer + creator
+GET    /api/items/{id}/receipt      the image itself, session-authenticated; served immutable,
+                                    cache-busted by ?v=<version> which rotates on replace
+DELETE /api/items/{id}/receipt      payer + creator, while the trip is open
 
 POST   /api/items/{id}/paybacks     { fromMemberId, amountMinor, paidOn, note }
 POST   /api/paybacks/{id}/proof     multipart → Cloud Storage
@@ -406,6 +445,16 @@ GET    /api/activity                Activity tab — cross-group feed
   could only refuse with a 409. The token travels in the request body (and in the
   share link's URL *fragment*), never a query string, which would copy it into access logs and
   Referer headers.
+
+- **Receipts on expenses, and ending a trip** — added from live use, and the first half of
+  step 7's storage work, pulled forward onto expenses (the original sketch attached screenshots
+  to *paybacks* as transfer proof; the thing people actually photograph is the bill). One photo
+  per expense under the expense's own edit rights; the image comes back through a
+  session-authenticated GET rather than the sketched signed URLs — behind one host, same-origin
+  cookies already do that job, and no URL that works logged-out ever exists. Ending a trip
+  (creator, reversible) closes the spending record while settling continues, and starts the
+  14-day clock after which the in-app sweep deletes the images. Payback proof screenshots remain
+  future work under step 7.
 
 - **`GET /api/trips/{id}/expenses.csv`** — added by request once real trips were being reviewed:
   a record of the money that left the group, kept outside the app. One row per expense — date,
@@ -604,7 +653,13 @@ Each step ends with something runnable and tested.
    two. The `Σ owesBetween(A, B) == −net(A)` identity is asserted over HTTP as well as
    property-tested in the engine. **Remind validates but delivers nothing** — see §9.
 
-7. **Screenshot upload** — Cloud Storage, signed read URLs.
+7. **Screenshot upload** — Cloud Storage. *Receipts on expenses shipped 2026-08:* the
+   `ReceiptStorage` seam (local disk on `dev`, a free-tier GCS bucket on `gcs-receipts`,
+   fake-gcs-server in tests), multipart upload behind the expense's own edit rights, a
+   session-authenticated image endpoint instead of the sketched signed URLs (same-origin cookies
+   already do the job, and no logged-out URL ever exists), client-side downscale with EXIF
+   stripped, trip close/reopen, and the 14-day retention sweep. Payback *proof* screenshots
+   stay open under this step.
 8. **Tally → Vue port** — tokens, then presentational, then interactive components. Tokens and the
    presentational set are done; SplitBar, AmountInput and PersonToggleRow follow. Two things did
    *not* port: Tally's `Amount` takes a major-unit float, and its SplitBar keeps float percentages.

@@ -30,7 +30,20 @@ spring:
       initialize-schema: never
     timeout: 30d
 
+  servlet:
+    # Receipt uploads. The browser downscales before sending (web/src/lib/receipt.ts), so 5 MB is
+    # headroom for the odd original that slips through, not a target — and the cap is what makes
+    # ReceiptStorage's whole-byte-array handling safe on a small heap.
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
 server:
+  tomcat:
+    # Above max-request-size on purpose: Tomcat has to be willing to swallow an oversized upload
+    # for the 413 (ApiExceptionHandler) to travel back. At the default 2 MB it slams the
+    # connection mid-upload and the client sees a network error instead of an answer.
+    max-swallow-size: 10MB
   servlet:
     session:
       cookie:

@@ -80,6 +80,34 @@ async function addName() {
   }
 }
 
+async function endTrip() {
+  if (busy.value || !confirm(t('invite.endConfirm'))) return
+  busy.value = true
+  error.value = ''
+  try {
+    await api.closeTrip(props.trip.id)
+    emit('changed')
+  } catch (failure) {
+    error.value = failure instanceof Error ? failure.message : String(failure)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function reopenTrip() {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    await api.reopenTrip(props.trip.id)
+    emit('changed')
+  } catch (failure) {
+    error.value = failure instanceof Error ? failure.message : String(failure)
+  } finally {
+    busy.value = false
+  }
+}
+
 async function copyLink() {
   error.value = ''
   try {
@@ -177,6 +205,32 @@ async function copyLink() {
         <TallyButton variant="primary" full-width data-testid="copy-link" @click="copyLink">
           {{ t('invite.copyLink') }}
         </TallyButton>
+
+        <div class="invite__lifecycle">
+          <!-- Ending is reversible and blocks only the spending record — but it also starts the
+               14-day clock on receipt photos, which is why the confirm names it. -->
+          <TallyButton
+            v-if="!trip.closedAt"
+            variant="danger"
+            size="sm"
+            data-testid="end-trip"
+            :disabled="busy"
+            @click="endTrip"
+          >
+            {{ t('invite.endTrip') }}
+          </TallyButton>
+          <TallyButton
+            v-else
+            variant="secondary"
+            size="sm"
+            data-testid="reopen-trip"
+            :disabled="busy"
+            @click="reopenTrip"
+          >
+            {{ t('invite.reopenTrip') }}
+          </TallyButton>
+          <p class="invite__hint">{{ trip.closedAt ? t('invite.endedNote') : t('invite.endNote') }}</p>
+        </div>
       </template>
 
       <p v-if="linkNote" class="invite__note" data-testid="invite-note">{{ linkNote }}</p>
@@ -253,6 +307,20 @@ async function copyLink() {
   font-size: var(--text-caption);
   color: var(--ink-2);
   overflow-wrap: anywhere;
+}
+
+.invite__lifecycle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1.5px solid var(--hairline);
+}
+
+.invite__hint {
+  font-size: var(--text-caption);
+  color: var(--text-muted);
 }
 
 .invite__error {

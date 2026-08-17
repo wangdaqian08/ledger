@@ -78,3 +78,28 @@ index.html is `no-cache`, assets are content-hashed.
   chain.
 - Quirk, accepted: `HEAD /ledger/` answers 401 (the shell's permitAll is GET-only). Browsers
   send GET; if an uptime checker ever wants HEAD, widen the matcher deliberately.
+
+## Receipts (feature added 2026-08-18; bucket created at its first deploy)
+
+Receipt images live in a Cloud Storage bucket — `ledger-receipts-werewolf-301709`, **us-east1**
+regional standard storage, uniform access, public access prevention on. That is inside the
+always-free envelope (5 GB-months, 5,000 Class A + 50,000 Class B ops/month, shared across
+us-east1/west1/central1), so storage and operations bill $0 at friends scale; bytes served to
+browsers ride the same cents-scale egress path as everything else this host answers. The app
+reads GCS→VM in-region, which is free.
+
+Three additions to `/etc/ledger/env`:
+
+    SPRING_PROFILES_ACTIVE=prod,name-signin,gcs-receipts
+    LEDGER_RECEIPTS_GCS_BUCKET=ledger-receipts-werewolf-301709
+    GOOGLE_APPLICATION_CREDENTIALS=/etc/ledger/gcs-key.json
+
+The VM's default service account carries the read-only storage *scope*, and changing scopes means
+stopping the instance (werewolf downtime). So writes use a dedicated service account
+(`ledger-receipts@werewolf-301709.iam.gserviceaccount.com`) granted `objectAdmin` on this one
+bucket and nothing else; its key file sits beside the env file, root-owned, 0600.
+
+Retention is the app's own daily sweep (`ReceiptRetention`, 14 days after a trip's `closed_at`),
+**not** a bucket lifecycle rule — an age-based rule would delete the receipts of any trip that
+simply runs long. A crashed upload can in principle strand an unreferenced object; at this scale
+that is a hand-cleanable curiosity, visible with `gcloud storage ls`.

@@ -19,6 +19,7 @@ import app.ledger.server.item.SplitRuleName
 import app.ledger.server.payback.PaybackEntity
 import app.ledger.server.payback.PaybackRepository
 import app.ledger.server.payback.PaybackStatusName
+import app.ledger.server.receipt.ReceiptRepository
 import org.springframework.stereotype.Component
 import java.util.UUID
 
@@ -52,6 +53,7 @@ class TripSnapshot(
     val items: List<ItemEntity>,
     val paybacks: List<PaybackEntity>,
     private val sharesByItem: Map<UUID, List<ItemShareEntity>>,
+    private val receiptVersionByItem: Map<UUID, String>,
 ) {
     private val engineTrip: Trip = Trip(
         members = roster.map { MemberId(it.id.toString()) },
@@ -84,6 +86,9 @@ class TripSnapshot(
         sharesByItem[item.id].orEmpty().associateBy { it.id.memberId }
 
     fun memberFor(userId: UUID): TripMemberEntity? = roster.firstOrNull { it.userId == userId }
+
+    /** The version of one item's receipt image, or null when no image is attached. */
+    fun receiptVersionFor(item: ItemEntity): String? = receiptVersionByItem[item.id]
 
     /** Every payback filed against one bill, newest last, whatever its status. */
     fun paybacksFor(item: ItemEntity): List<PaybackEntity> = paybacks.filter { it.itemId == item.id }
@@ -143,20 +148,22 @@ class TripSnapshots(
     private val items: ItemRepository,
     private val shares: ItemShareRepository,
     private val paybacks: PaybackRepository,
+    private val receipts: ReceiptRepository,
 ) {
     /**
-     * Four queries for a whole trip, however many items it has. Loading shares per item would be
-     * the classic N+1, and every screen in this app reads a trip whole.
+     * Five queries for a whole trip, however many items it has. Loading shares or receipts per
+     * item would be the classic N+1, and every screen in this app reads a trip whole.
      */
     fun load(tripId: UUID): TripSnapshot = TripSnapshot(
         roster = members.findAllByTripIdOrderByCreatedAt(tripId),
         items = items.findAllByTripIdOrderBySpentOnDescCreatedAtDesc(tripId),
         paybacks = paybacks.findAllByTripIdOrderByCreatedAt(tripId),
         sharesByItem = shares.findAllByTripIdOrderByPosition(tripId).groupBy { it.id.itemId },
+        receiptVersionByItem = receipts.findAllByTripId(tripId).associate { it.itemId to it.version },
     )
 
     /**
-     * Still four queries for any number of trips. GroupsHome shows your net on every group at
+     * Still five queries for any number of trips. GroupsHome shows your net on every group at
      * once, and doing that a trip at a time is the N+1 that turns a snappy home screen slow the
      * week somebody joins their tenth trip.
      */
@@ -167,6 +174,7 @@ class TripSnapshots(
         val itemsByTrip = items.findAllByTripIdInOrderBySpentOnDescCreatedAtDesc(tripIds).groupBy { it.tripId }
         val sharesByTrip = shares.findAllByTripIdInOrderByPosition(tripIds).groupBy { it.tripId }
         val paybacksByTrip = paybacks.findAllByTripIdInOrderByCreatedAt(tripIds).groupBy { it.tripId }
+        val receiptsByTrip = receipts.findAllByTripIdIn(tripIds).groupBy { it.tripId }
 
         return tripIds.associateWith { tripId ->
             TripSnapshot(
@@ -174,6 +182,7 @@ class TripSnapshots(
                 items = itemsByTrip[tripId].orEmpty(),
                 paybacks = paybacksByTrip[tripId].orEmpty(),
                 sharesByItem = sharesByTrip[tripId].orEmpty().groupBy { it.id.itemId },
+                receiptVersionByItem = receiptsByTrip[tripId].orEmpty().associate { it.itemId to it.version },
             )
         }
     }

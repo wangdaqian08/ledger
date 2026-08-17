@@ -75,4 +75,19 @@ describe('api client', () => {
     expect(path).toBe('/api/trips/trip-1/settlements')
     expect(JSON.parse(options.body)).toEqual({ toMemberId: 'm-2', amountMinor: 6_000 })
   })
+
+  it('passes a receipt upload through as FormData, letting the browser set the boundary', async () => {
+    respond(200, { id: 'i-9' })
+    const image = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' })
+
+    await api.uploadReceipt('i-9', image, 'receipt.jpg')
+
+    const [path, options] = fetchMock.mock.calls[0]!
+    expect(path).toBe('/api/items/i-9/receipt')
+    expect(options.body).toBeInstanceOf(FormData)
+    // Stamping application/json — or any Content-Type — onto a FormData body would strip the
+    // multipart boundary and the server would see an unreadable request.
+    expect(options.headers['Content-Type']).toBeUndefined()
+    expect(options.headers['X-XSRF-TOKEN']).toBe('token-123')
+  })
 })

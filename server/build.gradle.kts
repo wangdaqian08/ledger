@@ -25,6 +25,11 @@ dependencies {
     implementation(libs.jackson.module.kotlin)
     implementation(kotlin("reflect"))
 
+    // Receipt images live in Cloud Storage (GcsReceiptStorage). Google's clients are outside the
+    // Boot BOM, so they bring their own platform; the storage coordinate stays versionless.
+    implementation(platform(libs.gcp.libraries.bom))
+    implementation(libs.gcp.storage)
+
     // Flyway 10 split database support out of the core jar; without this, Postgres migrations
     // fail at startup rather than at compile time.
     runtimeOnly(libs.flyway.database.postgresql)

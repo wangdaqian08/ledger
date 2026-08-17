@@ -90,6 +90,15 @@ export default {
     notFound: '找不到这个群组',
     notFoundBody: '它可能已被移除，或者你不在其中。',
     remindFailed: '提醒没有发送成功。',
+    ended: '已结束',
+  },
+  receipt: {
+    section: '收据',
+    add: '添加收据',
+    alt: '收据照片',
+    replace: '更换',
+    remove: '移除',
+    removeConfirm: '移除这张收据照片？',
   },
   addExpense: {
     howMuch: '多少钱？',
@@ -151,6 +160,11 @@ export default {
     add: '添加',
     copyLink: '复制邀请链接',
     rename: '修改{name}的名字',
+    endTrip: '结束行程',
+    reopenTrip: '重新开启',
+    endConfirm: '结束这个行程？将不能再记新支出，结算仍可继续，收据照片会在14天后删除。',
+    endNote: '结束后不能再记新支出。结算仍然开放，收据照片保留14天。',
+    endedNote: '行程已结束。重新开启后可以继续修改支出。',
   },
   join: {
     title: '加入{trip}',

@@ -89,6 +89,15 @@ export default {
     notFound: 'This trip is not here',
     notFoundBody: "It may have been removed, or you're not on it.",
     remindFailed: 'That nudge did not go through.',
+    ended: 'Ended',
+  },
+  receipt: {
+    section: 'Receipt',
+    add: 'Add receipt',
+    alt: 'Receipt photo',
+    replace: 'Replace',
+    remove: 'Remove',
+    removeConfirm: 'Remove this receipt photo?',
   },
   addExpense: {
     howMuch: 'How much?',
@@ -150,6 +159,12 @@ export default {
     add: 'Add',
     copyLink: 'Copy invite link',
     rename: 'Rename {name}',
+    endTrip: 'End trip',
+    reopenTrip: 'Reopen trip',
+    endConfirm:
+      'End this trip? New expenses stop, settling up continues, and receipt photos are deleted 14 days on.',
+    endNote: 'Ending stops new expenses. Settling up stays open, and receipt photos are kept for 14 days.',
+    endedNote: 'This trip has ended. Reopen it to change expenses again.',
   },
   join: {
     title: 'Join {trip}',

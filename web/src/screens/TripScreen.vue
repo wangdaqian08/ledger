@@ -7,6 +7,7 @@ import AppBar from '@/components/AppBar.vue'
 import BalanceRow from '@/components/BalanceRow.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ExpenseRow from '@/components/ExpenseRow.vue'
+import TallyBadge from '@/components/TallyBadge.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TallyCard from '@/components/TallyCard.vue'
 import TallyIcon from '@/components/TallyIcon.vue'
@@ -168,7 +169,12 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       <TallyCard class="trip__hero">
         <div class="trip__hero-top">
           <div class="trip__hero-position" data-testid="trip-position">
-            <p class="trip__label">{{ heroLabel }}</p>
+            <p class="trip__label">
+              {{ heroLabel }}
+              <TallyBadge v-if="trip.closedAt" tone="neutral" data-testid="trip-ended">
+                {{ t('trip.ended') }}
+              </TallyBadge>
+            </p>
             <AmountText
               :amount-minor="Math.abs(trip.yourNetMinor)"
               size="hero"
@@ -317,8 +323,9 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       data-testid="trip-missing"
     />
 
+    <!-- An ended trip records no new spending, so the button goes away with the ability. -->
     <button
-      v-if="trip && settlement"
+      v-if="trip && settlement && !trip.closedAt"
       class="trip__add"
       type="button"
       data-testid="add-expense"
