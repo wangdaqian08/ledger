@@ -22,6 +22,10 @@ class TripAccess(
      */
     fun visibleTrip(tripId: UUID, actor: UUID): TripEntity {
         val trip = trips.findById(tripId).orElseThrow { notFound() }
+        // A deleted trip is gone for everybody, its creator included: the same 404 a stranger
+        // gets. The restore path deliberately does not come through here — it is the one caller
+        // that has business with a deleted trip, and it says so by looking one up on its own.
+        if (trip.deletedAt != null) throw notFound()
         members.findByTripIdAndUserId(tripId, actor) ?: throw notFound()
         return trip
     }

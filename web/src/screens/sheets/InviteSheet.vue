@@ -9,6 +9,7 @@ import TallyButton from '@/components/TallyButton.vue'
 import TallyIcon from '@/components/TallyIcon.vue'
 import TextField from '@/components/TextField.vue'
 import { api, type TripView } from '@/lib/api'
+import { currencySymbol, formatMinor } from '@/lib/money'
 
 /**
  * The roster, and the two ways onto it: the creator writes a name down, and the share link lets
@@ -104,6 +105,68 @@ async function reopenTrip() {
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : String(failure)
   } finally {
+    busy.value = false
+  }
+}
+
+async function putAway() {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    await api.hideTrip(props.trip.id)
+    emit('changed')
+  } catch (failure) {
+    error.value = failure instanceof Error ? failure.message : String(failure)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function putBack() {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    await api.unhideTrip(props.trip.id)
+    emit('changed')
+  } catch (failure) {
+    error.value = failure instanceof Error ? failure.message : String(failure)
+  } finally {
+    busy.value = false
+  }
+}
+
+/**
+ * The one act that reaches every other member's app, so it is the one that states its cost first.
+ * `yourNetMinor` is the viewer's own position, which is the figure they can actually act on — and
+ * naming it here is the last moment a warning can still change the outcome, since the server
+ * deliberately does not refuse a delete over outstanding money (that would trap an abandoned trip
+ * forever).
+ */
+async function deleteTrip() {
+  if (busy.value) return
+  const outstanding = Math.abs(props.trip.yourNetMinor)
+  const question = outstanding
+    ? t('invite.deleteConfirmOutstanding', {
+        name: props.trip.name,
+        amount: formatMinor(outstanding, {
+          currencyCode: props.trip.currencyCode,
+          symbol: currencySymbol(props.trip.currencyCode),
+        }),
+      })
+    : t('invite.deleteConfirm', { name: props.trip.name })
+  if (!confirm(question)) return
+
+  busy.value = true
+  error.value = ''
+  try {
+    await api.deleteTrip(props.trip.id)
+    // Home is the only place left that knows about this trip — the Recently deleted section is
+    // where it can be brought back from, and staying on a screen for a deleted trip would 404.
+    await router.push({ name: 'trips' })
+  } catch (failure) {
+    error.value = failure instanceof Error ? failure.message : String(failure)
     busy.value = false
   }
 }
@@ -230,6 +293,45 @@ async function copyLink() {
             {{ t('invite.reopenTrip') }}
           </TallyButton>
           <p class="invite__hint">{{ trip.closedAt ? t('invite.endedNote') : t('invite.endNote') }}</p>
+
+          <!-- Putting away is only offered once the trip has ended: a live trip vanishing from
+               twelve home screens has no good reason to happen, and the server refuses it. -->
+          <template v-if="trip.closedAt">
+            <TallyButton
+              v-if="!trip.hiddenAt"
+              variant="secondary"
+              size="sm"
+              data-testid="put-away-trip"
+              :disabled="busy"
+              @click="putAway"
+            >
+              {{ t('invite.putAway') }}
+            </TallyButton>
+            <TallyButton
+              v-else
+              variant="secondary"
+              size="sm"
+              data-testid="put-back-trip"
+              :disabled="busy"
+              @click="putBack"
+            >
+              {{ t('invite.putBack') }}
+            </TallyButton>
+            <p class="invite__hint">
+              {{ trip.hiddenAt ? t('invite.putBackNote') : t('invite.putAwayNote') }}
+            </p>
+          </template>
+
+          <TallyButton
+            variant="danger"
+            size="sm"
+            data-testid="delete-trip"
+            :disabled="busy"
+            @click="deleteTrip"
+          >
+            {{ t('invite.deleteTrip') }}
+          </TallyButton>
+          <p class="invite__hint">{{ t('invite.deleteNote') }}</p>
         </div>
       </template>
 

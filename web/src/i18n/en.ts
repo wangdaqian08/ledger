@@ -62,6 +62,12 @@ export default {
     create: 'Create group',
     people: '{count} people',
     personOne: '{count} person',
+    completed: 'Completed',
+    showHidden: 'Show put away ({count})',
+    hideHidden: 'Hide them again',
+    recentlyDeleted: 'Recently deleted',
+    purgesOn: 'Deleted for good on {date}',
+    restore: 'Restore',
   },
   trip: {
     groupSpend: 'Group spend',
@@ -165,6 +171,18 @@ export default {
       'End this trip? New expenses stop, settling up continues, and receipt photos are deleted 14 days on.',
     endNote: 'Ending stops new expenses. Settling up stays open, and receipt photos are kept for 14 days.',
     endedNote: 'This trip has ended. Reopen it to change expenses again.',
+    putAway: 'Put away',
+    putBack: 'Put back on the list',
+    putAwayNote:
+      'Takes this trip off everyone’s home screen. It still opens by its link, and settling up carries on.',
+    putBackNote: 'This trip is off everyone’s home screen. Anyone can still find it under Completed.',
+    deleteTrip: 'Delete trip',
+    deleteNote: 'Deletes it for everyone. You can restore it from your home screen for 30 days.',
+    deleteConfirm: 'Delete {name} for everyone? You can restore it for 30 days.',
+    // Naming the money is the whole point of the second wording: this is the last moment a
+    // warning can still change the outcome.
+    deleteConfirmOutstanding:
+      'Delete {name} for everyone? {amount} is still unsettled between you and the group. You can restore it for 30 days.',
   },
   join: {
     title: 'Join {trip}',

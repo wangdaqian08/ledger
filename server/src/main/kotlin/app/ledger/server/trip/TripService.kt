@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.time.Clock
+import java.time.Duration
 import java.util.Currency
 import java.util.UUID
 
@@ -23,6 +24,7 @@ class TripService(
     private val snapshots: TripSnapshots,
     private val access: TripAccess,
     private val clock: Clock,
+    private val properties: TripProperties,
 ) {
     /** Anyone signed in. Creating a trip makes you its first member, already claimed. */
     @Transactional
@@ -62,11 +64,18 @@ class TripService(
         return view(trip, actor)
     }
 
-    /** Any trip you hold a claimed member slot on, and nothing else. */
+    /**
+     * Any trip you hold a claimed member slot on, and nothing else — minus anything its creator
+     * has deleted, plus, if you are that creator, the list of what you could still bring back.
+     *
+     * Hidden trips are in [TripsView.trips] like any other. The screen decides what to show; the
+     * payload decides what is true, and a hidden trip's balance is still your balance.
+     */
     @Transactional(readOnly = true)
     fun listFor(actor: UUID): TripsView {
+        val deleted = trips.findAllDeletedForCreator(actor).map { it.toDeletedView(properties.restoreWindow) }
         val visible = trips.findAllForUser(actor)
-        if (visible.isEmpty()) return TripsView(emptyList(), emptyList(), 0)
+        if (visible.isEmpty()) return TripsView(emptyList(), emptyList(), 0, deleted)
 
         val loaded = snapshots.loadAll(visible.map { it.id })
         val views = visible.mapNotNull { trip -> loaded[trip.id]?.let { trip.toView(it, actor) } }
@@ -81,6 +90,7 @@ class TripService(
                 .sortedBy { it.currencyCode },
             // "Settled" is being square with the group, which is what the GroupsHome badge means.
             settledTripCount = views.count { it.yourNetMinor == 0L },
+            deleted = deleted,
         )
     }
 
@@ -175,6 +185,75 @@ class TripService(
     }
 
     /**
+     * Trip creator only, and only once the trip has ended. Hiding takes it off every member's home
+     * list and changes nothing else whatsoever: the link still opens it, settling and approvals
+     * carry on as they do for any ended trip, and its balance still counts in everyone's overall
+     * position. Tidying, not secrecy — which is why the screen lets anyone reveal what is hidden.
+     */
+    @Transactional
+    fun hide(tripId: UUID, actor: UUID): TripView {
+        val trip = access.creatorOnly(tripId, actor)
+        if (trip.closedAt == null) {
+            // A live trip vanishing from twelve home screens while people are still adding
+            // expenses to it has no good reason to happen; the CHECK constraint says so too.
+            // 409 rather than 403: the caller holds the right, the trip's state is what stands
+            // in the way, and ending it is the remedy.
+            throw ResponseStatusException(HttpStatus.CONFLICT, "End this trip before putting it away")
+        }
+        // Idempotent, unlike close: no clock hangs off this timestamp, so hiding twice is a no-op
+        // rather than a 409 — while a second close would restart the receipt retention window.
+        if (trip.hiddenAt == null) trip.hiddenAt = clock.instant()
+        return view(trip, actor)
+    }
+
+    /** Trip creator only, and the undo for [hide]. Also idempotent, for the same reason. */
+    @Transactional
+    fun unhide(tripId: UUID, actor: UUID): TripView {
+        val trip = access.creatorOnly(tripId, actor)
+        trip.hiddenAt = null
+        return view(trip, actor)
+    }
+
+    /**
+     * Trip creator only, at any point in a trip's life. It leaves every member's list at once and
+     * 404s from here by link, by invite and by API — but every row stays exactly where it is, so
+     * [restore] can bring the whole trip back for the next [TripProperties.restoreWindow], after
+     * which [TripPurge] destroys it.
+     *
+     * Nothing here checks whether money is outstanding. That is deliberate: refusing would trap a
+     * trip somebody abandoned mid-settle forever, and warning is the client's job — the delete
+     * dialog names what is still owed *before* this is called, which is where a warning can still
+     * change the outcome.
+     */
+    @Transactional
+    fun delete(tripId: UUID, actor: UUID) {
+        access.creatorOnly(tripId, actor).deletedAt = clock.instant()
+    }
+
+    /**
+     * The undo for [delete], creator only, from the Recently deleted section. Anything the sweep
+     * has not taken yet can still come back — a trip that is present is a trip that is restorable,
+     * which keeps the rule the user can see (the row is on screen) rather than one they cannot
+     * (a clock they would have to have been counting).
+     */
+    @Transactional
+    fun restore(tripId: UUID, actor: UUID): TripView {
+        val trip = trips.findById(tripId).orElseThrow { noSuchTrip() }
+        if (trip.deletedAt == null) {
+            // Not deleted, so answer about it the way the rest of the API would: a stranger still
+            // learns nothing (404), a member who is not the creator gets 403, and the creator is
+            // told the plain truth that there is nothing to undo.
+            access.creatorOnly(tripId, actor)
+            throw ResponseStatusException(HttpStatus.CONFLICT, "This trip has not been deleted")
+        }
+        // Deleted means gone for everyone but the person who deleted it; anybody else gets the
+        // same 404 they would get for a trip that never existed.
+        if (trip.createdByUserId != actor) throw noSuchTrip()
+        trip.deletedAt = null
+        return view(trip, actor)
+    }
+
+    /**
      * The share link's landing page: which names are still free. Like [claim], deliberately not
      * behind [TripAccess.visibleTrip] — the token is the authorisation — and deliberately *only*
      * the unclaimed names: the link's holder is not yet somebody the trip's numbers belong to.
@@ -189,9 +268,7 @@ class TripService(
         if (inviteTokens.verify(token) != tripId) {
             throw InvalidInviteToken("This invite link is for a different trip")
         }
-        val trip = trips.findById(tripId).orElseThrow {
-            ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
-        }
+        val trip = liveTrip(tripId)
         return ClaimableView(
             tripName = trip.name,
             you = members.findByTripIdAndUserId(tripId, actor)?.let {
@@ -215,9 +292,7 @@ class TripService(
             throw InvalidInviteToken("This invite link is for a different trip")
         }
 
-        val trip = trips.findById(tripId).orElseThrow {
-            ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
-        }
+        val trip = liveTrip(tripId)
         val member = members
             .findById(command.memberId)
             .filter { it.tripId == tripId }
@@ -260,6 +335,19 @@ class TripService(
     /** Round-robin over the eight person hues, and never reassigned once given. */
     private fun nextHue(tripId: UUID): Short = ((members.countByTripId(tripId) % 8) + 1).toShort()
 
+    /**
+     * A trip that still exists, for the two paths a share link authorises rather than membership.
+     * A deleted trip answers 404 here exactly as it does everywhere else — a link handed out
+     * before the delete must not be a way back into it.
+     */
+    private fun liveTrip(tripId: UUID): TripEntity {
+        val trip = trips.findById(tripId).orElseThrow { noSuchTrip() }
+        if (trip.deletedAt != null) throw noSuchTrip()
+        return trip
+    }
+
+    private fun noSuchTrip() = ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
+
     private fun view(trip: TripEntity, actor: UUID): TripView {
         members.flush()
         return trip.toView(snapshots.load(trip.id), actor)
@@ -287,6 +375,7 @@ private fun TripEntity.toView(snapshot: TripSnapshot, actor: UUID): TripView {
             you?.let { me -> snapshot.items.filter { it.payerMemberId == me.id }.sumOf { it.amountMinor } } ?: 0L,
         youAreCreator = createdByUserId == actor,
         closedAt = closedAt,
+        hiddenAt = hiddenAt,
     )
 }
 
@@ -296,4 +385,16 @@ private fun TripMemberEntity.toMemberView(actor: UUID) = MemberView(
     personHue = personHue,
     claimed = userId != null,
     isYou = userId == actor,
+)
+
+private fun TripEntity.toDeletedView(purgesAfter: Duration) = DeletedTripView(
+    id = id,
+    name = name,
+    icon = icon,
+    hue = hue,
+    deletedAt = deletedAt,
+    // The date the row disappears for good, computed here rather than left to the client: the
+    // window is a server setting, and a client counting its own thirty days would promise a
+    // deadline the sweep does not actually keep.
+    purgesAt = deletedAt?.plus(purgesAfter),
 )
