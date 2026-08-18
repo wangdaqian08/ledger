@@ -67,8 +67,9 @@ export default {
     showHidden: '显示已收起的（{count}）',
     hideHidden: '再次收起',
     recentlyDeleted: '最近删除',
-    purgesOn: '{date}彻底删除',
+    restorableUntil: '{date}前可恢复',
     restore: '恢复',
+    liveEmpty: '当前没有进行中的群组——已完成的都在下面。',
   },
   trip: {
     groupSpend: '群组总支出',
@@ -178,7 +179,7 @@ export default {
     deleteTrip: '删除行程',
     deleteNote: '为所有人删除。30天内可以从你的主页恢复。',
     deleteConfirm: '为所有人删除{name}？30天内可以恢复。',
-    deleteConfirmOutstanding: '为所有人删除{name}？你与大家之间还有{amount}未结清。30天内可以恢复。',
+    deleteConfirmOutstanding: '为所有人删除{name}？这个群组还有{amount}未结清。30天内可以恢复。',
   },
   join: {
     title: '加入{trip}',

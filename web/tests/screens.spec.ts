@@ -124,6 +124,7 @@ function trip(overrides: Partial<TripView> = {}): TripView {
     youAreCreator: true,
     closedAt: null,
     hiddenAt: null,
+    unsettledMinor: 0,
     ...overrides,
   }
 }
@@ -284,6 +285,14 @@ describe('TripsScreen', () => {
     expect(findByTestId(screen, 'toggle-hidden').exists()).toBe(false)
   })
 
+  it('says so, quietly, when every group is finished', async () => {
+    const screen = await home({ trips: [trip({ id: 't-done', closedAt: '2026-08-01T00:00:00Z' })] })
+    expect(findByTestId(screen, 'live-empty').exists()).toBe(true)
+
+    const withLive = await home({ trips: [trip()] })
+    expect(findByTestId(withLive, 'live-empty').exists()).toBe(false)
+  })
+
   it('shows what you deleted with the date it stops being restorable, and puts it back', async () => {
     mocked.restoreTrip!.mockResolvedValue(trip())
     const screen = await home({
@@ -303,7 +312,8 @@ describe('TripsScreen', () => {
     const row = findByTestId(screen, 'deleted-trip')
     expect(row.text()).toContain('Snow Trip')
     // The deadline is spelled out rather than left as "30 days" for the reader to count.
-    expect(row.text()).toContain('17 Sept 2026')
+    expect(row.text()).toContain('Restorable until')
+    expect(row.text()).toContain('Sep 17, 2026')
 
     await findByTestId(screen, 'restore-trip').trigger('click')
     await flushPromises()
@@ -1377,7 +1387,7 @@ describe('InviteSheet trip lifecycle', () => {
     await router.push('/trips/t-1')
 
     const sheet = mount(InviteSheet, {
-      props: { open: true, trip: trip({ name: 'Osaka', yourNetMinor: -4_280 }) },
+      props: { open: true, trip: trip({ name: 'Osaka', unsettledMinor: 4_280 }) },
       global: global(),
     })
     await nextTick()
@@ -1398,7 +1408,7 @@ describe('InviteSheet trip lifecycle', () => {
     vi.stubGlobal('confirm', (message: string) => (asked.push(message), true))
 
     const sheet = mount(InviteSheet, {
-      props: { open: true, trip: trip({ name: 'Flat', yourNetMinor: 0 }) },
+      props: { open: true, trip: trip({ name: 'Flat', unsettledMinor: 0 }) },
       global: global(),
     })
     await nextTick()

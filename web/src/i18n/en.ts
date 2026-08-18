@@ -66,8 +66,11 @@ export default {
     showHidden: 'Show put away ({count})',
     hideHidden: 'Hide them again',
     recentlyDeleted: 'Recently deleted',
-    purgesOn: 'Deleted for good on {date}',
+    // "Restorable until", not "deleted on": the sweep runs nightly, so destruction lands some
+    // hours after the date — promising the thing that is true right up to the deadline.
+    restorableUntil: 'Restorable until {date}',
     restore: 'Restore',
+    liveEmpty: 'Nothing on right now — your finished groups are below.',
   },
   trip: {
     groupSpend: 'Group spend',
@@ -182,7 +185,7 @@ export default {
     // Naming the money is the whole point of the second wording: this is the last moment a
     // warning can still change the outcome.
     deleteConfirmOutstanding:
-      'Delete {name} for everyone? {amount} is still unsettled between you and the group. You can restore it for 30 days.',
+      'Delete {name} for everyone? This group still has {amount} unsettled. You can restore it for 30 days.',
   },
   join: {
     title: 'Join {trip}',

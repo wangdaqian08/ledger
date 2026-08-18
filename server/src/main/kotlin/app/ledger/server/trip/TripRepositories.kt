@@ -1,6 +1,7 @@
 package app.ledger.server.trip
 
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.time.Instant
@@ -43,6 +44,17 @@ interface TripRepository : JpaRepository<TripEntity, UUID> {
 }
 
 interface TripMemberRepository : JpaRepository<TripMemberEntity, UUID> {
+    /**
+     * The trip purge only. A bulk delete that runs against the database immediately, bypassing
+     * the persistence context, because the purge needs its deletes to happen in the order it says
+     * them — a queued delete that flushes later would meet the member foreign keys out of order.
+     */
+    @Modifying
+    @Query("DELETE FROM TripMemberEntity m WHERE m.tripId = :tripId")
+    fun purgeAllForTrip(
+        @Param("tripId") tripId: UUID,
+    )
+
     fun findAllByTripIdOrderByCreatedAt(tripId: UUID): List<TripMemberEntity>
 
     fun findAllByTripIdInOrderByCreatedAt(tripIds: Collection<UUID>): List<TripMemberEntity>

@@ -1,3 +1,7 @@
+// Dates in these tests render through the machine's zone; pin it so a fixture stamped for
+// one calendar day cannot drift to the day before on machines west of UTC.
+process.env.TZ = 'UTC'
+
 import { config } from '@vue/test-utils'
 import { i18n } from '../src/i18n'
 

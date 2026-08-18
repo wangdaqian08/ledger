@@ -6,6 +6,7 @@ import app.ledger.server.invite.IssuedInvite
 import app.ledger.server.item.toView
 import app.ledger.server.user.UserRepository
 import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -181,6 +182,11 @@ class TripService(
             throw ResponseStatusException(HttpStatus.CONFLICT, "This trip has not ended")
         }
         trip.closedAt = null
+        // Reopening also takes the trip out of the cupboard. Hidden means "finished and put
+        // away" — the CHECK constraint enforces exactly that pairing, so leaving the mark here
+        // would make this UPDATE itself the constraint violation — and a trip that is live again
+        // belongs back on every member's list anyway.
+        trip.hiddenAt = null
         return view(trip, actor)
     }
 
@@ -224,10 +230,21 @@ class TripService(
      * trip somebody abandoned mid-settle forever, and warning is the client's job — the delete
      * dialog names what is still owed *before* this is called, which is where a warning can still
      * change the outcome.
+     *
+     * Deleting again repeats as a no-op for the creator — the item POST replay rule applied to
+     * destruction, so a retry on a dropped connection cannot read as failure. The original stamp
+     * survives, which keeps a retry from quietly stretching the restore window.
      */
     @Transactional
     fun delete(tripId: UUID, actor: UUID) {
-        access.creatorOnly(tripId, actor).deletedAt = clock.instant()
+        val trip = trips.findById(tripId).orElseThrow { noSuchTrip() }
+        if (trip.deletedAt != null) {
+            // Gone for everyone but its deleter, who alone is allowed to hear "already done".
+            if (trip.createdByUserId != actor) throw noSuchTrip()
+            return
+        }
+        access.creatorOnly(tripId, actor)
+        trip.deletedAt = clock.instant()
     }
 
     /**
@@ -235,22 +252,29 @@ class TripService(
      * has not taken yet can still come back — a trip that is present is a trip that is restorable,
      * which keeps the rule the user can see (the row is on screen) rather than one they cannot
      * (a clock they would have to have been counting).
+     *
+     * Restoring what is not deleted — including the retry of a restore that already landed —
+     * answers with the trip itself, for the same retry reason as [delete]. A 409 here would be
+     * indistinguishable from failure to the one client that most needs to know it succeeded.
      */
     @Transactional
     fun restore(tripId: UUID, actor: UUID): TripView {
         val trip = trips.findById(tripId).orElseThrow { noSuchTrip() }
         if (trip.deletedAt == null) {
-            // Not deleted, so answer about it the way the rest of the API would: a stranger still
-            // learns nothing (404), a member who is not the creator gets 403, and the creator is
-            // told the plain truth that there is nothing to undo.
-            access.creatorOnly(tripId, actor)
-            throw ResponseStatusException(HttpStatus.CONFLICT, "This trip has not been deleted")
+            return view(access.creatorOnly(tripId, actor), actor)
         }
         // Deleted means gone for everyone but the person who deleted it; anybody else gets the
         // same 404 they would get for a trip that never existed.
         if (trip.createdByUserId != actor) throw noSuchTrip()
         trip.deletedAt = null
-        return view(trip, actor)
+        return try {
+            // Flushed here so the one race this has — the 03:47 sweep destroying the row between
+            // our read and this write — surfaces as the 404 it truly is, not a 500.
+            trips.flush()
+            view(trip, actor)
+        } catch (swept: OptimisticLockingFailureException) {
+            throw noSuchTrip()
+        }
     }
 
     /**
@@ -367,6 +391,7 @@ private fun TripEntity.toView(snapshot: TripSnapshot, actor: UUID): TripView {
         members = snapshot.roster.map { it.toMemberView(actor) },
         items = snapshot.items.map { snapshot.toView(it, actor) },
         yourNetMinor = you?.let { snapshot.netFor(it.id) } ?: 0L,
+        unsettledMinor = snapshot.roster.sumOf { member -> maxOf(0L, snapshot.netFor(member.id)) },
         // The three headline figures, derived here so TripScreen shows them rather than re-summing
         // the items itself — a locally recomputed total is exactly the stale number the design avoids.
         groupSpendMinor = snapshot.items.sumOf { it.amountMinor },

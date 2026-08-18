@@ -368,7 +368,7 @@ hue from the person ramp. Custom categories are scoped to their trip. **No emoji
 
 | Screen (`Screens.jsx`) | Needs | Endpoint |
 |---|---|---|
-| `GroupsHome` | every group's name, icon, hue, member avatars, your net; overall net **per currency** (never summed across currencies — ¥ added to $ is a meaningless figure); count settled. Live groups first, then a **Completed** section holding the ended ones, with hidden trips behind a "Show hidden" toggle inside it; a **Recently deleted** section appears for the creator only while something is restorable, each row carrying the date it purges | `GET /api/trips` |
+| `GroupsHome` | every group's name, icon, hue, member avatars, your net; overall net **per currency** (never summed across currencies — ¥ added to $ is a meaningless figure); count settled. Live groups first, then a **Completed** section holding the ended ones, with hidden trips behind a "Show put away" toggle inside it; a **Recently deleted** section appears for the creator only while something is restorable, each row carrying the date it purges | `GET /api/trips` |
 | `OverallScreen` | net **per person across all groups**, and which groups each debt came from; total spent; what you fronted | `GET /api/overview` |
 | `GroupDetail` | balance hero, three stats, who-owes-who rows, members, currency, start date, expenses grouped by day, filters | `GET /api/trips/{id}` |
 | `ExpenseDetailSheet` | title, category, date, total, your share, payer, per-person splits, note | *(in the trip payload — see below)* |
@@ -401,7 +401,8 @@ POST   /api/trips/{id}/reopen       …and takes it back; already-swept receipts
 POST   /api/trips/{id}/hide         creator tidies an ended trip off every member's list; 409
                                     while the trip is still open
 POST   /api/trips/{id}/unhide       …and puts it back on them
-DELETE /api/trips/{id}              creator deletes for everyone; 404s from here for members
+DELETE /api/trips/{id}              creator deletes for everyone — 404 from here for everyone,
+                                    the creator included; only their Recently deleted list still knows
 POST   /api/trips/{id}/restore      creator only, inside the 30 days, from Recently deleted
 GET    /api/trips/{id}/categories   eight built-ins + this trip's custom ones
 POST   /api/trips/{id}/categories   { name, icon, hue }

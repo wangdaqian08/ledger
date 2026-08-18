@@ -1,14 +1,18 @@
 package app.ledger.server
 
+import app.ledger.server.receipt.ReceiptRepository
+import app.ledger.server.receipt.ReceiptStorage
 import app.ledger.server.trip.TripPurge
 import app.ledger.server.trip.TripRepository
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -29,7 +33,15 @@ class TripHideAndDeleteApiTest : ApiTest() {
     @Autowired
     private lateinit var trips: TripRepository
 
+    @Autowired
+    private lateinit var receiptRows: ReceiptRepository
+
+    @Autowired
+    private lateinit var receiptObjects: ReceiptStorage
+
     private val nothing = emptyMap<String, String>()
+
+    private val jpeg = byteArrayOf(-1, -40, -1, -32) + ByteArray(120) { it.toByte() }
 
     private fun SessionAwareClient.end(tripId: UUID) = post("/api/trips/$tripId/close", nothing)
 
@@ -77,6 +89,23 @@ class TripHideAndDeleteApiTest : ApiTest() {
             "the reason should point at ending it, got: ${refused.body}",
         )
         assertTrue(creator.get("/api/trips/$tripId").json()["hiddenAt"].isNull, "and nothing moved")
+    }
+
+    @Test
+    fun `reopening a put-away trip takes it back out of the cupboard too`() {
+        // Hidden means "finished and put away", and the CHECK constraint enforces exactly that
+        // pairing — so reopening has to clear the hidden mark, or the UPDATE itself is refused
+        // and the creator gets a 500 for pressing a button the screen offered them.
+        val creator = signedIn("Nora")
+        val tripId = creator.createTrip()
+        creator.end(tripId)
+        creator.post("/api/trips/$tripId/hide", nothing)
+
+        val reopened = creator.post("/api/trips/$tripId/reopen", nothing)
+        assertEquals(HttpStatus.OK, reopened.statusCode, "reopening a hidden trip: ${reopened.body}")
+        assertTrue(reopened.json()["closedAt"].isNull, "open again")
+        assertTrue(reopened.json()["hiddenAt"].isNull, "a live trip cannot stay put away")
+        assertTrue(creator.listed(tripId), "and it is back on the home list, because live trips always are")
     }
 
     @Test
@@ -155,6 +184,10 @@ class TripHideAndDeleteApiTest : ApiTest() {
 
         assertFalse(creator.listed(tripId), "gone from the person who deleted it")
         assertFalse(friend.listed(tripId), "and from everybody else, at once")
+        assertTrue(
+            creator.tripsList()["overalls"].isEmpty,
+            "a deleted trip's money leaves the overall position with it",
+        )
         assertEquals(HttpStatus.NOT_FOUND, creator.get("/api/trips/$tripId").statusCode, "gone by API for its creator")
         assertEquals(HttpStatus.NOT_FOUND, friend.get("/api/trips/$tripId").statusCode, "and for its members")
 
@@ -222,25 +255,100 @@ class TripHideAndDeleteApiTest : ApiTest() {
     }
 
     @Test
-    fun `restoring a trip nobody deleted is a conflict, and a member cannot undo a delete`() {
+    fun `delete and restore repeat safely — a retry can never read as failure`() {
         val creator = signedIn("Nora")
         val friend = signedIn("Piet")
         val tripId = creator.createTrip()
         val seat = creator.addMember(tripId, "Piet")
         friend.claim(tripId, creator.invite(tripId), seat)
 
-        assertEquals(
-            HttpStatus.CONFLICT,
-            creator.post("/api/trips/$tripId/restore", nothing).statusCode,
-            "restoring a trip that is not deleted",
-        )
+        // Restoring what was never deleted answers with the trip, not an argument — to a client
+        // retrying a lost response, a 409 is indistinguishable from failure.
+        val alreadyHere = creator.post("/api/trips/$tripId/restore", nothing)
+        assertEquals(HttpStatus.OK, alreadyHere.statusCode)
+        assertEquals(tripId, alreadyHere.id())
+        assertEquals(HttpStatus.FORBIDDEN, friend.post("/api/trips/$tripId/restore", nothing).statusCode)
 
         creator.delete("/api/trips/$tripId")
+        val stamp = creator.tripsList()["deleted"].single()["purgesAt"].asText()
+
+        // The item-POST replay rule, applied to destruction: same answer again, and the purge
+        // clock does not move, so a retry cannot quietly stretch the restore window.
+        assertEquals(HttpStatus.NO_CONTENT, creator.delete("/api/trips/$tripId").statusCode)
+        assertEquals(stamp, creator.tripsList()["deleted"].single()["purgesAt"].asText())
+
         assertEquals(
             HttpStatus.NOT_FOUND,
             friend.post("/api/trips/$tripId/restore", nothing).statusCode,
             "a deleted trip is gone for a member — including as something to argue with",
         )
+        assertEquals(HttpStatus.OK, creator.post("/api/trips/$tripId/restore", nothing).statusCode)
+        assertEquals(
+            HttpStatus.OK,
+            creator.post("/api/trips/$tripId/restore", nothing).statusCode,
+            "and the retry of the restore agrees with the restore",
+        )
+    }
+
+    @Test
+    fun `a hidden trip that is deleted and restored comes back exactly as it was — ended, and still put away`() {
+        val creator = signedIn("Nora")
+        val tripId = creator.createTrip()
+        creator.end(tripId)
+        creator.post("/api/trips/$tripId/hide", nothing)
+
+        creator.delete("/api/trips/$tripId")
+        val restored = creator.post("/api/trips/$tripId/restore", nothing)
+
+        assertEquals(HttpStatus.OK, restored.statusCode, "restoring a hidden trip: ${restored.body}")
+        assertTrue(restored.json()["closedAt"].isTextual, "still ended")
+        assertTrue(restored.json()["hiddenAt"].isTextual, "still put away — restore undoes the delete, nothing else")
+    }
+
+    @Test
+    fun `a member sees the put-away trip too — hidden is a shared fact, not the creator's secret`() {
+        val creator = signedIn("Nora")
+        val friend = signedIn("Piet")
+        val tripId = creator.createTrip()
+        val seat = creator.addMember(tripId, "Piet")
+        friend.claim(tripId, creator.invite(tripId), seat)
+        val me = creator.yourMemberId(tripId)
+        val food = creator.builtInCategory(tripId)
+        creator.post("/api/trips/$tripId/items", expense("Dinner", 3000, food, me, listOf(me, seat)))
+        creator.end(tripId)
+        creator.post("/api/trips/$tripId/hide", nothing)
+
+        val friendsTrip = friend.tripsList()["trips"].single { it["id"].asText() == tripId.toString() }
+        assertTrue(friendsTrip["hiddenAt"].isTextual, "the member's payload carries the mark, so their screen files it")
+        assertEquals(-1500, friend.overall(), "and the member's overall position still counts the hidden debt")
+    }
+
+    @Test
+    fun `the trip names how much the group still has open — the figure the delete dialog reads`() {
+        val creator = signedIn("Nora")
+        val tripId = creator.createTrip()
+        val me = creator.yourMemberId(tripId)
+        val bob = creator.addMember(tripId, "Bob")
+        val food = creator.builtInCategory(tripId)
+        val itemId = creator.post("/api/trips/$tripId/items", expense("Dinner", 3000, food, me, listOf(me, bob))).id()
+
+        assertEquals(1500, creator.get("/api/trips/$tripId").json()["unsettledMinor"].asLong(), "Bob's half is open")
+
+        creator.post(
+            "/api/items/$itemId/paybacks",
+            mapOf("fromMemberId" to bob.toString(), "amountMinor" to 1500, "paidOn" to "2026-08-18"),
+        )
+        assertEquals(0, creator.get("/api/trips/$tripId").json()["unsettledMinor"].asLong(), "square is zero, exactly")
+    }
+
+    @Test
+    fun `the schema itself refuses a hidden live trip, whatever some future code path forgets`() {
+        val creator = signedIn("Nora")
+        val tripId = creator.createTrip()
+
+        val trip = trips.findById(tripId).orElseThrow()
+        trip.hiddenAt = Instant.now()
+        assertFailsWith<DataIntegrityViolationException> { trips.saveAndFlush(trip) }
     }
 
     @Test
@@ -266,5 +374,82 @@ class TripHideAndDeleteApiTest : ApiTest() {
             creator.tripsList()["deleted"].firstOrNull { it["id"].asText() == doomed.toString() },
             "and it leaves the bin it can no longer be restored from",
         )
+    }
+
+    @Test
+    fun `every road into a deleted trip's rows answers 404 — the rows exist, the trip does not`() {
+        // Soft delete keeps every row so restore can work, which means each of these endpoints
+        // resolves its row just fine and must then refuse over the trip. Any 200 here is a leak.
+        val creator = signedIn("Nora")
+        val tripId = creator.createTrip()
+        val me = creator.yourMemberId(tripId)
+        val bob = creator.addMember(tripId, "Bob")
+        val food = creator.builtInCategory(tripId)
+        val itemId = creator.post("/api/trips/$tripId/items", expense("Dinner", 3000, food, me, listOf(me, bob))).id()
+        check(
+            creator.postFile("/api/items/$itemId/receipt", "bill.jpg", "image/jpeg", jpeg).statusCode == HttpStatus.OK,
+        )
+        val paybackId = creator
+            .post(
+                "/api/items/$itemId/paybacks",
+                mapOf("fromMemberId" to bob.toString(), "amountMinor" to 500, "paidOn" to "2026-08-18"),
+            ).id()
+
+        creator.delete("/api/trips/$tripId")
+
+        val expectations = mapOf(
+            "item detail" to creator.get("/api/items/$itemId"),
+            "item edit" to creator.patch("/api/items/$itemId", mapOf("title" to "x")),
+            "item delete" to creator.delete("/api/items/$itemId"),
+            "new payback" to creator.post(
+                "/api/items/$itemId/paybacks",
+                mapOf("fromMemberId" to bob.toString(), "amountMinor" to 100, "paidOn" to "2026-08-18"),
+            ),
+            "payback undo" to creator.post("/api/paybacks/$paybackId/undo", nothing),
+            "settlement" to creator.get("/api/trips/$tripId/settlement"),
+            "new settlement" to creator.post(
+                "/api/trips/$tripId/settlements",
+                mapOf("toMemberId" to bob.toString(), "amountMinor" to 100),
+            ),
+            "remind" to creator.post("/api/trips/$tripId/remind", mapOf("memberId" to bob.toString())),
+            "categories" to creator.get("/api/trips/$tripId/categories"),
+            "csv export" to creator.get("/api/trips/$tripId/expenses.csv"),
+            "close" to creator.post("/api/trips/$tripId/close", nothing),
+            "reopen" to creator.post("/api/trips/$tripId/reopen", nothing),
+            "hide" to creator.post("/api/trips/$tripId/hide", nothing),
+            "unhide" to creator.post("/api/trips/$tripId/unhide", nothing),
+            "add member" to creator.post("/api/trips/$tripId/members", mapOf("displayName" to "Zed")),
+            "invite" to creator.post("/api/trips/$tripId/invite", nothing),
+        )
+        for ((road, response) in expectations) {
+            assertEquals(HttpStatus.NOT_FOUND, response.statusCode, "$road on a deleted trip: ${response.body}")
+        }
+        assertEquals(
+            HttpStatus.NOT_FOUND,
+            creator.getBytes("/api/items/$itemId/receipt").statusCode,
+            "receipt image on a deleted trip",
+        )
+    }
+
+    @Test
+    fun `the sweep takes a deleted trip's receipt images with it — objects first, rows by cascade`() {
+        val creator = signedIn("Nora")
+        val tripId = creator.createTrip()
+        val me = creator.yourMemberId(tripId)
+        val food = creator.builtInCategory(tripId)
+        val itemId = creator.post("/api/trips/$tripId/items", expense("Dinner", 3000, food, me, listOf(me))).id()
+        check(
+            creator.postFile("/api/items/$itemId/receipt", "bill.jpg", "image/jpeg", jpeg).statusCode == HttpStatus.OK,
+        )
+        val objectName = receiptRows.findAllByTripId(tripId).single().objectName
+
+        creator.delete("/api/trips/$tripId")
+        val doomed = trips.findById(tripId).orElseThrow()
+        doomed.deletedAt = Instant.now().minus(Duration.ofDays(31))
+        trips.save(doomed)
+
+        assertEquals(1, purge.purgeDeleted(), "one trip past its window")
+        assertNull(receiptObjects.fetch(objectName), "the image bytes are gone from storage, not orphaned in it")
+        assertTrue(receiptRows.findAllByTripId(tripId).isEmpty(), "and the rows went with the cascade")
     }
 }

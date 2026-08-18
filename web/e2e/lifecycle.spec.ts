@@ -112,9 +112,10 @@ test('deleting takes the trip from everyone, and restoring brings it back whole'
   await expect(hostPage.getByTestId('group-card').filter({ hasText: 'Doomed Trip' })).toHaveCount(0)
   await guestPage.goto('/')
   await expect(guestPage.getByText('Doomed Trip')).toHaveCount(0)
-  // Gone means gone: the URL Bob still has in his history is a 404 like any stranger's.
+  // Gone means gone: the URL Bob still has in his history answers like a trip that never
+  // existed — asserted on the words the screen actually shows for a 404.
   await guestPage.goto(tripUrl)
-  await expect(guestPage.getByTestId('group-card')).toHaveCount(0)
+  await expect(guestPage.getByText('This trip is not here')).toBeVisible()
 
   // The bin, with its deadline, and the way back out of it.
   const binned = hostPage.getByTestId('deleted-trip').filter({ hasText: 'Doomed Trip' })

@@ -7,6 +7,9 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
@@ -61,6 +64,17 @@ class PaybackEntity(
 )
 
 interface PaybackRepository : JpaRepository<PaybackEntity, UUID> {
+    /**
+     * The trip purge only — immediate bulk delete, so the sweep controls foreign-key order.
+     * Covers item paybacks and trip-level settlements alike; the latter have no item to cascade
+     * off, which is why the purge cannot lean on the items table for these.
+     */
+    @Modifying
+    @Query("DELETE FROM PaybackEntity p WHERE p.tripId = :tripId")
+    fun purgeAllForTrip(
+        @Param("tripId") tripId: UUID,
+    )
+
     fun findAllByTripIdOrderByCreatedAt(tripId: UUID): List<PaybackEntity>
 
     fun findAllByTripIdInOrderByCreatedAt(tripIds: Collection<UUID>): List<PaybackEntity>

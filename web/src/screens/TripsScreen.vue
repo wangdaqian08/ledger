@@ -60,6 +60,7 @@ const onShow = computed(() => completed.value.filter((trip) => !trip.hiddenAt))
 const deleted = computed(() => overview.value?.deleted ?? [])
 
 const revealHidden = ref(false)
+const restoring = ref(false)
 const restoreError = ref('')
 
 // Put-away trips sit under the ones still on show, so revealing them never reorders what was
@@ -68,17 +69,18 @@ const shownCompleted = computed(() =>
   revealHidden.value ? [...onShow.value, ...putAway.value] : onShow.value,
 )
 
-/** The date a deleted trip stops being restorable, in the reader's language. */
+// The reader's own locale, same as every other date in the app — two date orders on one screen
+// would read as a mistake.
 const purgeDate = (iso: string | null) =>
   iso
-    ? new Intl.DateTimeFormat(locale.value === 'zh' ? 'zh-CN' : 'en-AU', { dateStyle: 'medium' }).format(
+    ? new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: 'short', day: 'numeric' }).format(
         new Date(iso),
       )
     : ''
 
 async function restore(tripId: string) {
-  if (busy.value) return
-  busy.value = true
+  if (restoring.value) return
+  restoring.value = true
   restoreError.value = ''
   try {
     await api.restoreTrip(tripId)
@@ -86,7 +88,7 @@ async function restore(tripId: string) {
   } catch (failure) {
     restoreError.value = failure instanceof ApiError ? failure.message : String(failure)
   } finally {
-    busy.value = false
+    restoring.value = false
   }
 }
 
@@ -195,6 +197,16 @@ async function signOut() {
         :symbol="currencySymbol(trip.currencyCode)"
         @click="router.push({ name: 'trip', params: { tripId: trip.id } })"
       />
+
+      <!-- Every group finished is a real state now that completed ones file below; without this
+           line the heading would just sit over silence. -->
+      <p
+        v-if="overview && live.length === 0 && completed.length > 0"
+        class="trips__quiet"
+        data-testid="live-empty"
+      >
+        {{ t('trips.liveEmpty') }}
+      </p>
     </section>
 
     <!-- Ended trips, in their own section so the list above stays about the trip you are on now.
@@ -241,14 +253,14 @@ async function signOut() {
         <div class="trips__binned-text">
           <span class="trips__binned-name">{{ trip.name }}</span>
           <span class="trips__binned-note">{{
-            t('trips.purgesOn', { date: purgeDate(trip.purgesAt) })
+            t('trips.restorableUntil', { date: purgeDate(trip.purgesAt) })
           }}</span>
         </div>
         <TallyButton
           variant="secondary"
           size="sm"
           data-testid="restore-trip"
-          :disabled="busy"
+          :disabled="restoring"
           @click="restore(trip.id)"
         >
           {{ t('trips.restore') }}
@@ -405,9 +417,15 @@ async function signOut() {
   font-size: var(--text-caption);
 }
 
-/* Put away, not gone: muted enough to read as filed away, legible enough to still be a trip. */
+/* Put away, not gone: muted enough to read as filed away, but no further — the card's smallest
+   text has to stay comfortably readable, which 0.62 did not leave it. */
 .trips__card--away {
-  opacity: 0.62;
+  opacity: 0.75;
+}
+
+.trips__quiet {
+  font-size: var(--text-caption);
+  color: var(--text-muted);
 }
 
 .trips__binned {

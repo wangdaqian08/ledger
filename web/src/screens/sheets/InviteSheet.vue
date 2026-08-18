@@ -10,6 +10,7 @@ import TallyIcon from '@/components/TallyIcon.vue'
 import TextField from '@/components/TextField.vue'
 import { api, type TripView } from '@/lib/api'
 import { currencySymbol, formatMinor } from '@/lib/money'
+import { useTrips } from '@/stores/trips'
 
 /**
  * The roster, and the two ways onto it: the creator writes a name down, and the share link lets
@@ -24,6 +25,7 @@ const emit = defineEmits<{ close: []; changed: [] }>()
 
 const { t } = useI18n()
 const router = useRouter()
+const trips = useTrips()
 
 const newName = ref('')
 const linkNote = ref('')
@@ -139,14 +141,14 @@ async function putBack() {
 
 /**
  * The one act that reaches every other member's app, so it is the one that states its cost first.
- * `yourNetMinor` is the viewer's own position, which is the figure they can actually act on — and
- * naming it here is the last moment a warning can still change the outcome, since the server
- * deliberately does not refuse a delete over outstanding money (that would trap an abandoned trip
- * forever).
+ * `unsettledMinor` is the whole group's open money, not just the viewer's own net — a host who is
+ * personally square must still be told what the others have unsettled, and naming it here is the
+ * last moment a warning can still change the outcome, since the server deliberately does not
+ * refuse a delete over outstanding money (that would trap an abandoned trip forever).
  */
 async function deleteTrip() {
   if (busy.value) return
-  const outstanding = Math.abs(props.trip.yourNetMinor)
+  const outstanding = props.trip.unsettledMinor
   const question = outstanding
     ? t('invite.deleteConfirmOutstanding', {
         name: props.trip.name,
@@ -162,6 +164,9 @@ async function deleteTrip() {
   error.value = ''
   try {
     await api.deleteTrip(props.trip.id)
+    // Refresh before navigating: home would otherwise flash its cached list, deleted trip still
+    // on it as a live card, until the re-fetch resolved.
+    await trips.loadOverview()
     // Home is the only place left that knows about this trip — the Recently deleted section is
     // where it can be brought back from, and staying on a screen for a deleted trip would 404.
     await router.push({ name: 'trips' })

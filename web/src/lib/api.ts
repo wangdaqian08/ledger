@@ -133,6 +133,12 @@ export interface TripView {
   members: MemberView[]
   items: ItemView[]
   yourNetMinor: number
+  /**
+   * What the whole group still has open: every positive net summed. The delete dialog reads this
+   * rather than the viewer's own net, so a host who is personally square is still told what the
+   * rest of the group has unsettled before they erase it.
+   */
+  unsettledMinor: number
   /** The three headline figures, derived by the engine so no screen recomputes them. */
   groupSpendMinor: number
   yourShareMinor: number

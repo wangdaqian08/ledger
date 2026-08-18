@@ -43,6 +43,12 @@ data class TripView(
     val items: List<ItemView>,
     /** Positive means the group owes you. Derived by the engine, never stored. */
     val yourNetMinor: Long,
+    /**
+     * What the whole group still has open: every positive net summed, which by invariant 1 equals
+     * everything the owing side owes. The delete dialog reads this — the person erasing a trip
+     * must be told what the group still has unsettled even when they personally are square.
+     */
+    val unsettledMinor: Long,
     /** The three headline figures, derived by the engine here so no screen recomputes them. */
     val groupSpendMinor: Long,
     val yourShareMinor: Long,
