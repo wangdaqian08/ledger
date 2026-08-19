@@ -10,9 +10,16 @@ withDefaults(
 </script>
 
 <template>
-  <div class="card" :class="{ 'card--sunk': sunk, 'card--interactive': interactive }">
+  <!-- Interactive cards are the home screen's only way into a trip, so they are real buttons —
+       focusable, and activated by Enter/Space — not click-only divs a keyboard cannot reach. -->
+  <component
+    :is="interactive ? 'button' : 'div'"
+    :type="interactive ? 'button' : undefined"
+    class="card"
+    :class="{ 'card--sunk': sunk, 'card--interactive': interactive }"
+  >
     <slot />
-  </div>
+  </component>
 </template>
 
 <style scoped>
@@ -30,10 +37,20 @@ withDefaults(
 
 .card--interactive {
   cursor: pointer;
+  /* A <button> resets these; the card must still look and read like its content, full width. */
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
 }
 
 .card--interactive:hover {
   background: var(--surface-card-hover);
+}
+
+.card--interactive:focus-visible {
+  outline: 3px solid var(--grape);
+  outline-offset: 2px;
 }
 
 .card--interactive:active {

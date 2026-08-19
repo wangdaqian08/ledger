@@ -15,6 +15,7 @@ test('the custom split bar is draggable, and the amounts follow the handle', asy
   await typeAmount(page, '10000')
   await page.getByTestId('expense-title').fill('Weighted thing')
   await page.getByTestId('next-step').click()
+  await page.getByTestId('split-all').click()
   await page.getByTestId('mode-custom').click()
 
   const bar = page.getByTestId('split-bar')

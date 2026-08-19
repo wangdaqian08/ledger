@@ -62,6 +62,7 @@ const deleted = computed(() => overview.value?.deleted ?? [])
 const revealHidden = ref(false)
 const restoring = ref(false)
 const restoreError = ref('')
+const loadError = ref(false)
 
 // Put-away trips sit under the ones still on show, so revealing them never reorders what was
 // already there.
@@ -98,14 +99,19 @@ const toneFor = (net: number) => (net === 0 ? 'settled' : net > 0 ? 'owed' : 'ow
 const labelFor = (net: number) =>
   net === 0 ? t('money.allSquare') : net > 0 ? t('money.youAreOwed') : t('money.youOwe')
 
-onMounted(async () => {
+async function load() {
+  loadError.value = false
   try {
     await Promise.all([trips.loadOverview(), session.checked ? Promise.resolve() : session.load()])
   } catch (failure) {
-    // A 401 has already sent the router to sign-in; anything else is worth the console noise.
-    if (!(failure instanceof ApiError && failure.status === 401)) throw failure
+    // A 401 has already sent the router to sign-in. Anything else must not vanish into an unhandled
+    // rejection and leave a permanently blank page — surface it with a retry, as TripScreen does.
+    if (failure instanceof ApiError && failure.status === 401) return
+    loadError.value = true
   }
-})
+}
+
+onMounted(load)
 
 async function create() {
   if (!newName.value.trim() || busy.value) return
@@ -147,9 +153,18 @@ async function signOut() {
       </div>
     </header>
 
+    <TallyCard v-if="loadError && !overview" class="trips__hero" data-testid="trips-error">
+      <p class="trips__error" role="alert">{{ t('trips.loadFailed') }}</p>
+      <TallyButton variant="secondary" data-testid="trips-retry" @click="load">{{
+        t('trips.retry')
+      }}</TallyButton>
+    </TallyCard>
+
     <TallyCard v-if="overview && overview.overalls.length > 0" class="trips__hero" data-testid="overall-hero">
       <div v-for="total in overview.overalls" :key="total.currencyCode" class="trips__overall">
-        <p class="trips__hero-label">{{ labelFor(total.netMinor) }}</p>
+        <!-- The ISO code rides beside each line: two trips in different dollars are both "$", and the
+             overall screen's one job is telling the viewer which money each figure is. -->
+        <p class="trips__hero-label">{{ labelFor(total.netMinor) }} · {{ total.currencyCode }}</p>
         <AmountText
           :amount-minor="Math.abs(total.netMinor)"
           size="hero"

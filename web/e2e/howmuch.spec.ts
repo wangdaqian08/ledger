@@ -26,6 +26,7 @@ test('typing on the keypad shows the digits, with Next in reach, no scrolling', 
 
   // And the whole two-step flow still lands.
   await page.getByTestId('next-step').click()
+  await page.getByTestId('split-all').click()
   await page.getByTestId('save-expense').click()
   await expect(page.getByTestId('expense-row')).toBeVisible()
 })

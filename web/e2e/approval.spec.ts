@@ -49,6 +49,7 @@ test('pay → reject → try again → approve → undo, across two browsers', a
   await typeAmount(alice, '5000')
   await alice.getByTestId('expense-title').fill('Dinner')
   await alice.getByTestId('next-step').click()
+  await alice.getByTestId('split-all').click()
   await alice.getByTestId('save-expense').click()
   await expect(alice.getByTestId('trip-position')).toContainText('You are owed')
   await expect(alice.getByTestId('trip-position')).toContainText('$25.00')

@@ -5,6 +5,12 @@ process.env.TZ = 'UTC'
 import { config } from '@vue/test-utils'
 import { i18n } from '../src/i18n'
 
+// happy-dom does not implement window.confirm; the sheets and destructive actions guard on it. A
+// test that wants the cancel path stubs it to return false itself; the default is "yes, proceed".
+if (typeof window !== 'undefined' && typeof window.confirm !== 'function') {
+  window.confirm = () => true
+}
+
 /**
  * Every component mount gets the real i18n instance, so a component that reads a label through
  * `t()` renders the English string in tests rather than the raw key. Registered once here instead

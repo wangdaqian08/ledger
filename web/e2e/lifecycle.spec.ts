@@ -25,6 +25,7 @@ test('a host ends a trip, puts it away, and takes it back out', async ({ page })
   await typeAmount(page, '4000') // $40.00
   await page.getByTestId('expense-title').fill('Lift pass')
   await page.getByTestId('next-step').click()
+  await page.getByTestId('split-all').click()
   await page.getByTestId('save-expense').click()
   await expect(page.getByTestId('expense-row').filter({ hasText: 'Lift pass' })).toBeVisible()
 
@@ -94,6 +95,7 @@ test('deleting takes the trip from everyone, and restoring brings it back whole'
   await typeAmount(hostPage, '6000') // $60.00, split two ways
   await hostPage.getByTestId('expense-title').fill('Cabin')
   await hostPage.getByTestId('next-step').click()
+  await hostPage.getByTestId('split-all').click()
   await hostPage.getByTestId('save-expense').click()
   await expect(hostPage.getByTestId('expense-row').filter({ hasText: 'Cabin' })).toBeVisible()
 
