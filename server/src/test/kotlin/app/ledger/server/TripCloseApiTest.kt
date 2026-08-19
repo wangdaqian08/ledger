@@ -117,6 +117,29 @@ class TripCloseApiTest : ApiTest() {
     }
 
     @Test
+    fun `a create that lands just before the trip ends still replays 200 after it, not 409`() {
+        val creator = signedIn("Nora")
+        val tripId = creator.createTrip()
+        val me = creator.yourMemberId(tripId)
+        val food = creator.builtInCategory(tripId)
+        val chosen = UUID.randomUUID()
+        val body = expense("Dinner", 3000, food, me, listOf(me)) + mapOf("id" to chosen.toString())
+
+        val first = creator.post("/api/trips/$tripId/items", body)
+        assertEquals(HttpStatus.CREATED, first.statusCode, "the first attempt landed before the trip ended")
+
+        creator.post("/api/trips/$tripId/close", emptyMap<String, String>())
+
+        val replay = creator.post("/api/trips/$tripId/items", body)
+        assertEquals(
+            HttpStatus.OK,
+            replay.statusCode,
+            "a dropped-connection retry of something that already happened is not a new change: ${replay.body}",
+        )
+        assertEquals(chosen, replay.id())
+    }
+
+    @Test
     fun `settling continues after a trip ends — the spending record closes, the debts do not`() {
         val creator = signedIn("Nora")
         val tripId = creator.createTrip()

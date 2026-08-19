@@ -72,6 +72,11 @@ class ReceiptApiTest : ApiTest() {
             "immutable" in cache && "private" in cache,
             "versioned URLs never change content, and the image is nobody else's business: got '$cache'",
         )
+        assertEquals(
+            "nosniff",
+            image.headers["X-Content-Type-Options"]?.firstOrNull(),
+            "a declared type is trusted for serving only because nosniff stops a lie from executing",
+        )
 
         assertEquals(
             version,
@@ -171,6 +176,20 @@ class ReceiptApiTest : ApiTest() {
         assertEquals(
             HttpStatus.BAD_REQUEST,
             p.creator.postFile(path, "receipt.jpg", "image/jpeg", ByteArray(0)).statusCode,
+        )
+    }
+
+    @Test
+    fun `webp is accepted, and a declared type with parameters or odd casing still matches`() {
+        val p = party()
+        val path = "/api/items/${p.itemId}/receipt"
+        val webp = byteArrayOf(82, 73, 70, 70) + ByteArray(50) { it.toByte() }
+
+        assertEquals(HttpStatus.OK, p.creator.postFile(path, "receipt.webp", "image/webp", webp).statusCode)
+        assertEquals(
+            HttpStatus.OK,
+            p.creator.postFile(path, "receipt.jpg", "IMAGE/JPEG; charset=UTF-8", jpeg).statusCode,
+            "a trailing parameter, or a differently-cased type, is still an image",
         )
     }
 
