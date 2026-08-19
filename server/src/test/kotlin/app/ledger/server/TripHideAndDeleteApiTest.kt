@@ -462,13 +462,19 @@ class TripHideAndDeleteApiTest : ApiTest() {
         val tripId = creator.createTrip()
         creator.end(tripId)
 
-        val first = creator.post("/api/trips/$tripId/hide", nothing)
-        assertEquals(HttpStatus.OK, first.statusCode, "first hide: ${first.body}")
-        val stamp = first.json()["hiddenAt"].asText()
+        assertEquals(HttpStatus.OK, creator.post("/api/trips/$tripId/hide", nothing).statusCode)
+        // Read the persisted stamp, not the mutation response: hide sets clock.instant() at full
+        // nanosecond precision in memory, while Postgres keeps micros — so a response compared
+        // against a later DB read would differ on the truncated digits alone. DB read vs DB read.
+        val stamp = creator.get("/api/trips/$tripId").json()["hiddenAt"].asText()
 
         val second = creator.post("/api/trips/$tripId/hide", nothing)
         assertEquals(HttpStatus.OK, second.statusCode, "hiding an already-hidden trip: ${second.body}")
-        assertEquals(stamp, second.json()["hiddenAt"].asText(), "a second hide must not restamp the trip")
+        assertEquals(
+            stamp,
+            creator.get("/api/trips/$tripId").json()["hiddenAt"].asText(),
+            "a second hide must not restamp the trip",
+        )
     }
 
     @Test
