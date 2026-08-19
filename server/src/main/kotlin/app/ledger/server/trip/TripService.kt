@@ -344,14 +344,20 @@ class TripService(
         try {
             members.flush()
         } catch (raceLost: DataIntegrityViolationException) {
-            // Two claims can pass the check above together — the same link open on two devices.
-            // trip_members_user_trip_unique lets only one of them keep a slot; the other lands
-            // here and gets the same answer it would have got arriving a moment later.
+            // The same person, the same link on two devices: both claims pass the check above, and
+            // trip_members_user_trip_unique lets only one keep a slot. The other lands here and
+            // gets the same answer it would have got arriving a moment later.
             throw ResponseStatusException(
                 HttpStatus.CONFLICT,
                 "You are already on this trip under another name",
                 raceLost,
             )
+        } catch (seatTaken: OptimisticLockingFailureException) {
+            // Two *different* people on the same free seat: both read it unclaimed together, and the
+            // member's version lets exactly one write win. The unique index cannot catch this — the
+            // losing write is a different user_id on the same row, not a duplicate — so the version
+            // is what stops the second from silently stealing the seat the first was told they got.
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Somebody has already claimed that name", seatTaken)
         }
         return view(trip, actor)
     }
