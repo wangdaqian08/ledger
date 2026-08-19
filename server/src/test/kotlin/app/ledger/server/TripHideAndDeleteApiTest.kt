@@ -452,4 +452,42 @@ class TripHideAndDeleteApiTest : ApiTest() {
         assertNull(receiptObjects.fetch(objectName), "the image bytes are gone from storage, not orphaned in it")
         assertTrue(receiptRows.findAllByTripId(tripId).isEmpty(), "and the rows went with the cascade")
     }
+
+    @Test
+    fun `hiding an ended trip twice is idempotent, and the second call does not move the stamp`() {
+        // Unlike close, hide carries no clock hanging off its timestamp, so a retry is a no-op
+        // rather than a 409 — and the stamp must not move on the second call, the same way the
+        // delete-retry above keeps purgesAt fixed.
+        val creator = signedIn("Nora")
+        val tripId = creator.createTrip()
+        creator.end(tripId)
+
+        assertEquals(HttpStatus.OK, creator.post("/api/trips/$tripId/hide", nothing).statusCode)
+        // Read the persisted stamp, not the mutation response: hide sets clock.instant() at full
+        // nanosecond precision in memory, while Postgres keeps micros — so a response compared
+        // against a later DB read would differ on the truncated digits alone. DB read vs DB read.
+        val stamp = creator.get("/api/trips/$tripId").json()["hiddenAt"].asText()
+
+        val second = creator.post("/api/trips/$tripId/hide", nothing)
+        assertEquals(HttpStatus.OK, second.statusCode, "hiding an already-hidden trip: ${second.body}")
+        assertEquals(
+            stamp,
+            creator.get("/api/trips/$tripId").json()["hiddenAt"].asText(),
+            "a second hide must not restamp the trip",
+        )
+    }
+
+    @Test
+    fun `unhiding a trip that was never hidden just reports it is not hidden`() {
+        // Idempotent for the same reason as hide: a retry of an unhide that already landed — or one
+        // that was never needed — answers with the trip, not an argument.
+        val creator = signedIn("Nora")
+        val tripId = creator.createTrip()
+        creator.end(tripId)
+
+        val unhidden = creator.post("/api/trips/$tripId/unhide", nothing)
+
+        assertEquals(HttpStatus.OK, unhidden.statusCode, "unhiding a never-hidden trip: ${unhidden.body}")
+        assertTrue(unhidden.json()["hiddenAt"].isNull, "and it reports not hidden")
+    }
 }

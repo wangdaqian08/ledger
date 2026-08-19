@@ -34,6 +34,7 @@ const step = ref<1 | 2>(1)
 const itemId = ref(newItemId())
 const amountMinor = ref(0)
 const title = ref('')
+const spentOn = ref(todayLocal())
 const categoryId = ref<string | null>(null)
 const payerId = ref<string | null>(null)
 const ticked = ref<Record<string, boolean>>({})
@@ -52,16 +53,19 @@ watch(
   () => props.open,
   (open) => {
     if (!open) return
-    // A fresh sheet is a fresh expense: new id, everyone ticked, even split, you paid.
+    // A fresh sheet is a fresh expense: new id, nobody ticked, even split, you paid, dated today.
+    // Nobody ticked (spec §3) makes inclusion a deliberate act — the All chip is one tap when it is
+    // everyone, and a late joiner is never silently charged for a bill from before they arrived.
     step.value = 1
     itemId.value = newItemId()
     amountMinor.value = 0
     title.value = ''
+    spentOn.value = todayLocal()
     error.value = ''
     custom.value = false
     categoryId.value = props.categories.find((c) => c.key === 'food')?.id ?? props.categories[0]?.id ?? null
     payerId.value = props.trip.members.find((m) => m.isYou)?.id ?? props.trip.members[0]?.id ?? null
-    ticked.value = Object.fromEntries(props.trip.members.map((m) => [m.id, true]))
+    ticked.value = Object.fromEntries(props.trip.members.map((m) => [m.id, false]))
     // Scaled up so the bar has room to move (see weights.ts); saved weights normalise back down.
     weights.value = Object.fromEntries(props.trip.members.map((m) => [m.id, DRAG_SCALE]))
     clearReceipt()
@@ -95,6 +99,25 @@ const shown = computed(() =>
 
 /** The people on the bill, in roster order — the order the server will store as positions. */
 const sharers = computed(() => props.trip.members.filter((m) => ticked.value[m.id]))
+
+/** A blank title falls back to the category's name in the reader's language, never the example. */
+function fallbackTitle(): string {
+  const category = props.categories.find((c) => c.id === categoryId.value)
+  if (category) return locale.value.startsWith('zh') ? category.nameZh : category.nameEn
+  return t('addExpense.untitled')
+}
+
+/** The All chip: on only when everyone shares; one tap selects or clears the whole roster. */
+const allTicked = computed(() => props.trip.members.every((m) => ticked.value[m.id]))
+function toggleAll() {
+  const on = !allTicked.value
+  ticked.value = Object.fromEntries(props.trip.members.map((m) => [m.id, on]))
+}
+
+/** Whether closing now would throw away real work — used to confirm an accidental dismissal. */
+const isDirty = computed(
+  () => step.value === 2 || amountMinor.value > 0 || title.value.trim() !== '' || receiptFile.value !== null,
+)
 
 const splitPeople = computed<SplitPerson[]>(() =>
   sharers.value.map((m) => ({
@@ -142,28 +165,38 @@ async function save() {
     const saved = normalizedWeights(sharers.value.map((m) => weights.value[m.id] ?? DRAG_SCALE))
     await api.createItem(props.trip.id, {
       id: itemId.value,
-      title: title.value.trim() || t('addExpense.titlePlaceholder'),
+      title: title.value.trim() || fallbackTitle(),
       categoryId: categoryId.value,
       amountMinor: amountMinor.value,
       splitRule: custom.value ? 'WEIGHTED' : 'EQUAL',
       payerMemberId: payerId.value,
-      spentOn: todayLocal(),
+      spentOn: spentOn.value,
       sharedBy: sharers.value.map((m, index) =>
         custom.value ? { memberId: m.id, weight: saved[index] } : { memberId: m.id },
       ),
     })
-    // The photo rides behind the expense, against the same minted id — so if this upload fails,
-    // pressing save again replays the create (a 200, nothing doubled) and just retries the photo.
-    if (receiptFile.value) {
-      const prepared = await prepareReceipt(receiptFile.value)
-      await api.uploadReceipt(itemId.value, prepared.image, prepared.filename)
-    }
-    emit('saved')
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : String(failure)
-  } finally {
     busy.value = false
+    return
   }
+  // The expense is in. The photo is a separate step against the same minted id, so a failure here
+  // does not undo it — say exactly that, keep the sheet open, and let a second Save retry just the
+  // photo (the create replays as a 200). The old code showed one generic error that read as "not
+  // saved", inviting a re-entry that doubled the bill.
+  if (receiptFile.value) {
+    try {
+      const prepared = await prepareReceipt(receiptFile.value)
+      await api.uploadReceipt(itemId.value, prepared.image, prepared.filename)
+    } catch (failure) {
+      const reason = failure instanceof Error ? failure.message : String(failure)
+      error.value = t('addExpense.savedPhotoFailed', { reason })
+      busy.value = false
+      return
+    }
+  }
+  busy.value = false
+  emit('saved')
 }
 </script>
 
@@ -171,6 +204,7 @@ async function save() {
   <SheetPanel
     :open="open"
     :title="step === 1 ? t('addExpense.howMuch') : t('addExpense.whoSplitIt')"
+    :confirm-close="isDirty ? t('addExpense.discardConfirm') : undefined"
     @close="emit('close')"
   >
     <div v-if="step === 1" class="add">
@@ -191,6 +225,17 @@ async function save() {
         :label="t('addExpense.whatWasIt')"
         :placeholder="t('addExpense.titlePlaceholder')"
       />
+
+      <label class="add__field">
+        <span class="add__field-label">{{ t('addExpense.when') }}</span>
+        <input
+          v-model="spentOn"
+          type="date"
+          class="add__date"
+          data-testid="expense-date"
+          :max="todayLocal()"
+        />
+      </label>
 
       <TallyKeypad @key="onKey" />
 
@@ -221,18 +266,31 @@ async function save() {
             :aria-pressed="payerId === member.id"
             @click="payerId = member.id"
           >
-            {{ member.isYou ? 'You' : member.displayName }}
+            {{ member.isYou ? t('common.you') : member.displayName }}
           </button>
         </div>
       </section>
 
       <section class="add__section">
-        <h3 class="add__label">{{ t('addExpense.splitBetween') }}</h3>
+        <div class="add__how">
+          <h3 class="add__label">{{ t('addExpense.splitBetween') }}</h3>
+          <!-- Nobody is ticked by default (spec §3); this is the one-tap "it was everyone" case. -->
+          <button
+            type="button"
+            class="add__all"
+            data-testid="split-all"
+            :class="{ 'add__all--on': allTicked }"
+            :aria-pressed="allTicked"
+            @click="toggleAll"
+          >
+            {{ t('addExpense.all') }}
+          </button>
+        </div>
         <div class="add__people">
           <PersonToggleRow
             v-for="member in trip.members"
             :key="member.id"
-            :display-name="member.isYou ? 'You' : member.displayName"
+            :display-name="member.isYou ? t('common.you') : member.displayName"
             :person-hue="member.personHue"
             :selected="ticked[member.id] ?? false"
             :share-minor="previewShares.get(member.id) ?? null"
@@ -429,6 +487,48 @@ async function save() {
 .add__each {
   font-size: var(--text-caption);
   color: var(--text-muted);
+}
+
+.add__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.add__field-label {
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.add__date {
+  padding: var(--space-2) var(--space-3);
+  border: 2px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  font-family: var(--font-money);
+  font-size: var(--text-body);
+  color: var(--ink);
+}
+
+.add__all {
+  padding: var(--space-1) var(--space-3);
+  border: 2px solid var(--hairline-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-card);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.add__all--on {
+  border-color: var(--ink);
+  background: var(--grape-tint);
+  color: var(--ink);
 }
 
 .add__how {

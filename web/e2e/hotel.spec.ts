@@ -16,6 +16,7 @@ test('the hotel case: ticking a late arrival onto the bill re-divides it for eve
   await typeAmount(page, '10000')
   await page.getByTestId('expense-title').fill('Hotel deposit')
   await page.getByTestId('next-step').click()
+  await page.getByTestId('split-all').click()
   await page.getByTestId('save-expense').click()
   await expect(page.getByTestId('expense-row').filter({ hasText: 'Hotel deposit' })).toBeVisible()
   await expectRowsToSumToHero(page)

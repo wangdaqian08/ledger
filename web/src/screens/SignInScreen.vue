@@ -42,7 +42,8 @@ async function submit() {
     const next = typeof route.query.next === 'string' ? route.query.next : '/'
     await router.push(next)
   } catch (failure) {
-    error.value = failure instanceof ApiError ? failure.message : t('signin.button')
+    // A non-API failure (the network is down) is not the button's name — say what happened.
+    error.value = failure instanceof ApiError ? failure.message : t('signin.failed')
   } finally {
     busy.value = false
   }

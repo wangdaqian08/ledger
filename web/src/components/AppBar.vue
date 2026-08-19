@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import LocaleToggle from './LocaleToggle.vue'
 import TallyIcon from './TallyIcon.vue'
+
+const { t } = useI18n()
 
 withDefaults(
   defineProps<{
@@ -27,7 +30,7 @@ defineEmits<{ back: []; action: [] }>()
       type="button"
       class="bar__icon"
       data-testid="appbar-back"
-      aria-label="Back"
+      :aria-label="t('common.back')"
       @click="$emit('back')"
     >
       <TallyIcon name="arrow-left" :size="22" />

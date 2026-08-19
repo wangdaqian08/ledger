@@ -92,12 +92,28 @@ class ExportService(
             return "$sign${abs / scale}.${(abs % scale).toString().padStart(digits, '0')}"
         }
 
-        /** RFC 4180: a field holding a comma, quote or line break is quoted, its quotes doubled. */
-        fun field(value: String): String =
-            if (value.any { it == ',' || it == '"' || it == '\r' || it == '\n' }) {
-                "\"${value.replace("\"", "\"\"")}\""
+        /**
+         * A spreadsheet reads a cell that opens with one of these as a formula, not text. The two
+         * free-text columns (the item title and the payer's name) are user-typed, so a title of
+         * `=HYPERLINK("http://evil","click")` would execute on open in Excel/Sheets/LibreOffice —
+         * CWE-1236, in the one file a reviewer downloads precisely to trust the numbers. The tab
+         * and carriage return are here because they let a leading `=` hide behind whitespace.
+         */
+        val FORMULA_LEADS = setOf('=', '+', '-', '@', '\t', '\r')
+
+        /**
+         * RFC 4180 (a field holding a comma, quote or line break is quoted, its quotes doubled),
+         * plus formula-injection defence: a value a spreadsheet would evaluate is prefixed with an
+         * apostrophe, which every major spreadsheet reads as "this cell is text". The apostrophe is
+         * added before the quoting check so a payload like `=1+1,2` is both neutralised and quoted.
+         */
+        fun field(value: String): String {
+            val guarded = if (value.firstOrNull() in FORMULA_LEADS) "'$value" else value
+            return if (guarded.any { it == ',' || it == '"' || it == '\r' || it == '\n' }) {
+                "\"${guarded.replace("\"", "\"\"")}\""
             } else {
-                value
+                guarded
             }
+        }
     }
 }

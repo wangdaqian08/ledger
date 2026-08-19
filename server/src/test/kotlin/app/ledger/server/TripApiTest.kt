@@ -264,6 +264,46 @@ class TripApiTest : ApiTest() {
     }
 
     @Test
+    fun `two different people racing the same seat cannot both claim it`() {
+        // The test above proves one person cannot take two seats — the unique index holds that.
+        // This is the other direction it cannot see: two people overwriting one seat's owner. Both
+        // requests pass the "is it claimed?" read together, so the member row's version is what has
+        // to hold the line, or the second writer silently steals the seat the first was told they
+        // got.
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip("Hokkaido")
+        val seat = alice.addMember(tripId, "Bob")
+        val invite = alice.invite(tripId)
+        val bob = signedIn("Bob")
+        val carol = signedIn("Carol")
+
+        val together = CyclicBarrier(2)
+        val executor = Executors.newFixedThreadPool(2)
+        val outcomes = try {
+            listOf(bob, carol)
+                .map { claimant ->
+                    executor.submit<HttpStatus> {
+                        together.await()
+                        claimant.claim(tripId, invite, seat).statusCode as HttpStatus
+                    }
+                }.map { it.get() }
+        } finally {
+            executor.shutdown()
+        }
+
+        assertEquals(1, outcomes.count { it == HttpStatus.OK }, "exactly one person gets the seat: $outcomes")
+        assertEquals(1, outcomes.count { it == HttpStatus.CONFLICT }, "and the other is turned away: $outcomes")
+
+        // The trip agrees: the seat has one owner, the winner — not whoever happened to write last.
+        val members = alice.get("/api/trips/$tripId").json()["members"]
+        assertEquals(
+            1,
+            members.count { it["id"].asText() == seat.toString() && it["claimed"].asBoolean() },
+            "the seat is claimed once, by the winner",
+        )
+    }
+
+    @Test
     fun `a link for one trip does not open another`() {
         val alice = signedIn("Alice")
         val hokkaido = alice.createTrip("Hokkaido")

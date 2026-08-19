@@ -98,15 +98,27 @@ const myRemaining = computed(() => {
   return Math.max(0, share - repaid)
 })
 
+// Each open bumps this; a fetch only writes its result if it is still the newest. Opening a
+// different item before the first load returns must not let the slower response paint the wrong
+// bill into a sheet the viewer could then approve or reject against.
+let detailToken = 0
 watch(
   () => [props.open, props.itemId] as const,
   async ([open, itemId]) => {
     if (!open || !itemId) return
+    const token = ++detailToken
     detail.value = null
     error.value = ''
     rejecting.value = null
     lightboxOpen.value = false
-    detail.value = await api.itemDetail(itemId)
+    try {
+      const loaded = await api.itemDetail(itemId)
+      if (token === detailToken) detail.value = loaded
+    } catch (failure) {
+      // An unguarded fetch here left a blank, titleless sheet with no way to know why — a co-editor
+      // may have just deleted the bill. Surface it instead of a silent empty panel.
+      if (token === detailToken) error.value = failure instanceof Error ? failure.message : String(failure)
+    }
   },
 )
 
@@ -170,8 +182,13 @@ const canUndo = (payback: PaybackView) =>
 async function reject(paybackId: string) {
   if (!rejectReason.value.trim()) return
   await act(() => api.rejectPayback(paybackId, rejectReason.value.trim()))
-  rejecting.value = null
-  rejectReason.value = ''
+  // Only clear the form when the reject actually landed. act() swallows a failure into `error`, so
+  // resetting unconditionally would throw away a reason the person now has to retype — the same
+  // guard SettleUpSheet.rejectClaim already uses.
+  if (!error.value) {
+    rejecting.value = null
+    rejectReason.value = ''
+  }
 }
 
 async function remove() {

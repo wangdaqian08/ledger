@@ -327,6 +327,15 @@ async function copyLink() {
             </p>
           </template>
 
+          <!-- On a live trip the control is shown disabled, not hidden: absence reads as a missing
+               feature, while a disabled button with a reason teaches the rule (end it first). -->
+          <template v-else>
+            <TallyButton variant="secondary" size="sm" data-testid="put-away-locked" :disabled="true">
+              {{ t('invite.putAwayLocked') }}
+            </TallyButton>
+            <p class="invite__hint">{{ t('invite.putAwayLockedNote') }}</p>
+          </template>
+
           <TallyButton
             variant="danger"
             size="sm"

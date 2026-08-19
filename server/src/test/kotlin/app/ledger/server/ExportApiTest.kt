@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
 import java.time.LocalDate
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -92,6 +93,57 @@ class ExportApiTest : ApiTest() {
             .split("\r\n")
         // 10,000 yen IS 10000 minor units (spec §2 S5): no ".00" that would read as 100 yen ×100.
         assertTrue(lines[1].endsWith(",Ryokan,10000,JPY"), "was: ${lines[1]}")
+    }
+
+    @Test
+    fun `a title that looks like a formula is neutralised, and a newline stays one record`() {
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip("Sapporo")
+        val aliceMember = alice.memberId(tripId)
+        val category = alice.builtInCategory(tripId)
+
+        alice.post(
+            "/api/trips/$tripId/items",
+            // Opens with '=' and carries a URL: a live HYPERLINK the moment Excel opens the file.
+            expense("=HYPERLINK(\"http://evil\",\"x\")", 500, category, aliceMember, listOf(aliceMember)),
+        )
+        alice.post(
+            "/api/trips/$tripId/items",
+            // A newline in a title must not split one expense across two CSV records.
+            expense(
+                "line one\nline two",
+                600,
+                category,
+                aliceMember,
+                listOf(aliceMember),
+                spentOn = LocalDate.of(2026, 8, 2),
+            ),
+        )
+
+        val body = alice.get("/api/trips/$tripId/expenses.csv").body!!
+        val records = body.removePrefix("﻿").split("\r\n").filter { it.isNotEmpty() }
+
+        assertEquals(3, records.size, "a header and one row each — the newline title added no record")
+        assertFalse(body.contains(",=HYPERLINK"), "a formula title must never reach a cell unguarded")
+        assertTrue(body.contains("'=HYPERLINK"), "the '=' lead is neutralised with a leading apostrophe")
+        assertTrue(body.contains("\"line one\nline two\""), "the newline title is quoted, not split")
+    }
+
+    @Test
+    fun `a payer name that opens like a formula, or holds a comma, is neutralised and quoted`() {
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip("Otaru")
+        // A name that is both a formula lead and comma-bearing: injection and column-shift at once.
+        val evil = alice.addMember(tripId, "=cmd,Bob")
+        val category = alice.builtInCategory(tripId)
+        alice.post(
+            "/api/trips/$tripId/items",
+            expense("Snacks", 300, category, evil, listOf(evil)),
+        )
+
+        val body = alice.get("/api/trips/$tripId/expenses.csv").body!!
+        assertFalse(body.contains(",=cmd"), "the payer name must not reach a cell as a live formula")
+        assertTrue(body.contains("\"'=cmd,Bob\""), "guarded with an apostrophe and quoted for the comma")
     }
 
     @Test

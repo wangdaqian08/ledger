@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AmountKeypadField from '@/components/AmountKeypadField.vue'
 import AmountText from '@/components/AmountText.vue'
@@ -22,12 +22,21 @@ const props = defineProps<{
   myMemberId: string
   youAreCreator: boolean
   rows: SettlementRow[]
+  /** When opened from a who-owes row's Pay, the person to jump straight into paying. */
+  focusMemberId?: string | null
   currencyCode: string
   symbol: string
 }>()
 const emit = defineEmits<{ close: []; changed: [] }>()
 
 const { t } = useI18n()
+
+// Same order as the who-owes card: real debts first, all-square people sunk and faded. Two surfaces
+// showing the same people in different orders reads as the list having changed under you.
+const orderedRows = computed(() => [
+  ...props.rows.filter((r) => r.owedMinor !== 0),
+  ...props.rows.filter((r) => r.owedMinor === 0),
+])
 
 const paying = ref<SettlementRow | null>(null)
 const amountMinor = ref(0)
@@ -46,6 +55,11 @@ watch(
     reminded.value = null
     rejecting.value = null
     rejectReason.value = ''
+    // Opened from a specific row's Pay: unfold that person's amount form straight away.
+    if (props.focusMemberId) {
+      const row = props.rows.find((r) => r.memberId === props.focusMemberId)
+      if (row) startPay(row)
+    }
   },
 )
 
@@ -122,17 +136,18 @@ async function rejectClaim(paybackId: string) {
 <template>
   <SheetPanel :open="open" :title="t('trip.settleUp')" @close="emit('close')">
     <div class="settle">
-      <div v-for="(row, index) in rows" :key="row.memberId" class="settle__entry">
+      <div v-for="(row, index) in orderedRows" :key="row.memberId" class="settle__entry">
         <!-- The API row says "positive = you owe them"; BalanceRow speaks the viewer's frame. -->
         <BalanceRow
           :display-name="row.displayName"
           :person-hue="row.personHue"
           :owed-minor="-row.owedMinor"
+          :muted="row.owedMinor === 0"
           :currency-code="currencyCode"
           :symbol="symbol"
           :pending="pendingOf(row).length > 0"
           :reminded="reminded === row.memberId"
-          :divider="index < rows.length - 1"
+          :divider="index < orderedRows.length - 1"
           @pay="startPay(row)"
           @remind="remind(row)"
         />

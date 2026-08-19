@@ -2,11 +2,14 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AmountKeypadField from '@/components/AmountKeypadField.vue'
+import CategoryPicker from '@/components/CategoryPicker.vue'
 import PersonToggleRow from '@/components/PersonToggleRow.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import SplitBar, { type SplitPerson } from '@/components/SplitBar.vue'
 import TallyButton from '@/components/TallyButton.vue'
-import { api, type ItemView, type TripView } from '@/lib/api'
+import TextField from '@/components/TextField.vue'
+import { api, type CategoryView, type ItemView, type TripView } from '@/lib/api'
+import { todayLocal } from '@/lib/dates'
 import { currencySymbol } from '@/lib/money'
 import { saltFor, splitShares } from '@/lib/split'
 import { DRAG_SCALE, normalizedWeights } from '@/lib/weights'
@@ -19,12 +22,20 @@ import { DRAG_SCALE, normalizedWeights } from '@/lib/weights'
  * screen shows after saving. EXACT-split items don't open this sheet: changing their people list
  * means retyping amounts, which is a different conversation.
  */
-const props = defineProps<{ open: boolean; trip: TripView; item: ItemView | null }>()
+const props = defineProps<{
+  open: boolean
+  trip: TripView
+  item: ItemView | null
+  categories: CategoryView[]
+}>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const amountMinor = ref(0)
+const title = ref('')
+const categoryId = ref<string | null>(null)
+const spentOn = ref(todayLocal())
 const payerId = ref<string | null>(null)
 const ticked = ref<Record<string, boolean>>({})
 const custom = ref(false)
@@ -40,6 +51,9 @@ watch(
     if (!open || !item) return
     error.value = ''
     amountMinor.value = item.amountMinor
+    title.value = item.title
+    categoryId.value = item.categoryId
+    spentOn.value = item.spentOn
     payerId.value = item.payerMemberId
     custom.value = item.splitRule === 'WEIGHTED'
     ticked.value = Object.fromEntries(
@@ -91,6 +105,11 @@ async function save() {
   try {
     const saved = normalizedWeights(sharers.value.map((m) => weights.value[m.id] ?? DRAG_SCALE))
     await api.patchItem(item.id, {
+      // Now the one edit surface for the whole bill, not just its split — a typo'd title or a
+      // wrong day was otherwise only fixable by deleting the expense (spec §6 allows all three).
+      title: title.value.trim() || item.title,
+      categoryId: categoryId.value ?? item.categoryId,
+      spentOn: spentOn.value,
       amountMinor: amountMinor.value,
       payerMemberId: payerId.value,
       splitRule: custom.value ? 'WEIGHTED' : 'EQUAL',
@@ -110,6 +129,18 @@ async function save() {
 <template>
   <SheetPanel :open="open" :title="t('editSplit.title')" @close="emit('close')">
     <div v-if="item" class="edit">
+      <section class="edit__section">
+        <h3 class="edit__label">{{ t('addExpense.whatWasIt') }}</h3>
+        <TextField v-model="title" test-id="edit-title" :placeholder="t('addExpense.titlePlaceholder')" />
+      </section>
+
+      <CategoryPicker v-model="categoryId" :categories="categories" :locale="locale === 'zh' ? 'zh' : 'en'" />
+
+      <section class="edit__section">
+        <h3 class="edit__label">{{ t('addExpense.when') }}</h3>
+        <input v-model="spentOn" type="date" class="edit__date" data-testid="edit-date" :max="todayLocal()" />
+      </section>
+
       <section class="edit__section">
         <h3 class="edit__label">{{ t('editSplit.amount') }}</h3>
         <AmountKeypadField
@@ -133,7 +164,7 @@ async function save() {
             :aria-pressed="payerId === member.id"
             @click="payerId = member.id"
           >
-            {{ member.isYou ? 'You' : member.displayName }}
+            {{ member.isYou ? t('common.you') : member.displayName }}
           </button>
         </div>
       </section>
@@ -144,7 +175,7 @@ async function save() {
           <PersonToggleRow
             v-for="member in trip.members"
             :key="member.id"
-            :display-name="member.isYou ? 'You' : member.displayName"
+            :display-name="member.isYou ? t('common.you') : member.displayName"
             :person-hue="member.personHue"
             :selected="ticked[member.id] ?? false"
             :share-minor="previewShares.get(member.id) ?? null"
@@ -224,6 +255,16 @@ async function save() {
   letter-spacing: var(--ls-label);
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+.edit__date {
+  padding: var(--space-2) var(--space-3);
+  border: 2px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  font-family: var(--font-money);
+  font-size: var(--text-body);
+  color: var(--ink);
 }
 
 .edit__payers {

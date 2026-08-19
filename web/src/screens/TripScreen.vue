@@ -48,6 +48,8 @@ const filter = ref<'all' | 'unsettled' | 'youPaid'>('all')
 
 const addOpen = ref(false)
 const settleOpen = ref(false)
+// When Settle-up is opened from a specific who-owes row, this is the person to jump straight to.
+const settleFocusMemberId = ref<string | null>(null)
 const inviteOpen = ref(false)
 const detailItemId = ref<string | null>(null)
 const editItem = ref<ItemView | null>(null)
@@ -120,20 +122,29 @@ async function refresh() {
   settlement.value = loadedSettlement
 }
 
-onMounted(async () => {
+async function load() {
+  loadError.value = null
   try {
     await refresh()
     categories.value = await api.categories(props.tripId)
   } catch (failure) {
-    // A 401 has already sent the router to sign-in. A trip you cannot see 404s — show that, rather
-    // than a blank page under an empty title bar; anything else is a real error, shown the same way.
+    // A 401 has already sent the router to sign-in. A trip you cannot see 404s — show that. Any
+    // other failure is a real error and says so with a retry, rather than the misleading "not here".
     if (failure instanceof ApiError && failure.status === 401) return
     loadError.value = failure instanceof ApiError && failure.status === 404 ? 'notFound' : 'other'
   }
-})
+}
+
+onMounted(load)
 
 function openDetail(itemId: string) {
   detailItemId.value = itemId
+}
+
+/** Pay on a row opens Settle-up already on that person, rather than making them find it again. */
+function openSettleFor(memberId: string | null) {
+  settleFocusMemberId.value = memberId
+  settleOpen.value = true
 }
 
 async function remind(memberId: string) {
@@ -183,7 +194,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
               :symbol="symbol"
             />
           </div>
-          <TallyButton variant="primary" size="sm" data-testid="settle-up" @click="settleOpen = true">
+          <TallyButton variant="primary" size="sm" data-testid="settle-up" @click="openSettleFor(null)">
             {{ t('trip.settleUp') }}
           </TallyButton>
         </div>
@@ -240,7 +251,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
           :pending="row.pending.length > 0"
           :reminded="remindedMemberId === row.memberId"
           :divider="index < owesRows.length - 1"
-          @pay="settleOpen = true"
+          @pay="openSettleFor(row.memberId)"
           @remind="remind(row.memberId)"
         />
         <p v-if="remindError" class="trip__remind-error" role="alert">{{ remindError }}</p>
@@ -315,12 +326,23 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
     </template>
 
     <EmptyState
-      v-else-if="loadError"
+      v-else-if="loadError === 'notFound'"
       class="trip__missing"
       icon="circle-dashed"
       :title="t('trip.notFound')"
       :body="t('trip.notFoundBody')"
       data-testid="trip-missing"
+    />
+
+    <EmptyState
+      v-else-if="loadError === 'other'"
+      class="trip__missing"
+      icon="circle-dashed"
+      :title="t('trip.loadFailed')"
+      :body="''"
+      :action="t('trip.retry')"
+      data-testid="trip-load-failed"
+      @action="load"
     />
 
     <!-- An ended trip records no new spending, so the button goes away with the ability. -->
@@ -361,6 +383,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       :open="editItem !== null"
       :trip="trip"
       :item="editItem"
+      :categories="categories"
       @close="editItem = null"
       @saved="((editItem = null), refresh())"
     />
@@ -387,6 +410,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       :my-member-id="me.id"
       :you-are-creator="trip.youAreCreator"
       :rows="settlement.rows"
+      :focus-member-id="settleFocusMemberId"
       :currency-code="trip.currencyCode"
       :symbol="symbol"
       @close="settleOpen = false"

@@ -1,6 +1,8 @@
 package app.ledger.server.trip
 
+import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
@@ -41,6 +43,19 @@ interface TripRepository : JpaRepository<TripEntity, UUID> {
     fun findAllPurgeable(
         @Param("cutoff") cutoff: Instant,
     ): List<TripEntity>
+
+    /**
+     * The purge re-reads each trip under a write lock before destroying it. The work list from
+     * [findAllPurgeable] is taken outside any transaction, so a restore may land between the list
+     * and the delete; this read is what makes that safe. A restore that already committed shows
+     * `deletedAt` back to null and the sweep skips the trip; a restore still in flight blocks on
+     * this lock until the delete commits, and its own optimistic flush then 404s as it should.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM TripEntity t WHERE t.id = :id")
+    fun findForPurge(
+        @Param("id") id: UUID,
+    ): TripEntity?
 }
 
 interface TripMemberRepository : JpaRepository<TripMemberEntity, UUID> {

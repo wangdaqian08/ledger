@@ -62,14 +62,24 @@ class TripPurge(
         var removed = 0
         for (trip in trips.findAllPurgeable(cutoff)) {
             try {
-                perTrip.executeWithoutResult {
+                val purged = perTrip.execute {
+                    // Re-read under a write lock: the work list above was taken outside any
+                    // transaction, so a restore may have landed since. If it did, deletedAt is back
+                    // to null and this trip is no longer ours to destroy; skip it. Destroying by
+                    // trip_id alone — as this once did — would erase a trip the creator was just
+                    // told is back.
+                    val fresh = trips.findForPurge(trip.id)
+                    if (fresh?.deletedAt == null || fresh.deletedAt!!.isAfter(cutoff)) {
+                        return@execute false
+                    }
                     receipts.findAllByTripId(trip.id).forEach { storage.delete(it.objectName) }
                     paybacks.purgeAllForTrip(trip.id)
                     items.purgeAllForTrip(trip.id)
                     members.purgeAllForTrip(trip.id)
-                    trips.deleteById(trip.id)
-                }
-                removed++
+                    trips.delete(fresh)
+                    true
+                } ?: false
+                if (purged) removed++
             } catch (failure: RuntimeException) {
                 log.warn("could not purge deleted trip {}; it stays on tomorrow's list", trip.id, failure)
             }

@@ -45,6 +45,7 @@ test('a trip-level settlement is approved by the person it is owed to, right on 
   await alice.getByTestId('category-item').first().click()
   await alice.getByTestId('expense-title').fill('Lunch')
   await alice.getByTestId('next-step').click()
+  await alice.getByTestId('split-all').click()
   await alice.getByTestId('save-expense').click()
   await expect(alice.getByTestId('trip-position')).toContainText('$20.00')
 

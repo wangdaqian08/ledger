@@ -68,6 +68,26 @@ class ScenariosTest {
         }
     }
 
+    // ---- an item that cost nothing ------------------------------------------------------
+
+    @Test
+    fun `a zero-amount item settles cleanly alongside a real one`() {
+        // A comped round, or a line entered before its price is known: amount zero is a real input,
+        // not an error. It must divide into zeros without a special case, read as square on the
+        // spot, and leave the trip's balances summing to zero exactly as any other item does.
+        val a = m("a")
+        val b = m("b")
+        val freebie = Item(id = ItemId(1), amountMinor = 0, payer = a, sharedBy = listOf(a, b))
+        val dinner = Item(id = ItemId(2), amountMinor = 6_000, payer = a, sharedBy = listOf(a, b))
+        val trip = Trip(members = listOf(a, b), items = listOf(freebie, dinner))
+
+        val settlement = settle(trip)
+
+        assertEquals(0L, settlement.balances.sumOf { it.netMinor }, "balances must still sum to zero")
+        assertEquals(0L, freebie.shares().values.sum(), "a zero item divides into zeros")
+        assertEquals(ItemState.ALL_SQUARE, trip.itemState(freebie.id), "nothing is owed on it, so it is square")
+    }
+
     // ---- S6 · the property that must never break ----------------------------------------
 
     @Test

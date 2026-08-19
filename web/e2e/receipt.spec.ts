@@ -32,6 +32,7 @@ test('a receipt rides the expense, opens for review, and ending the trip closes 
   await typeAmount(page, '4200')
   await page.getByTestId('expense-title').fill('Hotel')
   await page.getByTestId('next-step').click()
+  await page.getByTestId('split-all').click()
   await page
     .getByTestId('receipt-input')
     .setInputFiles({ name: 'bill.jpg', mimeType: 'image/jpeg', buffer: photo })

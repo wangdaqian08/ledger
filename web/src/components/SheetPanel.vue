@@ -1,25 +1,78 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import TallyIcon from './TallyIcon.vue'
 
 /**
  * The bottom sheet every "do something" flow in this app happens in.
  *
  * Escape and the scrim both close it, because a sheet you cannot dismiss is how somebody loses an
- * expense they were half way through typing.
+ * expense they were half way through typing. When there IS such work, `confirmClose` carries the
+ * question to ask first, so a stray Escape or a click on the scrim cannot silently discard it.
+ *
+ * The dialog also owns the keyboard while it is up: focus moves in on open, Tab is trapped inside
+ * (aria-modal promises the page behind is inert — this keeps that promise), and focus returns to
+ * whatever opened it on close.
  */
-const props = withDefaults(defineProps<{ open: boolean; title?: string }>(), { title: undefined })
+const props = withDefaults(defineProps<{ open: boolean; title?: string; confirmClose?: string }>(), {
+  title: undefined,
+  confirmClose: undefined,
+})
 const emit = defineEmits<{ close: [] }>()
+const { t } = useI18n()
 
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && props.open) emit('close')
+const panel = ref<HTMLElement | null>(null)
+let lastFocused: HTMLElement | null = null
+
+/** A dismissal the user might not have meant asks first when `confirmClose` says there is work to lose. */
+function requestClose() {
+  if (props.confirmClose && !window.confirm(props.confirmClose)) return
+  emit('close')
 }
 
-// Body scroll is locked while a sheet is up; without it the page behind scrolls under your thumb.
+function focusables(): HTMLElement[] {
+  if (!panel.value) return []
+  const selector =
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  return Array.from(panel.value.querySelectorAll<HTMLElement>(selector)).filter(
+    (el) => el.offsetParent !== null,
+  )
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (!props.open) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    requestClose()
+    return
+  }
+  if (event.key !== 'Tab') return
+  const items = focusables()
+  if (items.length === 0) return
+  const first = items[0]!
+  const last = items[items.length - 1]!
+  const active = document.activeElement as HTMLElement | null
+  if (event.shiftKey && (active === first || !panel.value?.contains(active))) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
 watch(
   () => props.open,
   (open) => {
+    // Body scroll is locked while a sheet is up; without it the page behind scrolls under your thumb.
     document.body.style.overflow = open ? 'hidden' : ''
+    if (open) {
+      lastFocused = document.activeElement as HTMLElement | null
+      nextTick(() => focusables()[0]?.focus())
+    } else {
+      lastFocused?.focus?.()
+      lastFocused = null
+    }
   },
 )
 
@@ -33,8 +86,9 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <div v-if="open" class="sheet">
-      <div class="sheet__scrim" @click="emit('close')" />
+      <div class="sheet__scrim" @click="requestClose" />
       <section
+        ref="panel"
         class="sheet__panel"
         role="dialog"
         data-testid="sheet-panel"
@@ -48,8 +102,8 @@ onBeforeUnmount(() => {
             type="button"
             class="sheet__close"
             data-testid="sheet-close"
-            aria-label="Close"
-            @click="emit('close')"
+            :aria-label="t('common.close')"
+            @click="requestClose"
           >
             <TallyIcon name="x" :size="20" />
           </button>

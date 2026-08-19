@@ -20,6 +20,7 @@ test('the shares previewed while ticking people are exactly the shares that land
   await typeAmount(page, '10001')
   await page.getByTestId('expense-title').fill('Odd dinner')
   await page.getByTestId('next-step').click()
+  await page.getByTestId('split-all').click()
 
   const previewRows = page.getByTestId('person-toggle')
   await expect(previewRows).toHaveCount(3)
@@ -53,6 +54,7 @@ test('saving twice cannot double an expense', async ({ page }) => {
   await typeAmount(page, '5000')
   await page.getByTestId('expense-title').fill('Taxi')
   await page.getByTestId('next-step').click()
+  await page.getByTestId('split-all').click()
 
   // A double-tap on Save, as raw DOM events — a normal click would wait politely for the first
   // one's re-render, which is exactly what a double-tapping thumb does not do. The busy guard

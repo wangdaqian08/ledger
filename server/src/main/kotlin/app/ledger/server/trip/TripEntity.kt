@@ -4,6 +4,7 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
 import java.time.Instant
@@ -65,6 +66,15 @@ class TripEntity(
      */
     @Column(name = "deleted_at")
     var deletedAt: Instant? = null,
+    /**
+     * Optimistic-lock version. [TripService.restore] leans on it: clearing `deleted_at` against a
+     * row the nightly sweep has already destroyed hits zero rows, and Hibernate raises the failure
+     * restore turns into the 404 it truly is. Without a version that UPDATE would touch nothing and
+     * report success — the trip gone, the creator told it is back.
+     */
+    @Version
+    @Column(nullable = false)
+    var version: Long = 0,
 )
 
 /**
@@ -89,4 +99,13 @@ class TripMemberEntity(
     var userId: UUID? = null,
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant = Instant.now(),
+    /**
+     * Optimistic-lock version. Two *different* people can open the same free seat through one share
+     * link and both pass [TripService.claim]'s "is it claimed?" read; this lets exactly one keep
+     * it, the other getting the 409 it would have got arriving a moment later. The unique index
+     * stops one person taking two seats — it cannot stop two people overwriting one.
+     */
+    @Version
+    @Column(nullable = false)
+    var version: Long = 0,
 )

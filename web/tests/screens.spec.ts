@@ -83,6 +83,10 @@ const you: MemberView = { id: 'm-you', displayName: 'Alice', personHue: 1, claim
 const bob: MemberView = { id: 'm-bob', displayName: 'Bob', personHue: 2, claimed: true, isYou: false }
 const cara: MemberView = { id: 'm-cara', displayName: 'Cara', personHue: 3, claimed: false, isYou: false }
 
+const foodCategories = [
+  { id: 'c-food', key: 'food', nameEn: 'Food', nameZh: '餐饮', icon: 'utensils', hue: 1, builtIn: true },
+]
+
 function item(overrides: Partial<ItemView>): ItemView {
   return {
     id: 'i-1',
@@ -513,10 +517,13 @@ describe('AddExpenseSheet', () => {
     }
     expect(sheet.text()).toContain('100.01')
 
-    // On to step two; untick Cara, so two people share 10001.
+    // On to step two; nobody is ticked by default now (spec §3), so tick You and Bob — two people
+    // share 10001, Cara left off.
     await findByTestId(sheet, 'next-step').trigger('click')
-    const caraRow = findAllByTestId(sheet, 'person-toggle').find((r) => r.text().includes('Cara'))!
-    await caraRow.trigger('click')
+    for (const name of ['You', 'Bob']) {
+      const row = findAllByTestId(sheet, 'person-toggle').find((r) => r.text().includes(name))!
+      await row.trigger('click')
+    }
 
     const expected = splitShares({ totalMinor: 10_001, weights: [1, 1], salt: saltFor(pinned) })
     expect(expected.reduce((a, b) => a + b, 0)).toBe(10_001)
@@ -568,6 +575,8 @@ describe('AddExpenseSheet custom weights', () => {
 
     await findByTestId(sheet, 'key-5').trigger('click')
     await findByTestId(sheet, 'next-step').trigger('click')
+    // Nobody ticked by default now; the All chip puts everyone on the bill for the 1:1:1 case.
+    await findByTestId(sheet, 'split-all').trigger('click')
     await findByTestId(sheet, 'mode-custom').trigger('click')
     await findByTestId(sheet, 'save-expense').trigger('click')
     await flushPromises()
@@ -708,7 +717,7 @@ describe('EditSplitSheet', () => {
     mocked.patchItem!.mockResolvedValue(existing)
 
     const sheet = mount(EditSplitSheet, {
-      props: { open: false, trip: trip(), item: null },
+      props: { open: false, trip: trip(), item: null, categories: foodCategories },
       global: global(),
     })
     await sheet.setProps({ open: true, item: existing })
@@ -726,6 +735,9 @@ describe('EditSplitSheet', () => {
     await flushPromises()
 
     expect(mocked.patchItem).toHaveBeenCalledWith(existing.id, {
+      title: 'Dinner',
+      categoryId: 'c-food',
+      spentOn: '2026-08-07',
       amountMinor: 9_000,
       payerMemberId: you.id,
       splitRule: 'EQUAL',
@@ -746,7 +758,7 @@ describe('EditSplitSheet', () => {
       ],
     })
     const sheet = mount(EditSplitSheet, {
-      props: { open: false, trip: trip(), item: null },
+      props: { open: false, trip: trip(), item: null, categories: foodCategories },
       global: global(),
     })
     await sheet.setProps({ open: true, item: weighted })
@@ -762,7 +774,7 @@ describe('EditSplitSheet', () => {
     mocked.patchItem!.mockResolvedValue(existing)
 
     const sheet = mount(EditSplitSheet, {
-      props: { open: false, trip: trip(), item: null },
+      props: { open: false, trip: trip(), item: null, categories: foodCategories },
       global: global(),
     })
     await sheet.setProps({ open: true, item: existing })
@@ -1147,6 +1159,8 @@ describe('AddExpenseSheet with a receipt', () => {
     await nextTick()
     await findByTestId(sheet, 'key-5').trigger('click')
     await findByTestId(sheet, 'next-step').trigger('click')
+    // Nobody is ticked by default now (spec §3); the All chip is the one-tap "it was everyone".
+    await findByTestId(sheet, 'split-all').trigger('click')
     return sheet
   }
 

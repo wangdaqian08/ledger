@@ -16,6 +16,7 @@ test('the exported CSV holds the expense exactly as entered', async ({ page }) =
   await typeAmount(page, '100001') // $1,000.01 — a cent floats would smear
   await page.getByTestId('expense-title').fill('Odd hotel')
   await page.getByTestId('next-step').click()
+  await page.getByTestId('split-all').click()
   await page.getByTestId('save-expense').click()
   await expect(page.getByTestId('expense-row').filter({ hasText: 'Odd hotel' })).toBeVisible()
 

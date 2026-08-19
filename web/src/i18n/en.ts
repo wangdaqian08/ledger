@@ -7,7 +7,9 @@
 export default {
   common: {
     all: 'All',
+    back: 'Back',
     cancel: 'Cancel',
+    close: 'Close',
     done: 'Done for now',
     save: 'Save',
     settled: 'All square',
@@ -22,7 +24,9 @@ export default {
   settle: {
     pay: 'Pay',
     remind: 'Remind',
-    reminded: 'Reminded ✓',
+    // Tally sends nothing — push is out of phase 1 — so the tapped state must not claim it did.
+    // It turns into an honest instruction rather than a "delivered ✓" that never happened.
+    reminded: 'Nudge them yourself',
     sentForConfirmation: 'Sent to {name} for confirmation',
     awaitingYou: '{name} says they paid you',
     settled: 'Settled',
@@ -48,6 +52,7 @@ export default {
     tagline: 'Split it, sorted',
     namePlaceholder: 'Your name',
     button: 'Sign in',
+    failed: 'Couldn’t sign in — check your connection and try again.',
     note: 'Your name is the whole sign-in — no password. Whoever types it is you, so keep it to friends.',
   },
   trips: {
@@ -71,6 +76,8 @@ export default {
     restorableUntil: 'Restorable until {date}',
     restore: 'Restore',
     liveEmpty: 'Nothing on right now — your finished groups are below.',
+    loadFailed: 'Couldn’t load your groups. Check your connection and try again.',
+    retry: 'Try again',
   },
   trip: {
     groupSpend: 'Group spend',
@@ -83,7 +90,9 @@ export default {
     filterYouPaid: 'You paid',
     empty: 'Nothing spent yet',
     emptyBody: 'Add the first expense with the + button.',
-    invite: 'Invite',
+    // The one entry to the roster *and* the trip's own controls (end, put away, delete), so it is
+    // named for both — parking "end trip" behind a bare "Invite" hid it from the person who needs it.
+    invite: 'People & settings',
     linkCopied: 'Link copied — anyone with it can pick their name',
     settleUp: 'Settle up',
     addExpense: 'Add expense',
@@ -97,7 +106,9 @@ export default {
     getCaption: 'you get',
     notFound: 'This trip is not here',
     notFoundBody: "It may have been removed, or you're not on it.",
-    remindFailed: 'That nudge did not go through.',
+    remindFailed: 'Couldn’t do that just now.',
+    loadFailed: 'Couldn’t load this trip. Check your connection and try again.',
+    retry: 'Try again',
     ended: 'Ended',
   },
   receipt: {
@@ -112,15 +123,22 @@ export default {
     howMuch: 'How much?',
     whatWasIt: 'What was it?',
     titlePlaceholder: 'Dinner at Sichuan Rose',
+    // A blank title falls back to this, never to the example placeholder — an untitled expense
+    // should read "Expense", not name a restaurant nobody went to.
+    untitled: 'Expense',
+    when: 'When',
     next: 'Next',
     whoSplitIt: 'Who split it?',
     whoPaid: 'Who paid',
     splitBetween: 'Split between',
+    all: 'Everyone',
     how: 'How',
     evenly: 'Evenly',
     custom: 'Custom',
     each: '{amount} each',
     save: 'Save expense',
+    savedPhotoFailed: 'Expense saved — the photo didn’t upload: {reason}. Press Save to try the photo again.',
+    discardConfirm: 'Discard this expense?',
     back: 'Back',
   },
   itemDetail: {
@@ -161,7 +179,7 @@ export default {
     save: 'Save the bill',
   },
   invite: {
-    title: 'People',
+    title: 'People & settings',
     claimed: 'On the trip',
     unclaimed: 'Not claimed yet',
     namePlaceholder: 'Add a name',
@@ -179,6 +197,9 @@ export default {
     putAwayNote:
       'Takes this trip off everyone’s home screen. It still opens by its link, and settling up carries on.',
     putBackNote: 'This trip is off everyone’s home screen. Anyone can still find it under Completed.',
+    // Shown disabled on a live trip so the control is discoverable, with the reason it is not yet usable.
+    putAwayLocked: 'Put away',
+    putAwayLockedNote: 'End the trip first — only finished trips can be put away.',
     deleteTrip: 'Delete trip',
     deleteNote: 'Deletes it for everyone. You can restore it from your home screen for 30 days.',
     deleteConfirm: 'Delete {name} for everyone? You can restore it for 30 days.',

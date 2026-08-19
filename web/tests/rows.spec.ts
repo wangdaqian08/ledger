@@ -58,9 +58,10 @@ describe('BalanceRow', () => {
     expect(theyOwe.text()).toContain('Owes you')
     expect(theyOwe.text()).toContain('Remind')
 
-    // A sent nudge changes the button itself — no extra row appears anywhere.
+    // Tapping Remind sends nothing (push is out of phase 1), so the button turns into an honest
+    // instruction — never a "delivered ✓" that would claim a reminder the app never sent.
     const nudged = mount(BalanceRow, { props: { ...base, owedMinor: 4230, reminded: true } })
-    expect(nudged.text()).toContain('Reminded ✓')
+    expect(nudged.text()).toContain('Nudge them yourself')
     expect(findByTestId(nudged, 'row-remind').attributes('disabled')).toBeDefined()
   })
 
