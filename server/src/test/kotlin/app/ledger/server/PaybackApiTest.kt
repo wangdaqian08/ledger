@@ -239,6 +239,74 @@ class PaybackApiTest : ApiTest() {
         )
     }
 
+    @Test
+    fun `a member cannot file an item repayment in somebody else's name`() {
+        // §5: the person who paid the money back files their own claim. A third sharer filing it as
+        // though Bob had paid is neither Bob nor the person owed, so it is refused.
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip()
+        val aliceMember = alice.yourMemberId(tripId)
+        val bobMember = alice.addMember(tripId, "Bob")
+        val carolMember = alice.addMember(tripId, "Carol")
+        val invite = alice.invite(tripId)
+        signedIn("Bob").also { it.claim(tripId, invite, bobMember) }
+        val carol = signedIn("Carol").also { it.claim(tripId, invite, carolMember) }
+        val item = alice
+            .post(
+                "/api/trips/$tripId/items",
+                expense(
+                    "Hotel",
+                    9_000,
+                    alice.builtInCategory(tripId, "stay"),
+                    aliceMember,
+                    listOf(aliceMember, bobMember, carolMember),
+                ),
+            ).id()
+
+        // Carol files a repayment naming Bob as the one who paid — not herself, and she is not owed.
+        val response = carol.post(
+            "/api/items/$item/paybacks",
+            claimOf(bobMember, 3_000),
+        )
+
+        assertEquals(HttpStatus.FORBIDDEN, response.statusCode)
+    }
+
+    @Test
+    fun `the trip creator can approve an item repayment between two other people`() {
+        // The creator's approval hat is not limited to trip-level settlements (§5). Bob fronts a
+        // bill, Carol files that she paid him back, and Alice — the creator, party to neither side —
+        // approves it, so a trip does not stall when the person owed stops answering.
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip()
+        val bobMember = alice.addMember(tripId, "Bob")
+        val carolMember = alice.addMember(tripId, "Carol")
+        val invite = alice.invite(tripId)
+        val bob = signedIn("Bob").also { it.claim(tripId, invite, bobMember) }
+        val carol = signedIn("Carol").also { it.claim(tripId, invite, carolMember) }
+        val item = bob
+            .post(
+                "/api/trips/$tripId/items",
+                expense("Taxi", 8_000, alice.builtInCategory(tripId), bobMember, listOf(bobMember, carolMember)),
+            ).id()
+
+        val claim = carol.post("/api/items/$item/paybacks", claimOf(carolMember, 4_000)).id()
+        assertEquals(
+            "PENDING",
+            carol
+                .get("/api/items/$item")
+                .json()["paybacks"]
+                .single()["status"]
+                .asText(),
+            "filed by the one paying, so it waits on approval",
+        )
+
+        val approved = alice.post("/api/paybacks/$claim/approve", emptyMap<String, String>())
+
+        assertEquals(HttpStatus.OK, approved.statusCode, "the creator may decide it: ${approved.body}")
+        assertEquals("APPROVED", approved.json()["status"].asText())
+    }
+
     // --- helpers -----------------------------------------------------------------------------
 
     private class Fixture(

@@ -304,6 +304,100 @@ class ItemApiTest : ApiTest() {
         )
     }
 
+    @Test
+    fun `a patch can turn an equal split into a weighted one, and it still hands out every cent`() {
+        val trip = tripWith("Alice", "Bob")
+        val item = trip.owner
+            .post(
+                "/api/trips/${trip.id}/items",
+                expense("Dinner", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)),
+            ).id()
+
+        // The whole point of a patch's people list: change the rule and the inputs together, and the
+        // split is re-derived — weights and all — with no stale share left over from the equal one.
+        val patched = trip.owner.patch(
+            "/api/items/$item",
+            mapOf(
+                "splitRule" to "WEIGHTED",
+                "sharedBy" to listOf(
+                    mapOf("memberId" to trip.ownerMember.toString(), "weight" to 2),
+                    mapOf("memberId" to trip.bob.toString(), "weight" to 1),
+                ),
+            ),
+        )
+
+        assertEquals(HttpStatus.OK, patched.statusCode)
+        val splits = patched.json()["splits"]
+        assertEquals(10_000, splits.sumOf { it["amountMinor"].asLong() }, "a cent went missing changing the rule")
+        val weightOf = splits.associate { it["memberId"].asText() to it["weight"].asInt() }
+        assertEquals(2, weightOf[trip.ownerMember.toString()], "the weights should come back with the splits")
+        assertEquals(1, weightOf[trip.bob.toString()])
+    }
+
+    @Test
+    fun `a patch that empties the people list is refused, and the old split stands`() {
+        // Create's @NotEmpty guards the list at creation; this is its hand-written twin in
+        // ItemService.patch, because a patch's sharedBy is null-for-absent and an explicit `[]` is a
+        // supplied value, not an omission — so bean validation never sees it.
+        val trip = tripWith("Alice", "Bob")
+        val item = trip.owner
+            .post(
+                "/api/trips/${trip.id}/items",
+                expense("Dinner", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)),
+            ).id()
+
+        val emptied = trip.owner.patch("/api/items/$item", mapOf("sharedBy" to emptyList<Map<String, String>>()))
+
+        assertEquals(HttpStatus.BAD_REQUEST, emptied.statusCode)
+        val splits = trip.owner.get("/api/items/$item").json()["splits"]
+        assertEquals(2, splits.size(), "the original people list must still stand")
+        assertEquals(10_000, splits.sumOf { it["amountMinor"].asLong() })
+    }
+
+    @Test
+    fun `an exact split missing one person's amount is refused`() {
+        val trip = tripWith("Alice", "Bob")
+
+        val response = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Dinner", 10_000, trip.category, trip.ownerMember, emptyList(), splitRule = "EXACT") +
+                mapOf(
+                    "sharedBy" to listOf(
+                        mapOf("memberId" to trip.ownerMember.toString(), "exactAmountMinor" to 10_000),
+                        // Bob's exact amount is left out entirely, so the amounts cannot be checked.
+                        mapOf("memberId" to trip.bob.toString()),
+                    ),
+                ),
+        )
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+        assertTrue(
+            response.body!!.contains("exact amount"),
+            "the message should name what is missing: ${response.body}",
+        )
+    }
+
+    @Test
+    fun `a negative amount is refused on create and on patch, though zero is allowed`() {
+        val trip = tripWith("Alice", "Bob")
+
+        val created = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Refund?", -1, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)),
+        )
+        assertEquals(HttpStatus.BAD_REQUEST, created.statusCode, "a bill cannot cost minus a cent")
+
+        // Zero is deliberately fine — a comped item is on the books at nothing (@PositiveOrZero).
+        val free = trip.owner
+            .post(
+                "/api/trips/${trip.id}/items",
+                expense("Comped", 0, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)),
+            ).id()
+
+        val patched = trip.owner.patch("/api/items/$free", mapOf("amountMinor" to -1))
+        assertEquals(HttpStatus.BAD_REQUEST, patched.statusCode, "and it cannot be patched below zero either")
+    }
+
     // --- helpers -----------------------------------------------------------------------------
 
     private class Fixture(

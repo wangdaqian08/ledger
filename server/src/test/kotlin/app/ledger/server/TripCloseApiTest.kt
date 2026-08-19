@@ -169,4 +169,39 @@ class TripCloseApiTest : ApiTest() {
         )
         assertEquals(HttpStatus.CREATED, settlement.statusCode, "settle-up must outlive the trip: ${settlement.body}")
     }
+
+    @Test
+    fun `an ended trip still takes new members, renames, invites, late claims and categories`() {
+        // Deliberate, and the mirror of the expense rule above: ending closes the *spending record*
+        // — items and receipts — not the roster or the settling of it. Every one of these stays open
+        // on an ended trip, so anyone who later tries to "harden" a closed trip by fencing them off
+        // has to argue with a red test first. None of the services behind them checks closedAt.
+        val creator = signedIn("Nora")
+        val tripId = creator.createTrip()
+        creator.post("/api/trips/$tripId/close", emptyMap<String, String>())
+
+        val added = creator.post("/api/trips/$tripId/members", mapOf("displayName" to "Piet"))
+        assertEquals(HttpStatus.CREATED, added.statusCode, "adding a member to an ended trip: ${added.body}")
+        val seat = added.id()
+
+        val renamed = creator.patch("/api/trips/$tripId/members/$seat", mapOf("displayName" to "Pieter"))
+        assertEquals(HttpStatus.OK, renamed.statusCode, "renaming a member on an ended trip: ${renamed.body}")
+
+        val invite = creator.post("/api/trips/$tripId/invite", emptyMap<String, String>())
+        assertEquals(HttpStatus.OK, invite.statusCode, "issuing an invite on an ended trip: ${invite.body}")
+
+        // A ghost squaring up late: someone claims their seat with a link on an ended trip.
+        val token = invite.json()["token"].asText()
+        assertEquals(
+            HttpStatus.OK,
+            signedIn("Pieter").claim(tripId, token, seat).statusCode,
+            "claiming a seat on an ended trip",
+        )
+
+        val category = creator.post(
+            "/api/trips/$tripId/categories",
+            mapOf("name" to "Nightcap", "icon" to "glass", "hue" to 2),
+        )
+        assertEquals(HttpStatus.CREATED, category.statusCode, "adding a category to an ended trip: ${category.body}")
+    }
 }

@@ -346,6 +346,103 @@ class SettlementApiTest : ApiTest() {
         assertEquals(HttpStatus.NOT_FOUND, signedIn("Stranger").get("/api/trips/${trip.id}/settlement").statusCode)
     }
 
+    @Test
+    fun `the rows sum to minus your net even when you both owe and are owed`() {
+        // The existing identity test has a viewer who only owes. This one puts the viewer on both
+        // sides at once — owing Alice, owed by Carol — with an approved item repayment and an
+        // approved trip-level settlement in the mix, so the §7a identity is exercised across a
+        // genuinely mixed-sign row set rather than a one-signed one.
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip()
+        val aliceMember = alice.yourMemberId(tripId)
+        val bobMember = alice.addMember(tripId, "Bob")
+        val carolMember = alice.addMember(tripId, "Carol")
+        val invite = alice.invite(tripId)
+        val bob = signedIn("Bob").also { it.claim(tripId, invite, bobMember) }
+        val carol = signedIn("Carol").also { it.claim(tripId, invite, carolMember) }
+        val food = alice.builtInCategory(tripId)
+
+        // Alice fronts a bill she shares with Bob → Bob owes Alice $50.
+        alice.post(
+            "/api/trips/$tripId/items",
+            expense("Dinner", 10_000, food, aliceMember, listOf(aliceMember, bobMember)),
+        )
+        // Bob fronts a bill he shares with Carol → Carol owes Bob $40.
+        val bobsItem = bob
+            .post(
+                "/api/trips/$tripId/items",
+                expense("Taxi", 8_000, food, bobMember, listOf(bobMember, carolMember)),
+            ).id()
+
+        // Carol repays Bob part of the taxi; Bob, the one owed, approves it.
+        val repayment = carol
+            .post(
+                "/api/items/$bobsItem/paybacks",
+                mapOf("fromMemberId" to carolMember.toString(), "amountMinor" to 1_000, "paidOn" to "2026-08-02"),
+            ).id()
+        bob.post("/api/paybacks/$repayment/approve", emptyMap<String, String>())
+
+        // Bob settles part of what he owes Alice straight from the Settle-up screen; Alice approves.
+        val settlement = bob
+            .post(
+                "/api/trips/$tripId/settlements",
+                mapOf("toMemberId" to aliceMember.toString(), "amountMinor" to 1_000),
+            ).id()
+        alice.post("/api/paybacks/$settlement/approve", emptyMap<String, String>())
+
+        val settleView = bob.get("/api/trips/$tripId/settlement").json()
+        val owed = settleView["rows"].map { it["owedMinor"].asLong() }
+
+        assertEquals(
+            -settleView["yourNetMinor"].asLong(),
+            owed.sum(),
+            "the settle-up column does not agree with the hero figure",
+        )
+        assertTrue(
+            owed.any { it > 0 } && owed.any { it < 0 },
+            "the viewer should be both owing and owed here, or the identity is trivially one-signed: $owed",
+        )
+    }
+
+    @Test
+    fun `a member who is neither party nor the creator cannot touch a settlement between two others`() {
+        // The reviewable and undoable predicates gate this for real, not just the strip: a bystander
+        // on the trip gets 403 (not 404 — they can see it) on every verb, even one still PENDING.
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip()
+        val bobMember = alice.addMember(tripId, "Bob")
+        val carolMember = alice.addMember(tripId, "Carol")
+        val daveMember = alice.addMember(tripId, "Dave")
+        val invite = alice.invite(tripId)
+        val bob = signedIn("Bob").also { it.claim(tripId, invite, bobMember) }
+        signedIn("Carol").also { it.claim(tripId, invite, carolMember) }
+        val dave = signedIn("Dave").also { it.claim(tripId, invite, daveMember) }
+
+        // Bob files a settlement to Carol. Alice is the creator; Dave is on the trip but neither
+        // party to it.
+        val settlement = bob
+            .post(
+                "/api/trips/$tripId/settlements",
+                mapOf("toMemberId" to carolMember.toString(), "amountMinor" to 3_000),
+            ).id()
+
+        assertEquals(
+            HttpStatus.FORBIDDEN,
+            dave.post("/api/paybacks/$settlement/approve", emptyMap<String, String>()).statusCode,
+            "a bystander cannot approve it",
+        )
+        assertEquals(
+            HttpStatus.FORBIDDEN,
+            dave.post("/api/paybacks/$settlement/reject", mapOf("reason" to "not my call")).statusCode,
+            "nor reject it",
+        )
+        assertEquals(
+            HttpStatus.FORBIDDEN,
+            dave.post("/api/paybacks/$settlement/undo", emptyMap<String, String>()).statusCode,
+            "nor undo it",
+        )
+    }
+
     // --- helpers -----------------------------------------------------------------------------
 
     private class Fixture(
