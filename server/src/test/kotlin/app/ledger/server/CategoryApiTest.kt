@@ -64,6 +64,29 @@ class CategoryApiTest : ApiTest() {
     }
 
     @Test
+    fun `a category named in Chinese is accepted, and its slug is stable`() {
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip()
+
+        // "夜宵" (late-night snack) is an ordinary category name in a bilingual app; the slug must
+        // keep its letters, not collapse to empty and a 400.
+        val created = alice.post(
+            "/api/trips/$tripId/categories",
+            mapOf("name" to "夜宵", "icon" to "utensils", "hue" to 2),
+        )
+        assertEquals(HttpStatus.CREATED, created.statusCode, created.body ?: "")
+        assertEquals("夜宵", created.json()["key"].asText())
+        assertEquals("夜宵", created.json()["nameZh"].asText())
+
+        // Stable enough to dedupe: a second one collides rather than silently doubling.
+        val again = alice.post(
+            "/api/trips/$tripId/categories",
+            mapOf("name" to "夜宵", "icon" to "utensils", "hue" to 3),
+        )
+        assertEquals(HttpStatus.CONFLICT, again.statusCode)
+    }
+
+    @Test
     fun `a name with nothing nameable in it is refused`() {
         val alice = signedIn("Alice")
         val tripId = alice.createTrip()

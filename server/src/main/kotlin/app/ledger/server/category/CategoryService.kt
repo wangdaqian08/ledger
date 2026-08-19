@@ -56,6 +56,12 @@ class CategoryService(
         return saved.toView()
     }
 
+    /**
+     * A stable key for the partial unique index, folding case and punctuation so "Food" and "food!"
+     * collide. `\p{L}\p{N}` keeps letters and digits of *every* script, not just ASCII — "夜宵" is a
+     * category name in a bilingual app, so it must slug to "夜宵", not to empty and a 400. The guard
+     * in [add] still trips on a name with no letters or digits in any script (e.g. "!!!").
+     */
     private fun slugify(name: String) = name.lowercase().replace(NON_SLUG, "-").trim('-')
 
     private fun CategoryEntity.toView() = CategoryView(
@@ -70,6 +76,8 @@ class CategoryService(
 
     private companion object {
         const val BUILT_IN_COUNT = 8
-        val NON_SLUG = Regex("[^a-z0-9]+")
+
+        /** Runs of anything that is not a Unicode letter or digit — punctuation, spaces, emoji. */
+        val NON_SLUG = Regex("[^\\p{L}\\p{N}]+")
     }
 }
