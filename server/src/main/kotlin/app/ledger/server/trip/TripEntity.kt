@@ -50,6 +50,21 @@ class TripEntity(
      */
     @Column(name = "closed_at")
     var closedAt: Instant? = null,
+    /**
+     * When the creator tidied an ended trip off every member's home list; null while it is on
+     * them. Hidden is a listing state and nothing more — the trip opens by its link, settling and
+     * approvals carry on, and the balance still counts. A CHECK constraint keeps this null while
+     * [closedAt] is, so it can never mean "disappeared mid-trip".
+     */
+    @Column(name = "hidden_at")
+    var hiddenAt: Instant? = null,
+    /**
+     * When the creator deleted the trip for everyone; null for a trip that still exists. Every
+     * read path filters these out — they are gone from the app the moment this is set — and the
+     * daily sweep destroys them for good once the restore window passes.
+     */
+    @Column(name = "deleted_at")
+    var deletedAt: Instant? = null,
 )
 
 /**

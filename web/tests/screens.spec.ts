@@ -25,6 +25,7 @@ import type {
   PaybackView,
   SettlementRow,
   SettlementView,
+  TripsView,
   TripView,
 } from '../src/lib/api'
 
@@ -63,6 +64,10 @@ vi.mock('../src/lib/api', async () => {
       remind: vi.fn(),
       closeTrip: vi.fn(),
       reopenTrip: vi.fn(),
+      hideTrip: vi.fn(),
+      unhideTrip: vi.fn(),
+      deleteTrip: vi.fn(),
+      restoreTrip: vi.fn(),
       uploadReceipt: vi.fn(),
       deleteReceipt: vi.fn(),
     },
@@ -118,6 +123,8 @@ function trip(overrides: Partial<TripView> = {}): TripView {
     youFrontedMinor: 0,
     youAreCreator: true,
     closedAt: null,
+    hiddenAt: null,
+    unsettledMinor: 0,
     ...overrides,
   }
 }
@@ -212,6 +219,113 @@ describe('TripsScreen', () => {
     expect(screen.text()).toContain('You owe')
     expect(screen.text()).toContain('42.80')
     expect(screen.text()).toContain('1 of 2 settled')
+  })
+
+  /** Signed in, with whatever the home payload should be. */
+  async function home(overview: Partial<TripsView> & Pick<TripsView, 'trips'>) {
+    mocked.me!.mockResolvedValue({
+      id: 'u1',
+      displayName: 'Alice',
+      email: 'a@x',
+      photoUrl: null,
+      friends: [],
+    })
+    mocked.trips!.mockResolvedValue({ overalls: [], settledTripCount: 0, ...overview })
+    const screen = mount(TripsScreen, { global: global() })
+    await flushPromises()
+    return screen
+  }
+
+  it('sorts ended groups into their own section, leaving the live ones above', async () => {
+    const screen = await home({
+      trips: [
+        trip({ id: 't-live', name: 'Osaka' }),
+        trip({ id: 't-done', name: 'Hokkaido', closedAt: '2026-08-01T00:00:00Z' }),
+      ],
+    })
+
+    const completed = findByTestId(screen, 'completed-section')
+    expect(completed.exists()).toBe(true)
+    expect(completed.text()).toContain('Hokkaido')
+    expect(completed.text()).not.toContain('Osaka')
+  })
+
+  it('keeps put-away trips off the list until somebody asks for them', async () => {
+    const screen = await home({
+      trips: [
+        trip({ id: 't-done', name: 'Hokkaido', closedAt: '2026-08-01T00:00:00Z' }),
+        trip({
+          id: 't-away',
+          name: 'Old Ski Trip',
+          closedAt: '2026-07-01T00:00:00Z',
+          hiddenAt: '2026-07-02T00:00:00Z',
+        }),
+      ],
+    })
+
+    expect(screen.text()).not.toContain('Old Ski Trip')
+    const toggle = findByTestId(screen, 'toggle-hidden')
+    // The count is the point: it says how much is behind the toggle without opening it.
+    expect(toggle.text()).toContain('1')
+
+    await toggle.trigger('click')
+    expect(screen.text()).toContain('Old Ski Trip')
+    // Revealing is not un-hiding — the card stays marked as put away.
+    const away = findAllByTestId(screen, 'group-card').find((card) => card.text().includes('Old Ski Trip'))!
+    expect(away.classes()).toContain('trips__card--away')
+
+    await toggle.trigger('click')
+    expect(screen.text()).not.toContain('Old Ski Trip')
+  })
+
+  it('offers no toggle at all when nothing has been put away', async () => {
+    const screen = await home({ trips: [trip({ id: 't-done', closedAt: '2026-08-01T00:00:00Z' })] })
+
+    expect(findByTestId(screen, 'completed-section').exists()).toBe(true)
+    expect(findByTestId(screen, 'toggle-hidden').exists()).toBe(false)
+  })
+
+  it('says so, quietly, when every group is finished', async () => {
+    const screen = await home({ trips: [trip({ id: 't-done', closedAt: '2026-08-01T00:00:00Z' })] })
+    expect(findByTestId(screen, 'live-empty').exists()).toBe(true)
+
+    const withLive = await home({ trips: [trip()] })
+    expect(findByTestId(withLive, 'live-empty').exists()).toBe(false)
+  })
+
+  it('shows what you deleted with the date it stops being restorable, and puts it back', async () => {
+    mocked.restoreTrip!.mockResolvedValue(trip())
+    const screen = await home({
+      trips: [],
+      deleted: [
+        {
+          id: 't-gone',
+          name: 'Snow Trip',
+          icon: 'plane',
+          hue: 2,
+          deletedAt: '2026-08-18T00:00:00Z',
+          purgesAt: '2026-09-17T00:00:00Z',
+        },
+      ],
+    })
+
+    const row = findByTestId(screen, 'deleted-trip')
+    expect(row.text()).toContain('Snow Trip')
+    // The deadline is spelled out rather than left as "30 days" for the reader to count.
+    expect(row.text()).toContain('Restorable until')
+    expect(row.text()).toContain('Sep 17, 2026')
+
+    await findByTestId(screen, 'restore-trip').trigger('click')
+    await flushPromises()
+
+    expect(mocked.restoreTrip).toHaveBeenCalledWith('t-gone')
+    // Re-fetched rather than patched in place: every figure on this screen is the engine's.
+    expect(mocked.trips).toHaveBeenCalledTimes(2)
+  })
+
+  it('has no Recently deleted section for somebody who has deleted nothing', async () => {
+    const screen = await home({ trips: [trip()] })
+    expect(findByTestId(screen, 'deleted-section').exists()).toBe(false)
   })
 })
 
@@ -1155,6 +1269,39 @@ describe('ItemDetailSheet receipt', () => {
     expect(findAllByTestId(sheet, 'delete-item')).toHaveLength(0)
     expect(findAllByTestId(sheet, 'receipt-add')).toHaveLength(0)
   })
+
+  it('adds a receipt from the detail sheet when the expense has none', async () => {
+    mocked.itemDetail!.mockResolvedValue({ ...item({ receipt: null }), paybacks: [] })
+    mocked.uploadReceipt!.mockResolvedValue(item({}))
+
+    const sheet = await openSheet()
+    await findByTestId(sheet, 'receipt-add').trigger('click')
+    const input = findByTestId(sheet, 'receipt-input')
+    const photo = new File([new Uint8Array([1, 2, 3])], 'bill.jpg', { type: 'image/jpeg' })
+    Object.defineProperty(input.element, 'files', { value: [photo] })
+    await input.trigger('change')
+    await flushPromises()
+
+    expect(mocked.uploadReceipt).toHaveBeenCalledWith('i-1', photo, 'bill.jpg')
+    expect(sheet.emitted('changed')).toBeTruthy()
+  })
+
+  it('replacing from the lightbox uploads through the same picker', async () => {
+    mocked.itemDetail!.mockResolvedValue(detailWith())
+    mocked.uploadReceipt!.mockResolvedValue(item({}))
+
+    const sheet = await openSheet()
+    await findByTestId(sheet, 'receipt-thumb').trigger('click')
+    await findByTestId(sheet, 'receipt-replace').trigger('click')
+    const input = findByTestId(sheet, 'receipt-input')
+    const photo = new File([new Uint8Array([9, 9, 9])], 'better.png', { type: 'image/png' })
+    Object.defineProperty(input.element, 'files', { value: [photo] })
+    await input.trigger('change')
+    await flushPromises()
+
+    expect(mocked.uploadReceipt).toHaveBeenCalledWith('i-1', photo, 'better.png')
+    expect(sheet.emitted('changed')).toBeTruthy()
+  })
 })
 
 describe('InviteSheet trip lifecycle', () => {
@@ -1199,5 +1346,100 @@ describe('InviteSheet trip lifecycle', () => {
 
     expect(mocked.reopenTrip).toHaveBeenCalledWith('t-1')
     expect(sheet.emitted('changed')).toBeTruthy()
+  })
+
+  const ended = { closedAt: '2026-08-18T03:00:00Z' }
+
+  it('offers putting away only once the trip has ended', async () => {
+    const live = mount(InviteSheet, { props: { open: true, trip: trip() }, global: global() })
+    await nextTick()
+    // The server refuses this with a 409, so the button that would earn one is not offered.
+    expect(findAllByTestId(live, 'put-away-trip')).toHaveLength(0)
+
+    mocked.hideTrip!.mockResolvedValue(trip({ ...ended, hiddenAt: '2026-08-18T04:00:00Z' }))
+    const finished = mount(InviteSheet, { props: { open: true, trip: trip(ended) }, global: global() })
+    await nextTick()
+    await findByTestId(finished, 'put-away-trip').trigger('click')
+    await flushPromises()
+
+    expect(mocked.hideTrip).toHaveBeenCalledWith('t-1')
+    expect(finished.emitted('changed')).toBeTruthy()
+  })
+
+  it('a trip already put away offers putting it back', async () => {
+    mocked.unhideTrip!.mockResolvedValue(trip(ended))
+    const sheet = mount(InviteSheet, {
+      props: { open: true, trip: trip({ ...ended, hiddenAt: '2026-08-18T04:00:00Z' }) },
+      global: global(),
+    })
+    await nextTick()
+
+    expect(findAllByTestId(sheet, 'put-away-trip')).toHaveLength(0)
+    await findByTestId(sheet, 'put-back-trip').trigger('click')
+    await flushPromises()
+
+    expect(mocked.unhideTrip).toHaveBeenCalledWith('t-1')
+  })
+
+  it('deleting names the money still unsettled before it asks', async () => {
+    const asked: string[] = []
+    vi.stubGlobal('confirm', (message: string) => (asked.push(message), true))
+    await router.push('/trips/t-1')
+
+    const sheet = mount(InviteSheet, {
+      props: { open: true, trip: trip({ name: 'Osaka', unsettledMinor: 4_280 }) },
+      global: global(),
+    })
+    await nextTick()
+    await findByTestId(sheet, 'delete-trip').trigger('click')
+    await flushPromises()
+
+    expect(asked[0]).toContain('Osaka')
+    // The figure is the whole point of asking twice about this one.
+    expect(asked[0]).toContain('42.80')
+    expect(mocked.deleteTrip).toHaveBeenCalledWith('t-1')
+    // Nowhere to stay: the screen behind this sheet is a trip that no longer exists.
+    expect(router.currentRoute.value.path).toBe('/')
+    vi.unstubAllGlobals()
+  })
+
+  it('a square trip is deleted without inventing an amount to warn about', async () => {
+    const asked: string[] = []
+    vi.stubGlobal('confirm', (message: string) => (asked.push(message), true))
+
+    const sheet = mount(InviteSheet, {
+      props: { open: true, trip: trip({ name: 'Flat', unsettledMinor: 0 }) },
+      global: global(),
+    })
+    await nextTick()
+    await findByTestId(sheet, 'delete-trip').trigger('click')
+    await flushPromises()
+
+    expect(asked[0]).toContain('Flat')
+    expect(asked[0]).not.toContain('0.00')
+    vi.unstubAllGlobals()
+  })
+
+  it('says no and nothing happens', async () => {
+    vi.stubGlobal('confirm', () => false)
+
+    const sheet = mount(InviteSheet, { props: { open: true, trip: trip() }, global: global() })
+    await nextTick()
+    await findByTestId(sheet, 'delete-trip').trigger('click')
+    await flushPromises()
+
+    expect(mocked.deleteTrip).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('a plain member is offered none of it', async () => {
+    const sheet = mount(InviteSheet, {
+      props: { open: true, trip: trip({ ...ended, youAreCreator: false }) },
+      global: global(),
+    })
+    await nextTick()
+
+    expect(findAllByTestId(sheet, 'put-away-trip')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'delete-trip')).toHaveLength(0)
   })
 })

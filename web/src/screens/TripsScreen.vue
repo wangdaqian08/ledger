@@ -11,13 +11,20 @@ import SheetPanel from '@/components/SheetPanel.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TallyCard from '@/components/TallyCard.vue'
 import TextField from '@/components/TextField.vue'
-import { ApiError } from '@/lib/api'
+import TallyIcon from '@/components/TallyIcon.vue'
+import { api, ApiError } from '@/lib/api'
 import { currencySymbol } from '@/lib/money'
 import { useSession } from '@/stores/session'
 import { useTrips } from '@/stores/trips'
 
-/** Screen 2 — GroupsHome. Every group as a card, with the overall position above them. */
-const { t } = useI18n()
+/**
+ * Screen 2 — GroupsHome. Every group as a card, with the overall position above them.
+ *
+ * Live groups first, then the ones that have ended, then — for whoever deleted them — what can
+ * still be brought back. The sections exist because a list that only ever grows stops being about
+ * the trip you are on now.
+ */
+const { t, locale } = useI18n()
 const router = useRouter()
 const session = useSession()
 const trips = useTrips()
@@ -42,6 +49,49 @@ const GROUP_ICONS = [
 ]
 
 const overview = computed(() => trips.overview)
+
+// Three lists out of one payload. The server sends every trip you are on and lets the screen
+// decide what to show, which is why hiding can be a listing decision here without a hidden trip's
+// balance quietly vanishing from the totals above.
+const live = computed(() => (overview.value?.trips ?? []).filter((trip) => !trip.closedAt))
+const completed = computed(() => (overview.value?.trips ?? []).filter((trip) => trip.closedAt))
+const putAway = computed(() => completed.value.filter((trip) => trip.hiddenAt))
+const onShow = computed(() => completed.value.filter((trip) => !trip.hiddenAt))
+const deleted = computed(() => overview.value?.deleted ?? [])
+
+const revealHidden = ref(false)
+const restoring = ref(false)
+const restoreError = ref('')
+
+// Put-away trips sit under the ones still on show, so revealing them never reorders what was
+// already there.
+const shownCompleted = computed(() =>
+  revealHidden.value ? [...onShow.value, ...putAway.value] : onShow.value,
+)
+
+// The reader's own locale, same as every other date in the app — two date orders on one screen
+// would read as a mistake.
+const purgeDate = (iso: string | null) =>
+  iso
+    ? new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: 'short', day: 'numeric' }).format(
+        new Date(iso),
+      )
+    : ''
+
+async function restore(tripId: string) {
+  if (restoring.value) return
+  restoring.value = true
+  restoreError.value = ''
+  try {
+    await api.restoreTrip(tripId)
+    await trips.loadOverview()
+  } catch (failure) {
+    restoreError.value = failure instanceof ApiError ? failure.message : String(failure)
+  } finally {
+    restoring.value = false
+  }
+}
+
 // One figure per currency: ¥ added to $ is a meaningless number, so each stands on its own line
 // with its own symbol. The server sends the per-currency breakdown already summed.
 const toneFor = (net: number) => (net === 0 ? 'settled' : net > 0 ? 'owed' : 'owe')
@@ -135,7 +185,7 @@ async function signOut() {
       />
 
       <GroupCard
-        v-for="trip in overview?.trips ?? []"
+        v-for="trip in live"
         :key="trip.id"
         data-testid="group-card"
         :name="trip.name"
@@ -147,6 +197,76 @@ async function signOut() {
         :symbol="currencySymbol(trip.currencyCode)"
         @click="router.push({ name: 'trip', params: { tripId: trip.id } })"
       />
+
+      <!-- Every group finished is a real state now that completed ones file below; without this
+           line the heading would just sit over silence. -->
+      <p
+        v-if="overview && live.length === 0 && completed.length > 0"
+        class="trips__quiet"
+        data-testid="live-empty"
+      >
+        {{ t('trips.liveEmpty') }}
+      </p>
+    </section>
+
+    <!-- Ended trips, in their own section so the list above stays about the trip you are on now.
+         Put-away ones live behind the toggle: hiding is tidying, not secrecy, so anybody looking
+         at this screen can see what was put away and open it. -->
+    <section v-if="completed.length > 0" class="trips__list" data-testid="completed-section">
+      <div class="trips__list-head">
+        <h2 class="trips__title">{{ t('trips.completed') }}</h2>
+        <TallyButton
+          v-if="putAway.length > 0"
+          variant="ghost"
+          size="sm"
+          data-testid="toggle-hidden"
+          :aria-expanded="revealHidden"
+          @click="revealHidden = !revealHidden"
+        >
+          {{ revealHidden ? t('trips.hideHidden') : t('trips.showHidden', { count: putAway.length }) }}
+        </TallyButton>
+      </div>
+
+      <GroupCard
+        v-for="trip in shownCompleted"
+        :key="trip.id"
+        data-testid="group-card"
+        :class="{ 'trips__card--away': !!trip.hiddenAt }"
+        :name="trip.name"
+        :icon="trip.icon"
+        :hue="trip.hue"
+        :members="trip.members.map((m) => ({ id: m.id, displayName: m.displayName, personHue: m.personHue }))"
+        :your-net-minor="trip.yourNetMinor"
+        :currency-code="trip.currencyCode"
+        :symbol="currencySymbol(trip.currencyCode)"
+        @click="router.push({ name: 'trip', params: { tripId: trip.id } })"
+      />
+    </section>
+
+    <!-- Only ever populated for the person who did the deleting; for everyone else the trip
+         simply ended. Each row carries the date it stops being restorable, because a promise of
+         "30 days" that the reader has to count themselves is not a promise. -->
+    <section v-if="deleted.length > 0" class="trips__list" data-testid="deleted-section">
+      <h2 class="trips__title">{{ t('trips.recentlyDeleted') }}</h2>
+      <div v-for="trip in deleted" :key="trip.id" class="trips__binned" data-testid="deleted-trip">
+        <TallyIcon :name="trip.icon" :size="20" />
+        <div class="trips__binned-text">
+          <span class="trips__binned-name">{{ trip.name }}</span>
+          <span class="trips__binned-note">{{
+            t('trips.restorableUntil', { date: purgeDate(trip.purgesAt) })
+          }}</span>
+        </div>
+        <TallyButton
+          variant="secondary"
+          size="sm"
+          data-testid="restore-trip"
+          :disabled="restoring"
+          @click="restore(trip.id)"
+        >
+          {{ t('trips.restore') }}
+        </TallyButton>
+      </div>
+      <p v-if="restoreError" class="trips__error" role="alert">{{ restoreError }}</p>
     </section>
 
     <SheetPanel :open="creating" :title="t('trips.newGroup')" @close="creating = false">
@@ -295,5 +415,46 @@ async function signOut() {
 .trips__error {
   color: var(--coral);
   font-size: var(--text-caption);
+}
+
+/* Put away, not gone: muted enough to read as filed away, but no further — the card's smallest
+   text has to stay comfortably readable, which 0.62 did not leave it. */
+.trips__card--away {
+  opacity: 0.75;
+}
+
+.trips__quiet {
+  font-size: var(--text-caption);
+  color: var(--text-muted);
+}
+
+.trips__binned {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: var(--border-card);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--text-muted);
+}
+
+.trips__binned-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.trips__binned-name {
+  font-weight: var(--weight-semibold);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.trips__binned-note {
+  font-size: var(--text-caption);
+  color: var(--text-muted);
 }
 </style>

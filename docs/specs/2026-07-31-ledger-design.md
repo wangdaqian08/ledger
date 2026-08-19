@@ -126,6 +126,8 @@ deletes the image, and only the image: every number on the expense survives.
 | Edit rights | Item payer + trip creator. Everyone else views and claims. |
 | Receipts | **One photo per expense**, attached by its payer or the creator, viewable by any member. The image is evidence, not input: no OCR, and no number is ever read out of it. The client downscales and re-encodes before upload (privacy: EXIF, including GPS, is stripped by the re-encode). |
 | Ending a trip | **The creator ends a trip, and can reopen it.** Ended means the spending record is closed — no new or changed expenses (409) — while paybacks and settle-up stay open, because squaring up happens after everyone flies home. |
+| Hiding a finished trip | **The creator hides an ended trip, and can unhide it.** Hidden is off every member's home list, not gone: the trip still opens by its link, settling and approvals carry on exactly as they do for any ended trip, and its balance still counts in your overall position. Only an ended trip can be hidden — a live trip disappearing from twelve home screens has no good reason to happen. Anyone can reveal hidden trips on their own screen; hiding is tidying, not secrecy. |
+| Deleting a trip | **The creator deletes a trip, for everyone, at any point.** It leaves every list at once, 404s by link and by invite, and its money leaves the overall totals. Reversible for **30 days** from a Recently deleted section on GroupsHome, after which a daily sweep destroys it for good — rows, receipts and stored objects. The confirmation names what is still outstanding, because the one person who can do this is the one person who should be told what it costs. |
 | Receipt retention | Images are deleted **14 days after the trip ends**: long enough to check them while settling, short enough that the store keeps no photo archive nobody asked for. The money record is never deleted, and reopening inside the window stops the clock. |
 | Currency | One per trip, ISO-4217. |
 | Language | English + 中文 switchable. i18n from commit one; English strings first, Chinese voice pass as its own task. |
@@ -253,12 +255,18 @@ users(id, provider, subject, email, display_name, photo_url, created_at)
     unique(provider, subject)
 
 trips(id, name, icon, hue, currency_code, created_by_user_id,
-      starts_on, ends_on, created_at, closed_at)
+      starts_on, ends_on, created_at, closed_at, hidden_at, deleted_at)
                                            -- icon: a Lucide slug (plane, house, coffee)
                                            -- hue:  1..8, the disc colour on GroupCard
                                            -- closed_at: when the creator ended the trip; null
                                            -- while live. V4 renamed V1's never-read archived_at
                                            -- sketch to this. Starts the receipt retention clock.
+                                           -- hidden_at: creator tidied an ended trip off every
+                                           -- member's list. A CHECK forbids it while closed_at
+                                           -- is null, so "hidden" can only ever mean "finished
+                                           -- and put away", never "disappeared mid-trip".
+                                           -- deleted_at: soft delete, for everyone. Filtered out
+                                           -- of every read path; purged 30 days later.
 
 trip_members(id, trip_id, display_name, person_hue, user_id NULL, created_at)
     unique(trip_id, display_name)          -- user_id NULL until claimed
@@ -343,6 +351,8 @@ hue from the person ramp. Custom categories are scoped to their trip. **No emoji
 | edit or delete item (amount, category, date, **people list**) | item payer + trip creator |
 | attach / replace / remove an expense's receipt | item payer + trip creator, while the trip is open |
 | end or reopen a trip | trip creator |
+| hide or unhide an ended trip | trip creator |
+| delete or restore a trip | trip creator — the only right that reaches everyone else's list |
 | submit a payback claim | the claiming member |
 | approve / reject a payback | item payer + trip creator |
 | view everything | any trip member — receipts included, and still after the trip ends |
@@ -358,7 +368,7 @@ hue from the person ramp. Custom categories are scoped to their trip. **No emoji
 
 | Screen (`Screens.jsx`) | Needs | Endpoint |
 |---|---|---|
-| `GroupsHome` | every group's name, icon, hue, member avatars, your net; overall net **per currency** (never summed across currencies — ¥ added to $ is a meaningless figure); count settled | `GET /api/trips` |
+| `GroupsHome` | every group's name, icon, hue, member avatars, your net; overall net **per currency** (never summed across currencies — ¥ added to $ is a meaningless figure); count settled. Live groups first, then a **Completed** section holding the ended ones, with hidden trips behind a "Show put away" toggle inside it; a **Recently deleted** section appears for the creator only while something is restorable, each row carrying the date it purges | `GET /api/trips` |
 | `OverallScreen` | net **per person across all groups**, and which groups each debt came from; total spent; what you fronted | `GET /api/overview` |
 | `GroupDetail` | balance hero, three stats, who-owes-who rows, members, currency, start date, expenses grouped by day, filters | `GET /api/trips/{id}` |
 | `ExpenseDetailSheet` | title, category, date, total, your share, payer, per-person splits, note | *(in the trip payload — see below)* |
@@ -388,6 +398,12 @@ POST   /api/trips/{id}/claimable    { token } — the link's landing page: trip 
 POST   /api/trips/{id}/claim        { token, memberId }
 POST   /api/trips/{id}/close        creator ends the trip — expense writes 409 from here
 POST   /api/trips/{id}/reopen       …and takes it back; already-swept receipts stay gone
+POST   /api/trips/{id}/hide         creator tidies an ended trip off every member's list; 409
+                                    while the trip is still open
+POST   /api/trips/{id}/unhide       …and puts it back on them
+DELETE /api/trips/{id}              creator deletes for everyone — 404 from here for everyone,
+                                    the creator included; only their Recently deleted list still knows
+POST   /api/trips/{id}/restore      creator only, inside the 30 days, from Recently deleted
 GET    /api/trips/{id}/categories   eight built-ins + this trip's custom ones
 POST   /api/trips/{id}/categories   { name, icon, hue }
 

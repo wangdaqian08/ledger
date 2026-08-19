@@ -4,6 +4,7 @@ import app.ledger.server.auth.LedgerPrincipal
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -68,6 +69,32 @@ class TripController(private val trips: TripService) {
         @PathVariable tripId: UUID,
         @AuthenticationPrincipal principal: LedgerPrincipal,
     ): TripView = trips.reopen(tripId, principal.userId)
+
+    @PostMapping("/{tripId}/hide")
+    fun hide(
+        @PathVariable tripId: UUID,
+        @AuthenticationPrincipal principal: LedgerPrincipal,
+    ): TripView = trips.hide(tripId, principal.userId)
+
+    @PostMapping("/{tripId}/unhide")
+    fun unhide(
+        @PathVariable tripId: UUID,
+        @AuthenticationPrincipal principal: LedgerPrincipal,
+    ): TripView = trips.unhide(tripId, principal.userId)
+
+    /** 204: after this the trip is gone for everyone, so there is no trip left to hand back. */
+    @DeleteMapping("/{tripId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun delete(
+        @PathVariable tripId: UUID,
+        @AuthenticationPrincipal principal: LedgerPrincipal,
+    ) = trips.delete(tripId, principal.userId)
+
+    @PostMapping("/{tripId}/restore")
+    fun restore(
+        @PathVariable tripId: UUID,
+        @AuthenticationPrincipal principal: LedgerPrincipal,
+    ): TripView = trips.restore(tripId, principal.userId)
 
     @PostMapping("/{tripId}/claim")
     fun claim(

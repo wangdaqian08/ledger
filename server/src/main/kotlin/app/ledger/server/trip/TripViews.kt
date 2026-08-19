@@ -43,6 +43,12 @@ data class TripView(
     val items: List<ItemView>,
     /** Positive means the group owes you. Derived by the engine, never stored. */
     val yourNetMinor: Long,
+    /**
+     * What the whole group still has open: every positive net summed, which by invariant 1 equals
+     * everything the owing side owes. The delete dialog reads this — the person erasing a trip
+     * must be told what the group still has unsettled even when they personally are square.
+     */
+    val unsettledMinor: Long,
     /** The three headline figures, derived by the engine here so no screen recomputes them. */
     val groupSpendMinor: Long,
     val yourShareMinor: Long,
@@ -58,6 +64,27 @@ data class TripView(
      * affordances of an ended trip rather than offering buttons the server will refuse with 409.
      */
     val closedAt: Instant?,
+    /**
+     * When the creator put an ended trip away, off every member's home list; null while it is on
+     * them. A listing fact and nothing more — a hidden trip opens, settles and counts exactly like
+     * any other ended one, which is why nothing but the home screen reads this.
+     */
+    val hiddenAt: Instant?,
+)
+
+/**
+ * One row of GroupsHome's Recently deleted section: enough to recognise the trip and to say when
+ * it stops being restorable. Deliberately not a [TripView] — a deleted trip has no balance anybody
+ * should be reading, and handing one over would invite a screen to show it.
+ */
+data class DeletedTripView(
+    val id: UUID,
+    val name: String,
+    val icon: String,
+    val hue: Short,
+    val deletedAt: Instant?,
+    /** When the sweep destroys it for good, so the deadline on screen is never a guess. */
+    val purgesAt: Instant?,
 )
 
 /** GroupsHome: every group, the per-currency overall figures, and how many are settled. */
@@ -69,6 +96,11 @@ data class TripsView(
      */
     val overalls: List<CurrencyTotalView>,
     val settledTripCount: Int,
+    /**
+     * What the viewer has deleted and can still bring back, newest first. Empty for everyone but
+     * the person who deleted them, and empty for them too once the sweep has been through.
+     */
+    val deleted: List<DeletedTripView> = emptyList(),
 )
 
 data class CurrencyTotalView(val currencyCode: String, val netMinor: Long)

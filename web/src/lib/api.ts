@@ -133,6 +133,12 @@ export interface TripView {
   members: MemberView[]
   items: ItemView[]
   yourNetMinor: number
+  /**
+   * What the whole group still has open: every positive net summed. The delete dialog reads this
+   * rather than the viewer's own net, so a host who is personally square is still told what the
+   * rest of the group has unsettled before they erase it.
+   */
+  unsettledMinor: number
   /** The three headline figures, derived by the engine so no screen recomputes them. */
   groupSpendMinor: number
   yourShareMinor: number
@@ -145,6 +151,22 @@ export interface TripView {
    * their receipt images 14 days on.
    */
   closedAt: string | null
+  /**
+   * When the creator put an ended trip away, off every member's home list; null while it is on
+   * them. Only GroupsHome reads this — a hidden trip opens, settles and counts like any other
+   * ended one, so nothing else has any business behaving differently.
+   */
+  hiddenAt: string | null
+}
+
+/** A trip its creator deleted and can still bring back, until [purgesAt] passes. */
+export interface DeletedTripView {
+  id: string
+  name: string
+  icon: string
+  hue: number
+  deletedAt: string | null
+  purgesAt: string | null
 }
 
 /** One overall total per currency the viewer holds a trip in — never summed across currencies. */
@@ -157,6 +179,11 @@ export interface TripsView {
   trips: TripView[]
   overalls: CurrencyTotal[]
   settledTripCount: number
+  /**
+   * What you deleted and can still restore. Empty for everyone else, and defaulted here because
+   * an older server omits the field entirely — the section simply does not appear.
+   */
+  deleted?: DeletedTripView[]
 }
 
 export type PaybackStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
@@ -277,6 +304,10 @@ export const api = {
     request<TripView>('POST', '/api/trips', body),
   trip: (tripId: string) => request<TripView>('GET', `/api/trips/${tripId}`),
   invite: (tripId: string) => request<InviteView>('POST', `/api/trips/${tripId}/invite`, {}),
+  hideTrip: (tripId: string) => request<TripView>('POST', `/api/trips/${tripId}/hide`, {}),
+  unhideTrip: (tripId: string) => request<TripView>('POST', `/api/trips/${tripId}/unhide`, {}),
+  deleteTrip: (tripId: string) => request<void>('DELETE', `/api/trips/${tripId}`),
+  restoreTrip: (tripId: string) => request<TripView>('POST', `/api/trips/${tripId}/restore`, {}),
   claimable: (tripId: string, token: string) =>
     request<ClaimableView>('POST', `/api/trips/${tripId}/claimable`, { token }),
   claim: (tripId: string, token: string, memberId: string) =>
