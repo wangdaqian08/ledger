@@ -26,19 +26,19 @@ class ReceiptRetention(
 ) {
     private val log = LoggerFactory.getLogger(ReceiptRetention::class.java)
 
-    @Scheduled(cron = "0 17 3 * * *")
-    fun sweep() {
-        purgeExpired()
-    }
-
     /**
      * The object goes first, the row second: a lost object with a lingering row answers 404 and
      * is retried tomorrow, while a lost row with a lingering object would sit in the bucket
      * forever with nothing left pointing at it. One failing receipt is logged and skipped rather
      * than aborting the rest of the sweep.
      *
+     * `@Scheduled` and `@Transactional` stay on this one method rather than a scheduled wrapper
+     * calling a transactional one: a call from within the same class does not cross the proxy,
+     * so `@Transactional` on the callee would silently never apply to the one caller that matters.
+     *
      * @return how many receipts were removed.
      */
+    @Scheduled(cron = "0 17 3 * * *")
     @Transactional
     fun purgeExpired(): Int {
         val cutoff = clock.instant().minus(properties.retention)
