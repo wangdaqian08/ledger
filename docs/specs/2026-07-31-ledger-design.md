@@ -540,7 +540,9 @@ deliberately naive and must not be copied.
 
 ### Screens (phase 1)
 
-1. **Sign in** — one Google button. Dev build shows a name picker.
+1. **Sign in** — one Google button. Dev build shows a name picker. The deployed tag sits in the
+   corner (`VITE_APP_VERSION`, baked in at build time), so a bug report carries what's actually
+   running.
 2. **Trips** — `GroupCard` tiles with member `AvatarStack`, overall balance hero.
 3. **Trip home** — balance hero, items grouped by calendar day as `ExpenseRow`s, raised `+`.
 4. **Add item** — `Keypad` amount → `CategoryPicker` → who paid → `PersonToggleRow`

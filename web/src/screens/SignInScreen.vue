@@ -21,6 +21,7 @@ const session = useSession()
 const name = ref('')
 const busy = ref(false)
 const error = ref('')
+const version = import.meta.env.VITE_APP_VERSION || 'dev'
 
 onMounted(async () => {
   // Asking "who am I" does two jobs when this is the first page someone opens: the answer sends a
@@ -53,6 +54,7 @@ async function submit() {
 <template>
   <main class="signin">
     <LocaleToggle class="signin__locale" />
+    <p class="signin__version" data-testid="app-version">{{ version }}</p>
     <div class="signin__brand">
       <h1 class="signin__title">{{ t('signin.title') }}</h1>
       <p class="signin__tagline">{{ t('signin.tagline') }}</p>
@@ -96,6 +98,14 @@ async function submit() {
   position: absolute;
   top: max(var(--space-4), env(safe-area-inset-top));
   right: var(--space-4);
+}
+
+.signin__version {
+  position: absolute;
+  bottom: max(var(--space-4), env(safe-area-inset-bottom));
+  left: var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-caption);
 }
 
 .signin__brand {

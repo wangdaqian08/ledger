@@ -28,10 +28,17 @@ browser ── https ──> nginx (TLS, VM werewolf-server, e2-micro us-east1-d
 
 ## Releasing a new version
 
+Tag the commit being shipped first — the tag is what `git describe` bakes into the sign-in
+screen's corner, so it's the one fact tying a bug report to what's actually running:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
 ```bash
 git checkout main && git pull                       # deploys always come from merged main
 npm --prefix web ci
-VITE_BASE=/ledger/ npm --prefix web run build       # base is the one fact that moves the SPA
+VITE_BASE=/ledger/ VITE_APP_VERSION=$(git describe --tags --always) npm --prefix web run build
 ./gradlew :server:bootJar -PrequireSpa=/ledger/     # refuses a missing or wrong-base bundle
 gcloud compute scp server/build/libs/ledger.jar werewolf-server:/tmp/ledger-<sha>.jar --zone=us-east1-d
 gcloud compute ssh werewolf-server --zone=us-east1-d --command='

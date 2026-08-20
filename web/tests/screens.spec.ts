@@ -200,6 +200,28 @@ describe('SignInScreen', () => {
   })
 })
 
+describe('SignInScreen version footer', () => {
+  it("shows 'dev' when no build-time version is baked in", async () => {
+    await router.push('/signin')
+
+    const screen = mount(SignInScreen, { global: global() })
+    await flushPromises()
+
+    expect(findByTestId(screen, 'app-version').text()).toBe('dev')
+  })
+
+  it('shows the tagged release version baked in at build time', async () => {
+    vi.stubEnv('VITE_APP_VERSION', 'v0.3.1')
+    await router.push('/signin')
+
+    const screen = mount(SignInScreen, { global: global() })
+    await flushPromises()
+
+    expect(findByTestId(screen, 'app-version').text()).toBe('v0.3.1')
+    vi.unstubAllEnvs()
+  })
+})
+
 describe('TripsScreen', () => {
   it('shows every group and the overall position', async () => {
     mocked.me!.mockResolvedValue({
