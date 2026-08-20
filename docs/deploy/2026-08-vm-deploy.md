@@ -110,3 +110,9 @@ Retention is the app's own daily sweep (`ReceiptRetention`, 14 days after a trip
 **not** a bucket lifecycle rule — an age-based rule would delete the receipts of any trip that
 simply runs long. A crashed upload can in principle strand an unreferenced object; at this scale
 that is a hand-cleanable curiosity, visible with `gcloud storage ls`.
+
+**Provisioned 2026-08-20**, bucket/SA/key/env exactly as above. Prod had been running the
+pre-receipts jar (`4a000ac`, the first deploy) the whole time until then — merged main and what's
+actually running on the VM are two different things, and it's worth checking `readlink
+/opt/ledger/ledger.jar` against `git log` before assuming a merged PR is live. PRs #27-#30 landed
+in the same catch-up release, tagged `v0.1.0`.
