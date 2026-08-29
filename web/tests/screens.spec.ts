@@ -17,8 +17,8 @@ import TripScreen from '../src/screens/TripScreen.vue'
 import TripsScreen from '../src/screens/TripsScreen.vue'
 import { findAllByTestId, findByTestId } from './testids'
 import en from '../src/i18n/en'
-import { useSession } from '../src/stores/session'
-import { saltFor, splitShares } from '../src/lib/split'
+import { useSession } from '@/stores/session'
+import { saltFor, splitShares } from '@/lib/split'
 import type {
   ItemView,
   MemberView,
@@ -27,7 +27,8 @@ import type {
   SettlementView,
   TripsView,
   TripView,
-} from '../src/lib/api'
+} from '@/lib/api'
+import TallyButton from '@/components/TallyButton.vue'
 
 /**
  * The screens against a scripted API. Every number a screen shows must be traceable to the
@@ -553,6 +554,11 @@ describe('AddExpenseSheet', () => {
       expect(sheet.text()).toContain((share / 100).toFixed(2))
     }
 
+    // The comment is folded away until it is wanted — an optional afterthought like the photo.
+    expect(findByTestId(sheet, 'comment-input').exists()).toBe(false)
+    await findByTestId(sheet, 'comment-toggle').trigger('click')
+    await findByTestId(sheet, 'comment-input').setValue('  Cara sat this one out  ')
+
     await findByTestId(sheet, 'save-expense').trigger('click')
     await flushPromises()
 
@@ -563,7 +569,125 @@ describe('AddExpenseSheet', () => {
         amountMinor: 10_001,
         splitRule: 'EQUAL',
         sharedBy: [{ memberId: you.id }, { memberId: bob.id }],
+        note: 'Cara sat this one out',
       }),
+    )
+  })
+
+  it('refuses to save a comment past the limit, and never carries one into the next expense', async () => {
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('cafebabe-dead-4eef-cafe-babedead4eef')
+    mocked.createItem!.mockResolvedValue(item({}))
+    const sheet = mount(AddExpenseSheet, {
+      props: { open: false, trip: trip(), categories: foodCategories },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await nextTick()
+
+    await findByTestId(sheet, 'key-5').trigger('click')
+    await findByTestId(sheet, 'next-step').trigger('click')
+    await findByTestId(sheet, 'split-all').trigger('click')
+    await findByTestId(sheet, 'comment-toggle').trigger('click')
+
+    const tooMany = Array.from({ length: 101 }, (_, i) => `w${i}`).join(' ')
+    await findByTestId(sheet, 'comment-input').setValue(tooMany)
+    expect(findByTestId(sheet, 'save-expense').attributes('disabled')).toBeDefined()
+
+    // Back under the limit and the save is offered again.
+    await findByTestId(sheet, 'comment-input').setValue('short enough')
+    expect(findByTestId(sheet, 'save-expense').attributes('disabled')).toBeUndefined()
+
+    // A fresh sheet is a fresh expense: the last comment must not ride along on the next bill.
+    await sheet.setProps({ open: false })
+    await sheet.setProps({ open: true })
+    await nextTick()
+    await findByTestId(sheet, 'key-5').trigger('click')
+    await findByTestId(sheet, 'next-step').trigger('click')
+    expect(findByTestId(sheet, 'comment-input').exists()).toBe(false)
+    await findByTestId(sheet, 'comment-toggle').trigger('click')
+    expect((findByTestId(sheet, 'comment-input').element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('refuses an over-long comment in the save itself, not only on the button', async () => {
+    // A disabled attribute is a courtesy to whoever is looking, not a rule. Reach the handler the
+    // way a future Enter-to-submit would and it still has to refuse, or the server does it for us.
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('cafebabe-dead-4eef-cafe-babedead4eef')
+    mocked.createItem!.mockResolvedValue(item({}))
+    const sheet = mount(AddExpenseSheet, {
+      props: { open: false, trip: trip(), categories: foodCategories },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await nextTick()
+
+    await findByTestId(sheet, 'key-5').trigger('click')
+    await findByTestId(sheet, 'next-step').trigger('click')
+    await findByTestId(sheet, 'split-all').trigger('click')
+    await findByTestId(sheet, 'comment-toggle').trigger('click')
+    await findByTestId(sheet, 'comment-input').setValue(
+      Array.from({ length: 101 }, (_, i) => `w${i}`).join(' '),
+    )
+
+    const save = sheet
+      .findAllComponents(TallyButton)
+      .find((button) => button.attributes('data-testid') === 'save-expense')!
+    save.vm.$emit('click')
+    await flushPromises()
+
+    expect(mocked.createItem).not.toHaveBeenCalled()
+  })
+
+  it('counts a typed comment as work worth asking about before the sheet is dismissed', async () => {
+    // Everything else that makes the sheet dirty is walked back — the amount deleted to nothing,
+    // the title never typed, no photo, back on step 1 — leaving the comment as the only thing a
+    // dismissal would destroy. It still has to be asked about.
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('cafebabe-dead-4eef-cafe-babedead4eef')
+    const asked: string[] = []
+    vi.stubGlobal('confirm', (message: string) => (asked.push(message), false))
+
+    const sheet = mount(AddExpenseSheet, {
+      props: { open: false, trip: trip(), categories: foodCategories },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await nextTick()
+
+    await findByTestId(sheet, 'key-5').trigger('click')
+    await findByTestId(sheet, 'next-step').trigger('click')
+    await findByTestId(sheet, 'comment-toggle').trigger('click')
+    await findByTestId(sheet, 'comment-input').setValue('Cara sat this one out')
+    await findByTestId(sheet, 'back-step').trigger('click')
+    await findByTestId(sheet, 'key-del').trigger('click')
+
+    await findByTestId(sheet, 'sheet-close').trigger('click')
+
+    expect(asked).toEqual([en.addExpense.discardConfirm])
+    expect(sheet.emitted('close')).toBeUndefined()
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps the comment unfolded across a step back and forward', async () => {
+    // The disclosure is the sheet's state, not the field's private business: stepping back
+    // rebuilds this half of the screen, and a comment already being written must not come back
+    // hidden behind a folded row.
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('cafebabe-dead-4eef-cafe-babedead4eef')
+    const sheet = mount(AddExpenseSheet, {
+      props: { open: false, trip: trip(), categories: foodCategories },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await nextTick()
+
+    await findByTestId(sheet, 'key-5').trigger('click')
+    await findByTestId(sheet, 'next-step').trigger('click')
+    await findByTestId(sheet, 'comment-toggle').trigger('click')
+    await findByTestId(sheet, 'comment-input').setValue('Cara sat this one out')
+
+    await findByTestId(sheet, 'back-step').trigger('click')
+    await findByTestId(sheet, 'next-step').trigger('click')
+
+    expect((findByTestId(sheet, 'comment-input').element as HTMLTextAreaElement).value).toBe(
+      'Cara sat this one out',
     )
   })
 })
@@ -725,6 +849,192 @@ describe('ItemDetailSheet', () => {
   })
 })
 
+describe('ItemDetailSheet comment', () => {
+  async function openSheet(tripView: TripView = trip()) {
+    const sheet = mount(ItemDetailSheet, {
+      props: { open: false, itemId: 'i-1', trip: tripView, categories: [] },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await flushPromises()
+    return sheet
+  }
+
+  it('lets the payer rewrite the comment, and shows the new words without a reload', async () => {
+    mocked.itemDetail!.mockResolvedValueOnce({ ...item({ note: 'Cara sat this one out' }), paybacks: [] })
+    mocked.patchItem!.mockResolvedValue(item({ note: 'Cara joined after all' }))
+    mocked.itemDetail!.mockResolvedValue({ ...item({ note: 'Cara joined after all' }), paybacks: [] })
+
+    const sheet = await openSheet()
+    expect(sheet.text()).toContain('Cara sat this one out')
+
+    // The comment itself is the way in — no separate pencil to hunt for.
+    await findByTestId(sheet, 'comment-edit').trigger('click')
+    expect((findByTestId(sheet, 'comment-input').element as HTMLTextAreaElement).value).toBe(
+      'Cara sat this one out',
+    )
+
+    await findByTestId(sheet, 'comment-input').setValue('Cara joined after all')
+    await findByTestId(sheet, 'comment-save').trigger('click')
+    await flushPromises()
+
+    expect(mocked.patchItem).toHaveBeenCalledWith('i-1', { note: 'Cara joined after all' })
+    expect(sheet.text()).toContain('Cara joined after all')
+    expect(findByTestId(sheet, 'comment-input').exists()).toBe(false)
+  })
+
+  it('lets a bill with no comment yet be given one', async () => {
+    mocked.itemDetail!.mockResolvedValueOnce({ ...item({ note: null }), paybacks: [] })
+    mocked.patchItem!.mockResolvedValue(item({ note: 'Split the taxi too' }))
+    mocked.itemDetail!.mockResolvedValue({ ...item({ note: 'Split the taxi too' }), paybacks: [] })
+
+    const sheet = await openSheet()
+    // Folded away, exactly as on the add screen — a comment is never the reason this sheet is open.
+    expect(findByTestId(sheet, 'comment-input').exists()).toBe(false)
+    await findByTestId(sheet, 'comment-toggle').trigger('click')
+    await findByTestId(sheet, 'comment-input').setValue('Split the taxi too')
+    await findByTestId(sheet, 'comment-save').trigger('click')
+    await flushPromises()
+
+    expect(mocked.patchItem).toHaveBeenCalledWith('i-1', { note: 'Split the taxi too' })
+  })
+
+  it('gives a bystander the comment to read and no way to touch it', async () => {
+    mocked.itemDetail!.mockResolvedValue({
+      ...item({ payerMemberId: bob.id, note: 'Cara sat this one out' }),
+      paybacks: [],
+    })
+    const sheet = await openSheet(trip({ youAreCreator: false }))
+
+    expect(sheet.text()).toContain('Cara sat this one out')
+    expect(findAllByTestId(sheet, 'comment-edit')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'comment-toggle')).toHaveLength(0)
+  })
+
+  it('shows nothing at all to a bystander when there is no comment', async () => {
+    mocked.itemDetail!.mockResolvedValue({ ...item({ payerMemberId: bob.id, note: null }), paybacks: [] })
+    const sheet = await openSheet(trip({ youAreCreator: false }))
+
+    expect(findAllByTestId(sheet, 'comment-edit')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'comment-toggle')).toHaveLength(0)
+  })
+
+  it('offers no comment editing once the trip has ended', async () => {
+    // The spending record is closed (the server answers 409); the comment is part of it, so it
+    // stays readable and stops being writable, exactly like the receipt.
+    mocked.itemDetail!.mockResolvedValue({ ...item({ note: 'Cara sat this one out' }), paybacks: [] })
+    const sheet = await openSheet(trip({ closedAt: '2026-08-18T03:00:00Z' }))
+
+    expect(sheet.text()).toContain('Cara sat this one out')
+    expect(findAllByTestId(sheet, 'comment-edit')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'comment-toggle')).toHaveLength(0)
+  })
+
+  it('separates discarding an edit from deleting the comment outright', async () => {
+    mocked.itemDetail!.mockResolvedValue({ ...item({ note: 'Cara sat this one out' }), paybacks: [] })
+    mocked.patchItem!.mockResolvedValue(item({ note: null }))
+    const asked: string[] = []
+    // The global stub answers yes to everything, which would walk straight through the deletion
+    // question without ever proving it was put. Capture it, and answer no the first time.
+    const answers = [false, true]
+    vi.stubGlobal('confirm', (message: string) => (asked.push(message), answers.shift() ?? true))
+
+    const sheet = await openSheet()
+
+    // Emptying the box and backing out changes nothing at all, and asks nothing either.
+    await findByTestId(sheet, 'comment-edit').trigger('click')
+    await findByTestId(sheet, 'comment-input').setValue('')
+    await findByTestId(sheet, 'comment-discard').trigger('click')
+    await flushPromises()
+    expect(asked).toHaveLength(0)
+    expect(mocked.patchItem).not.toHaveBeenCalled()
+    expect(sheet.text()).toContain('Cara sat this one out')
+
+    // Emptying it and saving is a deletion, so it is asked about — and answering no does nothing.
+    await findByTestId(sheet, 'comment-edit').trigger('click')
+    await findByTestId(sheet, 'comment-input').setValue('')
+    await findByTestId(sheet, 'comment-save').trigger('click')
+    await flushPromises()
+    expect(asked).toEqual([en.comment.removeConfirm])
+    expect(mocked.patchItem).not.toHaveBeenCalled()
+    // Cold feet costs nothing: the editor is still up, and backing out restores the words.
+    expect(findByTestId(sheet, 'comment-input').exists()).toBe(true)
+    await findByTestId(sheet, 'comment-discard').trigger('click')
+    expect(sheet.text()).toContain('Cara sat this one out')
+
+    // Saying yes is how a comment is removed — the server maps "" to null.
+    await findByTestId(sheet, 'comment-edit').trigger('click')
+    await findByTestId(sheet, 'comment-input').setValue('')
+    await findByTestId(sheet, 'comment-save').trigger('click')
+    await flushPromises()
+    expect(asked).toHaveLength(2)
+    expect(mocked.patchItem).toHaveBeenCalledWith('i-1', { note: '' })
+    vi.unstubAllGlobals()
+  })
+
+  it('folds the whole editor away together, never a Save over a box that is gone', async () => {
+    // One disclosure, one owner. Collapsing the row used to hide only the textarea, leaving Save
+    // and Discard over an invisible draft, the existing comment gone from the screen, and the row
+    // labelled as though there were no comment at all.
+    mocked.itemDetail!.mockResolvedValue({ ...item({ note: 'Cara sat this one out' }), paybacks: [] })
+    const sheet = await openSheet()
+
+    await findByTestId(sheet, 'comment-edit').trigger('click')
+    expect(findByTestId(sheet, 'comment-input').exists()).toBe(true)
+
+    await findByTestId(sheet, 'comment-toggle').trigger('click')
+    await nextTick()
+
+    expect(findAllByTestId(sheet, 'comment-input')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'comment-save')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'comment-discard')).toHaveLength(0)
+    // Back to the paragraph it came from, words and all.
+    expect(sheet.text()).toContain('Cara sat this one out')
+    expect(findByTestId(sheet, 'comment-edit').exists()).toBe(true)
+  })
+
+  it('never carries a half-typed comment from one bill to the next', async () => {
+    mocked.itemDetail!.mockResolvedValue({ ...item({ note: null }), paybacks: [] })
+    const sheet = await openSheet()
+
+    await findByTestId(sheet, 'comment-toggle').trigger('click')
+    await findByTestId(sheet, 'comment-input').setValue('half a thought')
+
+    mocked.itemDetail!.mockResolvedValue({ ...item({ id: 'i-2', note: null }), paybacks: [] })
+    await sheet.setProps({ itemId: 'i-2' })
+    await flushPromises()
+
+    // A different bill, folded shut, with nothing of the last one in it.
+    expect(findAllByTestId(sheet, 'comment-input')).toHaveLength(0)
+    await findByTestId(sheet, 'comment-toggle').trigger('click')
+    expect((findByTestId(sheet, 'comment-input').element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('keeps the words on screen when the save fails, rather than making them be retyped', async () => {
+    mocked.itemDetail!.mockResolvedValue({ ...item({ note: 'Cara sat this one out' }), paybacks: [] })
+    mocked.patchItem!.mockRejectedValue(new Error('Network unreachable'))
+
+    const sheet = await openSheet()
+    await findByTestId(sheet, 'comment-edit').trigger('click')
+    await findByTestId(sheet, 'comment-input').setValue('Cara joined after all')
+    await findByTestId(sheet, 'comment-save').trigger('click')
+    await flushPromises()
+
+    expect(sheet.text()).toContain('Network unreachable')
+    expect((findByTestId(sheet, 'comment-input').element as HTMLTextAreaElement).value).toBe(
+      'Cara joined after all',
+    )
+  })
+
+  it('says what tapping the comment does, not only what the comment says', async () => {
+    // The paragraph is the edit button; without a name of its own a screen reader announces the
+    // comment's text followed by "button" and leaves what it would do to guesswork.
+    mocked.itemDetail!.mockResolvedValue({ ...item({ note: 'Cara sat this one out' }), paybacks: [] })
+    const sheet = await openSheet()
+
+    expect(findByTestId(sheet, 'comment-edit').attributes('aria-label')).toBe(en.comment.edit)
+  })
+})
 describe('EditSplitSheet', () => {
   it('previews the re-divided shares with the existing salt, and saves what it showed', async () => {
     // The hotel case in one sheet: Cara was left off the bill; ticking her on re-divides 9000

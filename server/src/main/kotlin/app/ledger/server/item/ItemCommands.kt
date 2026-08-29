@@ -43,7 +43,7 @@ data class CreateItem(
     val splitRule: SplitRuleName = SplitRuleName.EQUAL,
     val payerMemberId: UUID,
     val spentOn: LocalDate,
-    @field:Size(max = 500)
+    @field:Size(max = 1200)
     val note: String? = null,
     @field:NotEmpty(message = "an expense has to be shared by somebody")
     @field:Valid
@@ -65,7 +65,7 @@ data class PatchItem(
     val splitRule: SplitRuleName? = null,
     val payerMemberId: UUID? = null,
     val spentOn: LocalDate? = null,
-    @field:Size(max = 500)
+    @field:Size(max = 1200)
     val note: String? = null,
     @field:Valid
     val sharedBy: List<ShareInput>? = null,

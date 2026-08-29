@@ -281,6 +281,18 @@ items(id, trip_id, title, category_id, amount_minor BIGINT, payer_member_id,
                                            -- balance is a sum into a Long, so an unbounded amount
                                            -- could wrap the sum past Long.MAX and break the two
                                            -- invariants under a 200.
+                                           -- note is the comment somebody adds while recording the
+                                           -- spend, bounded on input twice: 100 words, under a
+                                           -- 1200-character backstop. Two limits because Chinese
+                                           -- writes without spaces, so a paragraph of it counts as
+                                           -- one word — the word count bounds English, the
+                                           -- character cap bounds everything else. The counting
+                                           -- rule (trim, split on any run of whitespace, drop the
+                                           -- empties) is shared verbatim with the browser, so its
+                                           -- live counter and the server's refusal cannot disagree
+                                           -- about the same text. Empty clears it; the same limits
+                                           -- apply to a patch, or they are two requests away from
+                                           -- being no limits at all.  
                                            -- version: optimistic lock. Two edits from the same
                                            -- starting state cannot both land — the second gets a
                                            -- 409, not a silent overwrite of the first's people list.

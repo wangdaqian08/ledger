@@ -1,0 +1,16 @@
+[
+  {"text": "", "words": 0},
+  {"text": "   ", "words": 0},
+  {"text": "\n\t  \n", "words": 0},
+  {"text": "dinner", "words": 1},
+  {"text": "   dinner   ", "words": 1},
+  {"text": "split the bill", "words": 3},
+  {"text": "split     the   bill", "words": 3},
+  {"text": "a\nb\tc\r\nd", "words": 4},
+  {"text": "quote \"inside\" it", "words": 3},
+  {"text": "晚饭是我先垫付的", "words": 1},
+  {"text": "晚饭 是我先垫付的", "words": 2},
+  {"text": "晚饭\u3000是我先垫付的\u3000记得还我", "words": 3},
+  {"text": "\u3000晚饭\u3000", "words": 1},
+  {"text": "a\u00a0b\u00a0c", "words": 3}
+]

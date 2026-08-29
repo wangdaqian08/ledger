@@ -58,6 +58,7 @@ class ItemService(
         validateAgainstRoster(trip, command.payerMemberId, command.sharedBy)
         validateSplit(command.splitRule, command.amountMinor, command.sharedBy)
         requireCategoryAvailable(trip.id, command.categoryId)
+        requireCommentWithinLimit(command.note)
 
         val item = ItemEntity(
             id = command.id ?: UUID.randomUUID(),
@@ -132,6 +133,7 @@ class ItemService(
             sharedBy = effectiveShares,
         )
         command.categoryId?.let { requireCategoryAvailable(trip.id, it) }
+        requireCommentWithinLimit(command.note)
 
         command.title?.let {
             val trimmed = it.trim()
@@ -196,7 +198,6 @@ class ItemService(
     private fun validateSplit(rule: SplitRuleName, amountMinor: Long, sharedBy: List<ShareInput>) {
         when (rule) {
             SplitRuleName.EQUAL -> {
-                Unit
             }
 
             SplitRuleName.WEIGHTED -> {
@@ -249,6 +250,29 @@ class ItemService(
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * A comment's product limit, applied identically on create and on patch — a rule create holds
+     * and patch does not is a rule anybody can walk around in two requests.
+     *
+     * Words, not characters, because words are what a person writing a comment can feel. The
+     * character cap on the command (`@Size(max = 1200)`) is the backstop underneath, and it is the
+     * only bound that fires for Chinese, which writes without spaces and so counts a whole
+     * paragraph as one word.
+     *
+     * The counting rule is a cross-language contract — see [countCommentWords], which the browser
+     * mirrors so its live counter and this refusal cannot disagree about the same text.
+     */
+    private fun requireCommentWithinLimit(note: String?) {
+        val text = note ?: return
+        val words = countCommentWords(text)
+        if (words > MAX_COMMENT_WORDS) {
+            throw ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "a comment is limited to $MAX_COMMENT_WORDS words, got $words",
+            )
         }
     }
 
