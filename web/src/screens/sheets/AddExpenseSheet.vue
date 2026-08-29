@@ -393,7 +393,7 @@ async function save() {
       </section>
 
       <section class="add__section">
-        <CommentField v-model="note" v-model:open="noteOpen" v-model:aria-invalid="noteTooLong" />
+        <CommentField v-model="note" v-model:open="noteOpen" v-model:invalid="noteTooLong" />
       </section>
       <p v-if="error" class="add__error" role="alert">{{ error }}</p>
 
