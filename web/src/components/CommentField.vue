@@ -81,19 +81,19 @@ watch(over, (bad) => (invalid.value = bad), { immediate: true })
     <!-- Something for aria-controls to point at whether or not the box is up; `display: contents`
          keeps it out of the layout, so the rows below stay exactly where they were. -->
     <div :id="panelId" class="comment__panel">
-       <textarea
-         v-if="open"
-         v-model="model"
-         class="comment__input"
-         :class="{ 'comment__input--over': over }"
-         data-testid="comment-input"
-         rows="3"
-         :placeholder="t('comment.placeholder')"
-         :maxlength="COMMENT_MAX_CHARS"
-         :aria-labelledby="labelId"
-         :aria-describedby="countId"
-         :aria-invalid="over ? 'true' : undefined"
-       ></textarea>
+      <textarea
+        v-if="open"
+        v-model="model"
+        class="comment__input"
+        :class="{ 'comment__input--over': over }"
+        data-testid="comment-input"
+        rows="3"
+        :placeholder="t('comment.placeholder')"
+        :maxlength="COMMENT_MAX_CHARS"
+        :aria-labelledby="labelId"
+        :aria-describedby="countId"
+        :aria-invalid="over ? 'true' : undefined"
+      ></textarea>
       <!-- Past the limit the count stays on screen even folded away: it is the only thing that
            explains the disabled Save, and that Save may be a long scroll below here.
            Not a live region — it would queue "1/100 words", "2/100 words" behind the screen
@@ -106,8 +106,8 @@ watch(over, (bad) => (invalid.value = bad), { immediate: true })
         data-testid="comment-count"
         aria-live="off"
       >
-         {{ countLabel }}
-       </span>
+        {{ countLabel }}
+      </span>
     </div>
   </div>
 </template>

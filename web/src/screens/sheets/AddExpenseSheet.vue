@@ -184,7 +184,7 @@ async function save() {
       splitRule: custom.value ? 'WEIGHTED' : 'EQUAL',
       payerMemberId: payerId.value,
       spentOn: spentOn.value,
-      note: note.value.trim()||undefined,
+      note: note.value.trim() || undefined,
       sharedBy: sharers.value.map((m, index) =>
         custom.value ? { memberId: m.id, weight: saved[index] } : { memberId: m.id },
       ),
@@ -393,7 +393,7 @@ async function save() {
       </section>
 
       <section class="add__section">
-        <CommentField v-model="note" v-model:open="noteOpen" v-model:aria-invalid="noteTooLong"/>
+        <CommentField v-model="note" v-model:open="noteOpen" v-model:aria-invalid="noteTooLong" />
       </section>
       <p v-if="error" class="add__error" role="alert">{{ error }}</p>
 

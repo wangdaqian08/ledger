@@ -28,7 +28,7 @@ import type {
   TripsView,
   TripView,
 } from '@/lib/api'
-import TallyButton from "@/components/TallyButton.vue";
+import TallyButton from '@/components/TallyButton.vue'
 
 /**
  * The screens against a scripted API. Every number a screen shows must be traceable to the
