@@ -198,7 +198,6 @@ class ItemService(
     private fun validateSplit(rule: SplitRuleName, amountMinor: Long, sharedBy: List<ShareInput>) {
         when (rule) {
             SplitRuleName.EQUAL -> {
-
             }
 
             SplitRuleName.WEIGHTED -> {
@@ -276,6 +275,7 @@ class ItemService(
             )
         }
     }
+
     private fun requireCategoryAvailable(tripId: UUID, categoryId: UUID) {
         val category = categories.findById(categoryId).orElseThrow {
             ResponseStatusException(HttpStatus.BAD_REQUEST, "No such category")
