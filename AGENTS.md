@@ -59,6 +59,19 @@ regenerates and checks it, `web/tests/split.spec.ts` checks the port against the
 one implementation without the other and a test goes red. Change both without reading the vector
 diff and every existing item's rounding has quietly moved.
 
+**A comment's word count exists twice, and is pinned the same way.** `web/src/lib/words.ts` mirrors
+`countCommentWords` in `server/`, because the comment field shows "12/100 words" as you type, and
+that means reaching the server's number before anything is sent — a counter that disagrees goes red
+on text the API would have taken, or green on text it refuses.
+`server/src/test/resources/comment-word-vectors.json` is the contract, read by
+`CommentWordVectorsTest` and by `web/tests/words.spec.ts`. Its cases are hand-written rather than
+generated, because the ones that matter are the characters the two languages disagree about by
+default: Java's `\s` is ASCII-only where JavaScript's is Unicode-aware, so the Kotlin needs
+`Pattern.UNICODE_CHARACTER_CLASS` before it will treat U+3000 — the space a Chinese keyboard
+produces — as a word gap at all. The invisible characters are written as `\u` escapes so the file
+can be diffed by eye. The trim/split/filter steps are partly redundant within each language and
+stay that way: they match character for character on purpose.
+
 **A test that asserts exact cents must pin the item id.** The salt is the id, so with a
 server-generated one the tie-break is redrawn on every run and any assertion about *which* person
 carries the spare cent is a coin toss. `HotelScenarioApiTest` learned this the hard way — it passed

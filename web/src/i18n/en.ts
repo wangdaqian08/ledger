@@ -119,6 +119,26 @@ export default {
     remove: 'Remove',
     removeConfirm: 'Remove this receipt photo?',
   },
+  // Its own namespace rather than a corner of addExpense: the same field is offered when a bill is
+  // added and when it is corrected, and a key named for one screen would read as a lie on the other.
+  comment: {
+    add: 'Add a comment (optional)',
+    // The way into an existing comment is the comment itself, so the tap target needs a name of
+    // its own: without one a screen reader announces the words and then "button", leaving what the
+    // button would do to guesswork.
+    edit: 'Edit comment',
+    placeholder: 'Add a comment...',
+    count: '{count}/{max} words',
+    // Chinese writes no spaces, so a comment of any length counts as one word and the word counter
+    // never moves — while the 1200-character backstop is what actually stops the typing, silently.
+    // Whichever limit the text will reach first is the one counted, so the wall can be seen coming.
+    countChars: '{count}/{max} characters',
+    // Saving an emptied box deletes the comment, so the two ways out of the editor are named for
+    // what they do rather than left as a matching pair of buttons.
+    save: 'Save comment',
+    discard: 'Discard changes',
+    removeConfirm: 'Save an empty comment? This removes it from the expense.',
+  },
   addExpense: {
     howMuch: 'How much?',
     whatWasIt: 'What was it?',

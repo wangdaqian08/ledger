@@ -8,6 +8,7 @@ import SheetPanel from '@/components/SheetPanel.vue'
 import SplitBar, { type SplitPerson } from '@/components/SplitBar.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TallyIcon from '@/components/TallyIcon.vue'
+import CommentField from '@/components/CommentField.vue'
 import TallyKeypad, { type KeypadKey } from '@/components/TallyKeypad.vue'
 import TextField from '@/components/TextField.vue'
 import { api, type CategoryView, type TripView } from '@/lib/api'
@@ -41,6 +42,9 @@ const ticked = ref<Record<string, boolean>>({})
 const custom = ref(false)
 const weights = ref<Record<string, number>>({})
 const busy = ref(false)
+const note = ref('')
+const noteOpen = ref(false)
+const noteTooLong = ref(false)
 const error = ref('')
 const receiptFile = ref<File | null>(null)
 const receiptUrl = ref('')
@@ -61,6 +65,9 @@ watch(
     amountMinor.value = 0
     title.value = ''
     spentOn.value = todayLocal()
+    note.value = ''
+    noteOpen.value = false
+    noteTooLong.value = false
     error.value = ''
     custom.value = false
     categoryId.value = props.categories.find((c) => c.key === 'food')?.id ?? props.categories[0]?.id ?? null
@@ -116,7 +123,12 @@ function toggleAll() {
 
 /** Whether closing now would throw away real work — used to confirm an accidental dismissal. */
 const isDirty = computed(
-  () => step.value === 2 || amountMinor.value > 0 || title.value.trim() !== '' || receiptFile.value !== null,
+  () =>
+    step.value === 2 ||
+    amountMinor.value > 0 ||
+    title.value.trim() !== '' ||
+    note.value.trim() !== '' ||
+    receiptFile.value !== null,
 )
 
 const splitPeople = computed<SplitPerson[]>(() =>
@@ -158,6 +170,7 @@ function onWeights(next: SplitPerson[]) {
 
 async function save() {
   if (busy.value || sharers.value.length === 0 || !payerId.value || !categoryId.value) return
+  if (noteTooLong.value) return
   busy.value = true
   error.value = ''
   try {
@@ -171,6 +184,7 @@ async function save() {
       splitRule: custom.value ? 'WEIGHTED' : 'EQUAL',
       payerMemberId: payerId.value,
       spentOn: spentOn.value,
+      note: note.value.trim()||undefined,
       sharedBy: sharers.value.map((m, index) =>
         custom.value ? { memberId: m.id, weight: saved[index] } : { memberId: m.id },
       ),
@@ -378,6 +392,9 @@ async function save() {
         />
       </section>
 
+      <section class="add__section">
+        <CommentField v-model="note" v-model:open="noteOpen" v-model:aria-invalid="noteTooLong"/>
+      </section>
       <p v-if="error" class="add__error" role="alert">{{ error }}</p>
 
       <ReceiptLightbox :open="reviewOpen" :src="receiptUrl" :can-edit="false" @close="reviewOpen = false" />
@@ -389,7 +406,7 @@ async function save() {
         <TallyButton
           variant="primary"
           data-testid="save-expense"
-          :disabled="busy || sharers.length === 0"
+          :disabled="busy || sharers.length === 0 || noteTooLong"
           @click="save"
         >
           {{ t('addExpense.save') }}

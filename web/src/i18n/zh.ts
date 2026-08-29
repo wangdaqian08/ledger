@@ -114,6 +114,16 @@ export default {
     remove: '移除',
     removeConfirm: '移除这张收据照片？',
   },
+  comment: {
+    add: '添加备注（可选）',
+    edit: '修改备注',
+    placeholder: '添加备注……',
+    count: '{count}/{max} 词',
+    countChars: '{count}/{max} 字',
+    save: '保存备注',
+    discard: '放弃修改',
+    removeConfirm: '保存空白备注？这会把备注从这笔支出中删除。',
+  },
   addExpense: {
     howMuch: '多少钱？',
     whatWasIt: '花在哪了？',

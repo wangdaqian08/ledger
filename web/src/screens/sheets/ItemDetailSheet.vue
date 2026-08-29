@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AmountText from '@/components/AmountText.vue'
+import CommentField from '@/components/CommentField.vue'
 import PersonAvatar from '@/components/PersonAvatar.vue'
 import ReceiptLightbox from '@/components/ReceiptLightbox.vue'
 import SettledBanner from '@/components/SettledBanner.vue'
@@ -49,6 +50,9 @@ const error = ref('')
 const busy = ref(false)
 const lightboxOpen = ref(false)
 const receiptInput = ref<HTMLInputElement | null>(null)
+const editingNote = ref(false)
+const noteDraft = ref('')
+const noteTooLong = ref(false)
 
 const symbol = computed(() => currencySymbol(props.trip.currencyCode))
 const me = computed(() => props.trip.members.find((m) => m.isYou) ?? null)
@@ -61,6 +65,23 @@ const iCanEdit = computed(() => iAmPayer.value || props.trip.youAreCreator)
 // included — stays, because the retention window exists to be looked at while people settle.
 const tripStillOpen = computed(() => !props.trip.closedAt)
 const iCanEditReceipt = computed(() => iCanEdit.value && tripStillOpen.value)
+// The comment is part of the spending record, so it is gated exactly like the receipt and the
+// split: the payer or the creator, and only while the trip is open.
+const iCanEditNote = computed(() => iCanEdit.value && tripStillOpen.value)
+/**
+ * Whether the box is showing rather than the paragraph — and the same value the field's own
+ * disclosure is bound to, because Save and Discard are drawn here while the box is drawn there.
+ * Two owners disagreed: folding the row hid the box and left those two buttons over a draft
+ * nobody could see, above a comment that had vanished from the screen, under a label saying there
+ * was none.
+ *
+ * So folding the row away *is* backing out of the edit, and unfolding it is starting one. True the
+ * moment there is a draft either way, so words already typed can never be hidden.
+ */
+const noteEditorOpen = computed({
+  get: () => editingNote.value || noteDraft.value !== '',
+  set: (open) => (open ? editNote() : cancelNote()),
+})
 
 const categoryName = computed(() => {
   const category = props.categories.find((c) => c.id === detail.value?.categoryId)
@@ -111,6 +132,7 @@ watch(
     error.value = ''
     rejecting.value = null
     lightboxOpen.value = false
+    cancelNote()
     try {
       const loaded = await api.itemDetail(itemId)
       if (token === detailToken) detail.value = loaded
@@ -167,6 +189,32 @@ async function act(action: () => Promise<unknown>) {
 }
 
 const approve = (paybackId: string) => act(() => api.approvePayback(paybackId))
+
+function editNote() {
+  noteDraft.value = detail.value?.note ?? ''
+  editingNote.value = true
+}
+
+/** Backing out of the edit. Distinct from saving an emptied box, which deletes the comment. */
+function cancelNote() {
+  editingNote.value = false
+  noteDraft.value = ''
+  noteTooLong.value = false
+}
+
+async function saveNote() {
+  if (!detail.value || busy.value || noteTooLong.value) return
+  const itemId = detail.value.id
+  const next = noteDraft.value.trim()
+  // The server maps "" to null, so an emptied box is a deletion — and a deletion is asked about,
+  // the same way removing a receipt is. Discard is the way out that changes nothing.
+  if (next === '' && detail.value.note && !confirm(t('comment.removeConfirm'))) return
+
+  await act(() => api.patchItem(itemId, { note: next }))
+  // act() folds a failure into `error` and leaves the draft alone, so the words are still there to
+  // try again with — only a landed patch closes the editor.
+  if (!error.value) cancelNote()
+}
 
 async function undo(payback: PaybackView) {
   // Undoing a *confirmed* repayment re-opens a balance the other person thought was closed, so it
@@ -432,7 +480,43 @@ async function remove() {
         </div>
       </section>
 
-      <p v-if="detail.note" class="detail__note">{{ detail.note }}</p>
+      <!-- Nothing at all when there is no comment and no right to write one. -->
+      <section v-if="detail.note || iCanEditNote" class="detail__section">
+        <!-- Read-only for anyone who cannot correct the bill, an ended trip included. -->
+        <p v-if="!iCanEditNote" class="detail__note">{{ detail.note }}</p>
+        <!-- A comment that exists is its own way in: tap the words to change them. Named for what
+             it does, though, not for what it says — the comment's own text is all a screen reader
+             would otherwise read out, followed by "button" and no clue why. -->
+
+        <button
+          v-else-if="detail.note && !noteEditorOpen"
+          type="button"
+          class="detail__note detail__note--tap"
+          data-testid="comment-edit"
+          :aria-label="t('comment.edit')"
+          @click="editNote"
+        >
+          {{ detail.note }}
+        </button>
+        <template v-else>
+          <CommentField v-model="noteDraft" v-model:open="noteEditorOpen" v-model:invalid="noteTooLong" />
+          <div v-if="noteEditorOpen" class="detail__note-actions">
+            <TallyButton size="sm" variant="ghost" data-testid="comment-discard" @click="cancelNote">
+              {{ t('comment.discard') }}
+            </TallyButton>
+            <TallyButton
+              size="sm"
+              variant="primary"
+              data-testid="comment-save"
+              :disabled="busy || noteTooLong"
+              @click="saveNote"
+            >
+              {{ t('comment.save') }}
+            </TallyButton>
+          </div>
+        </template>
+      </section>
+
       <p v-if="error" class="detail__error" role="alert">{{ error }}</p>
 
       <div class="detail__actions">
@@ -599,6 +683,20 @@ async function remove() {
   background: var(--paper-sunk);
   color: var(--ink-2);
   overflow-wrap: break-word;
+}
+
+/* The paragraph doubling as an edit button: the note's own look, with a button's reset. */
+.detail__note--tap {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.detail__note-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 .detail__error {

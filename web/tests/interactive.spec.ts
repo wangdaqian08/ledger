@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest'
 import AmountInput from '../src/components/AmountInput.vue'
 import AmountKeypadField from '../src/components/AmountKeypadField.vue'
 import CategoryPicker from '../src/components/CategoryPicker.vue'
+import CommentField from '../src/components/CommentField.vue'
 import PersonToggleRow from '../src/components/PersonToggleRow.vue'
 import SplitBar from '../src/components/SplitBar.vue'
-import { saltFor, splitShares } from '../src/lib/split'
-import { pressKey } from '../src/lib/till'
+import { saltFor, splitShares } from '@/lib/split'
+import { pressKey } from '@/lib/till'
+import { COMMENT_MAX_CHARS, COMMENT_MAX_WORDS } from '@/lib/words'
 import { findAllByTestId, findByTestId } from './testids'
 
 const people = [
@@ -185,6 +187,145 @@ describe('AmountKeypadField', () => {
 
     await findByTestId(field, 'key-del').trigger('click')
     expect(field.emitted('update:modelValue')!.at(-1)![0]).toBe(4)
+  })
+})
+
+describe('CommentField', () => {
+  const words = (count: number) => Array.from({ length: count }, (_, i) => `w${i}`).join(' ')
+
+  it('stays folded away until it is asked for', async () => {
+    const field = mount(CommentField, { props: { modelValue: '' } })
+    expect(findByTestId(field, 'comment-input').exists()).toBe(false)
+
+    await findByTestId(field, 'comment-toggle').trigger('click')
+
+    expect(findByTestId(field, 'comment-input').exists()).toBe(true)
+    expect(findByTestId(field, 'comment-toggle').attributes('aria-expanded')).toBe('true')
+  })
+
+  it('opens already unfolded when there is a comment to show', () => {
+    const field = mount(CommentField, { props: { modelValue: 'Split the taxi', open: true } })
+    const box = findByTestId(field, 'comment-input').element as HTMLTextAreaElement
+    expect(box.value).toBe('Split the taxi')
+    // The hard backstop is the native attribute, silent and unmentioned: it is there for scripts
+    // that write no spaces, where the word count alone would bound nothing.
+    expect(box.getAttribute('maxlength')).toBe(String(COMMENT_MAX_CHARS))
+  })
+
+  it('hands the fold back to its parent instead of keeping a second opinion', async () => {
+    // The detail sheet draws Save and Discard beside this field and has to know whether the box
+    // is up. A private `open` lets the two disagree — buttons over a box that is not there.
+    const field = mount(CommentField, { props: { modelValue: '', open: false } })
+
+    await findByTestId(field, 'comment-toggle').trigger('click')
+    expect(field.emitted('update:open')?.at(-1)).toEqual([true])
+
+    await field.setProps({ open: true })
+    expect(findByTestId(field, 'comment-input').exists()).toBe(true)
+
+    // And the prop is obeyed after mount, not only read once on the way in.
+    await field.setProps({ open: false })
+    expect(findByTestId(field, 'comment-input').exists()).toBe(false)
+  })
+
+  it('counts the words as they are typed', async () => {
+    const field = mount(CommentField, { props: { modelValue: '', open: true } })
+    expect(findByTestId(field, 'comment-count').text()).toContain(`0/${COMMENT_MAX_WORDS}`)
+
+    await findByTestId(field, 'comment-input').setValue('  dinner   at the   rose  ')
+
+    expect(field.emitted('update:modelValue')?.at(-1)).toEqual(['  dinner   at the   rose  '])
+    await field.setProps({ modelValue: '  dinner   at the   rose  ' })
+    expect(findByTestId(field, 'comment-count').text()).toContain(`4/${COMMENT_MAX_WORDS}`)
+  })
+
+  it('goes red and tells its parent when the comment runs past the limit, without eating the text', async () => {
+    const field = mount(CommentField, { props: { modelValue: words(COMMENT_MAX_WORDS), open: true } })
+    expect(findByTestId(field, 'comment-count').classes()).not.toContain('comment__count--over')
+    // Exactly at the limit is legal, and there is nothing to tell the parent about.
+    expect(field.emitted('update:invalid')).toBeUndefined()
+
+    const tooMany = words(COMMENT_MAX_WORDS + 1)
+    await field.setProps({ modelValue: tooMany })
+
+    expect(findByTestId(field, 'comment-count').classes()).toContain('comment__count--over')
+    expect(field.emitted('update:invalid')?.at(-1)).toEqual([true])
+    // Nothing is truncated mid-sentence: the text stays as typed and the counter does the telling.
+    expect((findByTestId(field, 'comment-input').element as HTMLTextAreaElement).value).toBe(tooMany)
+
+    // And the parent is told when the way is clear again, or its Save would stay dead.
+    await field.setProps({ modelValue: 'back under' })
+    expect(field.emitted('update:invalid')?.at(-1)).toEqual([false])
+  })
+
+  it('keeps the reason on screen when the limit is broken and the box is folded away', async () => {
+    // The Save above is disabled off the back of this. Folding the box away took the only
+    // explanation with it, leaving a dead button at the bottom of a long scroll and no reason why.
+    const field = mount(CommentField, {
+      props: { modelValue: words(COMMENT_MAX_WORDS + 1), open: false },
+    })
+
+    expect(findByTestId(field, 'comment-input').exists()).toBe(false)
+    expect(findByTestId(field, 'comment-count').classes()).toContain('comment__count--over')
+    expect(findByTestId(field, 'comment-count').text()).toContain(`101/${COMMENT_MAX_WORDS}`)
+
+    // Back under the limit and the count goes back to being the open box's business alone.
+    await field.setProps({ modelValue: 'short enough' })
+    expect(findByTestId(field, 'comment-count').exists()).toBe(false)
+  })
+
+  it('gives the box a name of its own, and the count as its description', async () => {
+    // A placeholder is the accessible-name algorithm's last resort and disappears the moment
+    // somebody types. The label lives inside a button, so no <label for> can reach the box.
+    const field = mount(CommentField, { props: { modelValue: words(COMMENT_MAX_WORDS + 1), open: true } })
+    const box = findByTestId(field, 'comment-input')
+    const toggle = findByTestId(field, 'comment-toggle')
+    const count = findByTestId(field, 'comment-count')
+
+    expect(field.get(`#${box.attributes('aria-labelledby')}`).text()).toBe('Add a comment (optional)')
+    // aria-invalid says something is wrong; the description is what says what.
+    expect(box.attributes('aria-invalid')).toBe('true')
+    expect(box.attributes('aria-describedby')).toBe(count.attributes('id'))
+    expect(field.find(`#${toggle.attributes('aria-controls')}`).exists()).toBe(true)
+  })
+
+  it('does not re-announce the count on every keystroke', () => {
+    // A live region here queues "1/100 words", "2/100 words"… against the screen reader's own
+    // character echo. The count reaches the box through aria-describedby instead.
+    const field = mount(CommentField, { props: { modelValue: '', open: true } })
+
+    expect(findByTestId(field, 'comment-count').attributes('aria-live')).toBe('off')
+  })
+
+  it('leaves an in-flight composition alone until the IME commits it', async () => {
+    // Pinyin arrives as a buffer that is rewritten several times before it becomes characters.
+    // Vue's own v-model installs the composition guard; a hand-rolled :value/@input pair does not,
+    // and the half-typed buffer flows straight into the word count and the parent's dirty flag.
+    const field = mount(CommentField, { props: { modelValue: '', open: true } })
+    const box = findByTestId(field, 'comment-input')
+    const element = box.element as HTMLTextAreaElement
+
+    await box.trigger('compositionstart')
+    element.value = 'ni'
+    await box.trigger('input')
+    expect(field.emitted('update:modelValue')).toBeUndefined()
+
+    element.value = '你好'
+    await box.trigger('compositionend')
+    expect(field.emitted('update:modelValue')?.at(-1)).toEqual(['你好'])
+  })
+
+  it('counts characters instead when they, not the words, are the wall being approached', async () => {
+    // Chinese writes no spaces, so a comment of any length is one word and the word counter never
+    // moves — while the silent 1200-character backstop is what actually stops the typing.
+    const chinese = '晚饭是我付的'.repeat(20)
+    const field = mount(CommentField, { props: { modelValue: chinese, open: true } })
+
+    expect(findByTestId(field, 'comment-count').text()).toContain(`${chinese.length}/${COMMENT_MAX_CHARS}`)
+
+    // English prose hits the word limit first, so that is still what it is measured against.
+    await field.setProps({ modelValue: words(20) })
+    expect(findByTestId(field, 'comment-count').text()).toContain(`20/${COMMENT_MAX_WORDS}`)
   })
 })
 

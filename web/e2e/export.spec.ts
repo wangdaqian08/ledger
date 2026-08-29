@@ -30,7 +30,8 @@ test('the exported CSV holds the expense exactly as entered', async ({ page }) =
   const csv = (await readFile(path, 'utf-8')).replace(/^\uFEFF/, '')
   const lines = csv.split('\r\n').filter((line) => line.length > 0)
 
-  expect(lines[0]).toBe('Date,Recorded at,Paid by,Item,Amount,Currency')
+  expect(lines[0]).toBe('Date,Recorded at,Paid by,Item,Amount,Currency,Comment')
   expect(lines).toHaveLength(2) // header + the one expense
-  expect(lines[1]).toContain(`,${alice},Odd hotel,1000.01,AUD`)
+  // Nothing was typed into the comment, so the row ends on an empty last cell
+  expect(lines[1]).toContain(`,${alice},Odd hotel,1000.01,AUD,`)
 })

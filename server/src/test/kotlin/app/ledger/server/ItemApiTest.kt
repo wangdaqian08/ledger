@@ -398,7 +398,195 @@ class ItemApiTest : ApiTest() {
         assertEquals(HttpStatus.BAD_REQUEST, patched.statusCode, "and it cannot be patched below zero either")
     }
 
+    @Test
+    fun `a comment is saved with the expense and comes back on it`() {
+        val trip = tripWith("Alice", "Bob")
+        val comment = "Bob skipped the wine, so this is the food only"
+
+        val created = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Dinner", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)) +
+                mapOf("note" to comment),
+        )
+
+        assertEquals(HttpStatus.CREATED, created.statusCode)
+        assertEquals(comment, created.json()["note"].asText())
+        // Read back, not just echoed: the response that wrote it proves nothing about the column.
+        assertEquals(
+            comment,
+            trip.owner
+                .get("/api/items/${created.id()}")
+                .json()["note"]
+                .asText(),
+        )
+    }
+
+    @Test
+    fun `a hundred-word comment is accepted even though it runs past five hundred characters`() {
+        // The cap was 500 characters, which an ordinary 100-word comment clears: this one is 899.
+        // The word count is the product limit; the character cap is only the backstop underneath it.
+        val trip = tripWith("Alice", "Bob")
+        val comment = words(100, "wordword")
+        assertEquals(899, comment.length, "100 eight-letter words and the 99 spaces between them")
+
+        val created = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Dinner", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)) +
+                mapOf("note" to comment),
+        )
+
+        assertEquals(HttpStatus.CREATED, created.statusCode, "was: ${created.body}")
+        assertEquals(comment, created.json()["note"].asText())
+    }
+
+    @Test
+    fun `patching an empty comment clears it`() {
+        // Empty means delete, which is the only way the UI has of taking a comment back off an
+        // expense — absent already means "leave it alone".
+        val trip = tripWith("Alice", "Bob")
+        val item = trip.owner
+            .post(
+                "/api/trips/${trip.id}/items",
+                expense("Dinner", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)) +
+                    mapOf("note" to "Paid in cash"),
+            ).id()
+
+        val cleared = trip.owner.patch("/api/items/$item", mapOf("note" to ""))
+
+        assertEquals(HttpStatus.OK, cleared.statusCode)
+        assertTrue(cleared.json()["note"].isNull, "an emptied comment should be gone, not blank: ${cleared.body}")
+    }
+
+    @Test
+    fun `a comment of more than a hundred words is refused`() {
+        val trip = tripWith("Alice", "Bob")
+
+        val response = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Dinner", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)) +
+                mapOf("note" to words(101)),
+        )
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+        assertTrue(
+            response.body!!.contains("100 words"),
+            "the refusal should name the limit it hit: ${response.body}",
+        )
+    }
+
+    @Test
+    fun `an ideographic space separates words here exactly as it does in the browser`() {
+        // U+3000 is the space a Chinese keyboard produces, and it is a word gap on both sides of
+        // the wire only because the regex is asked for it — see ItemService.WHITESPACE. Without
+        // that flag this whole comment is one word here and 101 in the browser.
+        val trip = tripWith("Alice", "Bob")
+
+        val response = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Dinner", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)) +
+                mapOf("note" to List(101) { "词" }.joinToString("　")),
+        )
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+        assertTrue(
+            response.body!!.contains("100 words"),
+            "an ideographic space is a word gap, so this is 101 words: ${response.body}",
+        )
+    }
+
+    @Test
+    fun `a comment is stored trimmed, so no leading whitespace can smuggle a formula into the export`() {
+        // The export's formula guard (ExportService.FORMULA_LEADS) reads the first character only,
+        // and lists neither newline nor space. That omission is safe *because of this*: a stored
+        // note cannot begin with whitespace of any kind, so there is nothing for an '=' to hide
+        // behind. Weaken the trim — "keep the indentation of a multi-line comment" is a plausible
+        // enough request — and the hole opens with nothing else in the suite going red.
+        val trip = tripWith("Alice", "Bob")
+
+        val created = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Lunch", 900, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)) +
+                mapOf("note" to "  \n=HYPERLINK(\"http://evil\",\"x\")"),
+        )
+
+        assertEquals(HttpStatus.CREATED, created.statusCode, "was: ${created.body}")
+        assertEquals("=HYPERLINK(\"http://evil\",\"x\")", created.json()["note"].asText())
+    }
+
+    @Test
+    fun `a comment of exactly twelve hundred characters and no spaces is accepted`() {
+        // The allow side of the backstop, on the case it exists for: this is one word however long
+        // it runs, so the character cap is the only bound it meets — and 1200 has to clear it.
+        val trip = tripWith("Alice", "Bob")
+        val comment = "字".repeat(1_200)
+
+        val created = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Dinner", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)) +
+                mapOf("note" to comment),
+        )
+
+        assertEquals(HttpStatus.CREATED, created.statusCode, "was: ${created.body}")
+        assertEquals(comment, created.json()["note"].asText())
+    }
+
+    @Test
+    fun `a comment past the character backstop is refused even when it is one word`() {
+        // See ItemService.requireCommentWithinLimit: the word limit never fires on a script written
+        // without spaces, so the character cap is the only thing holding this case.
+        val trip = tripWith("Alice", "Bob")
+
+        val response = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Dinner", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)) +
+                mapOf("note" to "x".repeat(1_201)),
+        )
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+    }
+
+    @Test
+    fun `a comment is held to the same hundred words when it is patched on later`() {
+        val trip = tripWith("Alice", "Bob")
+        val item = trip.owner
+            .post(
+                "/api/trips/${trip.id}/items",
+                expense("Dinner", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)),
+            ).id()
+
+        val tooLong = trip.owner.patch("/api/items/$item", mapOf("note" to words(101)))
+        assertEquals(HttpStatus.BAD_REQUEST, tooLong.statusCode, "create's limit must not be skippable by patch")
+
+        val within = trip.owner.patch("/api/items/$item", mapOf("note" to "Bob left the tip in cash"))
+        assertEquals(HttpStatus.OK, within.statusCode)
+        assertEquals("Bob left the tip in cash", within.json()["note"].asText())
+    }
+
+    @Test
+    fun `a run of whitespace is one gap between words, not several`() {
+        // The word count is a cross-language contract — the browser applies the identical rule
+        // before the request leaves — so a comment the UI counted as 100 words must not arrive as
+        // 199 here. Double spaces, a tab and stray newlines all have to count as one gap.
+        val trip = tripWith("Alice", "Bob")
+        val spaced = "\n " + List(100) { "word" }.joinToString("  \t") + " \n"
+
+        val response = trip.owner.post(
+            "/api/trips/${trip.id}/items",
+            expense("Dinner", 10_000, trip.category, trip.ownerMember, listOf(trip.ownerMember, trip.bob)) +
+                mapOf("note" to spaced),
+        )
+
+        assertEquals(
+            HttpStatus.CREATED,
+            response.statusCode,
+            "still 100 words, however they are spaced: ${response.body}",
+        )
+    }
+
     // --- helpers -----------------------------------------------------------------------------
+
+    /** [count] copies of [word], single-spaced — a comment of a known length in words. */
+    private fun words(count: Int, word: String = "word"): String = List(count) { word }.joinToString(" ")
 
     private class Fixture(
         val owner: SessionAwareClient,

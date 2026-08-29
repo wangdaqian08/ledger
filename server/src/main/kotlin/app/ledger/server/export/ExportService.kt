@@ -47,6 +47,9 @@ class ExportService(
                     item.title,
                     majorUnits(item.amountMinor, trip.currencyCode),
                     trip.currencyCode,
+                    // Last, so the widest and least predictable cell cannot push the columns a
+                    // reviewer reads first. No comment is an empty cell, never a missing one.
+                    item.note.orEmpty(),
                 )
             }
 
@@ -57,7 +60,7 @@ class ExportService(
     }
 
     private companion object {
-        val HEADER = listOf("Date", "Recorded at", "Paid by", "Item", "Amount", "Currency")
+        val HEADER = listOf("Date", "Recorded at", "Paid by", "Item", "Amount", "Currency", "Comment")
         val RECORDED_AT: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
         const val CRLF = "\r\n"
 
@@ -93,11 +96,20 @@ class ExportService(
         }
 
         /**
-         * A spreadsheet reads a cell that opens with one of these as a formula, not text. The two
-         * free-text columns (the item title and the payer's name) are user-typed, so a title of
-         * `=HYPERLINK("http://evil","click")` would execute on open in Excel/Sheets/LibreOffice —
-         * CWE-1236, in the one file a reviewer downloads precisely to trust the numbers. The tab
+         * A spreadsheet reads a cell that opens with one of these as a formula, not text. The three
+         * free-text columns (the item title, the payer's name and the comment) are user-typed, so a
+         * title of `=HYPERLINK("http://evil","click")` would execute on open in
+         * Excel/Sheets/LibreOffice — CWE-1236, in the one file a reviewer downloads precisely to
+         * trust the numbers. The comment is the widest of the three and the one most likely in
+         * practice to hold a line break, so it leans hardest on the RFC 4180 quoting below. The tab
          * and carriage return are here because they let a leading `=` hide behind whitespace.
+         *
+         * A leading newline or space would hide an `=` just as well, and is deliberately *not* in
+         * this set: it is closed on write instead. All three columns are stored trimmed — the title
+         * and comment in `ItemService`, the name in `TripService` — and Kotlin's `trim` drops `\n`,
+         * space and U+3000 alike, so no stored value can begin with whitespace at all. That
+         * invariant is what makes the omission safe, and `ItemApiTest` pins it: relax a trim to keep
+         * a comment's indentation without extending this set, and the hole opens.
          */
         val FORMULA_LEADS = setOf('=', '+', '-', '@', '\t', '\r')
 
