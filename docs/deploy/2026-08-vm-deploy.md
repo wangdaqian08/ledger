@@ -37,14 +37,17 @@ git tag v0.2.0 && git push origin v0.2.0
 
 ```bash
 git checkout main && git pull                       # deploys always come from merged main
+SHA=$(git rev-parse --short HEAD)                    # names the jar; gradle has no opinion on this
 npm --prefix web ci
 VITE_BASE=/ledger/ VITE_APP_VERSION=$(git describe --tags --always) npm --prefix web run build
-./gradlew :server:bootJar -PrequireSpa=/ledger/     # refuses a missing or wrong-base bundle
-gcloud compute scp server/build/libs/ledger.jar werewolf-server:/tmp/ledger-<sha>.jar --zone=us-east1-d
-gcloud compute ssh werewolf-server --zone=us-east1-d --command='
-  sudo install -m 0644 /tmp/ledger-<sha>.jar /opt/ledger/releases/ledger-<sha>.jar &&
-  sudo ln -sfn /opt/ledger/releases/ledger-<sha>.jar /opt/ledger/ledger.jar &&
-  sudo systemctl restart ledger'
+./gradlew :server:bootJar -PrequireSpa=/ledger/      # refuses a missing or wrong-base bundle
+
+gcloud compute scp server/build/libs/ledger.jar "werewolf-server:/tmp/ledger-$SHA.jar" --zone=us-east1-d
+gcloud compute ssh werewolf-server --zone=us-east1-d --command="
+  sudo install -m 0644 /tmp/ledger-$SHA.jar /opt/ledger/releases/ledger-$SHA.jar &&
+  sudo ln -sfn /opt/ledger/releases/ledger-$SHA.jar /opt/ledger/ledger.jar &&
+  sudo systemctl restart ledger"
+
 # health: poll for 401 on loopback, then check the public URL
 gcloud compute ssh werewolf-server --zone=us-east1-d \
   --command='curl -s -o /dev/null -w %{http_code}\\n http://127.0.0.1:8082/ledger/api/me'
