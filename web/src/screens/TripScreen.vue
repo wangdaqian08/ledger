@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import {computed, onMounted, ref} from 'vue'
-import {useI18n} from 'vue-i18n'
-import {useRouter} from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import AmountText from '@/components/AmountText.vue'
 import AppBar from '@/components/AppBar.vue'
 import BalanceRow from '@/components/BalanceRow.vue'
@@ -26,8 +26,8 @@ import {
   type SettlementView,
   type TripView,
 } from '@/lib/api'
-import {currencySymbol} from '@/lib/money'
-import {useTrips} from '@/stores/trips'
+import { currencySymbol } from '@/lib/money'
+import { useTrips } from '@/stores/trips'
 
 /**
  * Screen 3 — the group. Hero position, who owes who, and the expense feed grouped by day; the

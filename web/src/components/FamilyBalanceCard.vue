@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import {computed} from 'vue'
-import {useI18n} from 'vue-i18n'
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AmountText from './AmountText.vue'
 import AvatarStack from './AvatarStack.vue'
 import FamilyCounterpartRow from './FamilyCounterpartRow.vue'
 import TallyButton from './TallyButton.vue'
 import TallyCard from './TallyCard.vue'
-import type {FamilyCounterpartView, FamilyMemberView} from '@/lib/api'
+import type { FamilyCounterpartView, FamilyMemberView } from '@/lib/api'
 
 /**
  * One Family's card in the Settle-up partition view (§7b): its own net across the whole trip, and

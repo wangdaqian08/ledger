@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import {computed, ref, watch} from 'vue'
-import {useI18n} from 'vue-i18n'
+import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AmountKeypadField from '@/components/AmountKeypadField.vue'
 import AmountText from '@/components/AmountText.vue'
 import BalanceRow from '@/components/BalanceRow.vue'

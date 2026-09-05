@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import {computed, ref} from 'vue'
-import {useI18n} from 'vue-i18n'
+import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import PersonToggleRow from './PersonToggleRow.vue'
 import TallyButton from './TallyButton.vue'
-import type {MemberView} from '@/lib/api'
+import type { MemberView } from '@/lib/api'
 
 /**
  * The Family builder sub-view on Settle-up (§7b): ticks a subset of `candidates` and commits it as

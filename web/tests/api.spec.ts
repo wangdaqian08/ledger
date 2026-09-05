@@ -1,5 +1,5 @@
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
-import {api, ApiError, handleUnauthorized} from '@/lib/api'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { api, ApiError, handleUnauthorized } from '@/lib/api'
 
 /** The client's three duties: echo the CSRF cookie, surface the server's reason, signal 401s. */
 describe('api client', () => {

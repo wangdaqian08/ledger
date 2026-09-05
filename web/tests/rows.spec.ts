@@ -1,5 +1,5 @@
-import {mount} from '@vue/test-utils'
-import {describe, expect, it} from 'vitest'
+import { mount } from '@vue/test-utils'
+import { describe, expect, it } from 'vitest'
 import AppBar from '../src/components/AppBar.vue'
 import BalanceRow from '../src/components/BalanceRow.vue'
 import ExpenseRow from '../src/components/ExpenseRow.vue'
@@ -10,8 +10,8 @@ import ProgressBar from '../src/components/ProgressBar.vue'
 import TallyIcon from '../src/components/TallyIcon.vue'
 import TallyStepper from '../src/components/TallyStepper.vue'
 import TallyKeypad from '../src/components/TallyKeypad.vue'
-import type {FamilyCounterpartView, FamilyMemberView} from '@/lib/api'
-import {findAllByTestId, findByTestId} from './testids'
+import type { FamilyCounterpartView, FamilyMemberView } from '@/lib/api'
+import { findAllByTestId, findByTestId } from './testids'
 
 describe('ExpenseRow', () => {
   const base = { title: 'Hotel', yourShareMinor: -14286, categoryKey: 'stay' }

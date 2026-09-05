@@ -1,5 +1,5 @@
-import {expect, test} from '@playwright/test'
-import {addMembers, createTrip, expectRowsToSumToHero, signIn, typeAmount, uniquePerson} from './helpers'
+import { expect, test } from '@playwright/test'
+import { addMembers, createTrip, expectRowsToSumToHero, signIn, typeAmount, uniquePerson } from './helpers'
 
 /**
  * Family mode on Settle-up (§7b): a trip member partitions the whole trip into Families — built
