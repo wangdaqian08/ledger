@@ -1,10 +1,10 @@
 package app.ledger.server
 
+import org.junit.jupiter.api.Test
+import org.springframework.http.HttpStatus
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import org.junit.jupiter.api.Test
-import org.springframework.http.HttpStatus
 
 /**
  * The jar carries the SPA (spec §4), so the server hands it out: the screen routes and the hashed

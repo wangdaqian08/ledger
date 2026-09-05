@@ -8,12 +8,12 @@ import app.ledger.server.payback.PaybackView
 import app.ledger.server.payback.toView
 import app.ledger.server.trip.TripAccess
 import app.ledger.server.trip.TripSnapshots
-import java.time.LocalDate
-import java.util.UUID
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
+import java.time.LocalDate
+import java.util.UUID
 
 @Service
 class SettlementService(
