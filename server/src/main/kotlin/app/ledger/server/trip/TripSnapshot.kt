@@ -90,10 +90,10 @@ class TripSnapshot(
         // Qualified: this method's own name would otherwise shadow the engine function it calls.
         owesBetween(engineTrip, MemberId(a.toString()), MemberId(b.toString()))
 
-    fun families(explicitFamilies: List<Set<UUID>>): List<FamilyBalance> =partitionIntoFamilies(
+    fun families(explicitFamilies: List<Set<UUID>>): List<FamilyBalance> = partitionIntoFamilies(
         engineTrip,
         explicitFamilies.map { it.mapTo(mutableSetOf()) { id -> MemberId(id.toString()) } },
-        settlement
+        settlement,
     )
 
     private fun PaybackEntity.toEnginePayback() = Payback(

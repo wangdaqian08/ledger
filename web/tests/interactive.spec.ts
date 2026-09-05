@@ -10,8 +10,8 @@ import {saltFor, splitShares} from '@/lib/split'
 import {pressKey} from '@/lib/till'
 import {COMMENT_MAX_CHARS, COMMENT_MAX_WORDS} from '@/lib/words'
 import {findAllByTestId, findByTestId} from './testids'
-import FamilyBuilder from "@/components/FamilyBuilder.vue";
-import type {MemberView} from "@/lib/api";
+import FamilyBuilder from '@/components/FamilyBuilder.vue'
+import type {MemberView} from '@/lib/api'
 
 const people = [
   { memberId: 'a', displayName: 'Bob', personHue: 1, weight: 2 },

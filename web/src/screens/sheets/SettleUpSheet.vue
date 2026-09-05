@@ -317,13 +317,13 @@ async function disband(entry: FamilyView) {
             data-testid="pending-claim"
           >
             <div class="settle__pending-head">
-               <span class="settle__pending-text">
-                 {{
-                   claim.fromMemberId === myMemberId
-                     ? t('settle.sentForConfirmation', { name: row.displayName })
-                     : t('settle.awaitingYou', { name: row.displayName })
-                 }}
-               </span>
+              <span class="settle__pending-text">
+                {{
+                  claim.fromMemberId === myMemberId
+                    ? t('settle.sentForConfirmation', { name: row.displayName })
+                    : t('settle.awaitingYou', { name: row.displayName })
+                }}
+              </span>
               <!-- U1: the amount that is actually waiting, shown — not just that something is. -->
               <AmountText
                 :amount-minor="claim.amountMinor"
@@ -396,14 +396,14 @@ async function disband(entry: FamilyView) {
             data-testid="settled-claim"
           >
             <div class="settle__pending-head">
-               <span class="settle__settled-text">
-                 {{
-                   claim.fromMemberId === myMemberId
-                     ? t('settle.youPaidThem', { name: row.displayName })
-                     : t('settle.theyPaidYou', { name: row.displayName })
-                 }}
-                 · {{ t('settle.settled') }}
-               </span>
+              <span class="settle__settled-text">
+                {{
+                  claim.fromMemberId === myMemberId
+                    ? t('settle.youPaidThem', { name: row.displayName })
+                    : t('settle.theyPaidYou', { name: row.displayName })
+                }}
+                · {{ t('settle.settled') }}
+              </span>
               <AmountText
                 :amount-minor="claim.amountMinor"
                 size="sm"
@@ -428,9 +428,9 @@ async function disband(entry: FamilyView) {
             data-testid="declined-claim"
           >
             <div class="settle__pending-head">
-               <span class="settle__declined-text">{{
-                   t('settle.declinedByThem', { name: row.displayName })
-                 }}</span>
+              <span class="settle__declined-text">{{
+                t('settle.declinedByThem', { name: row.displayName })
+              }}</span>
               <AmountText
                 :amount-minor="claim.amountMinor"
                 size="sm"
@@ -511,8 +511,8 @@ async function disband(entry: FamilyView) {
       </template>
 
       <TallyButton variant="secondary" full-width data-testid="settle-done" @click="emit('close')">{{
-          t('common.done')
-        }}</TallyButton>
+        t('common.done')
+      }}</TallyButton>
     </div>
   </SheetPanel>
 </template>

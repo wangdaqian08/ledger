@@ -1346,7 +1346,7 @@ describe('SettleUpSheet', () => {
             rejected: [],
           },
         ],
-        members:[you, bob],
+        members: [you, bob],
         currencyCode: 'AUD',
         symbol: '$',
       },
@@ -1383,6 +1383,7 @@ describe('SettleUpSheet', () => {
             rejected: [],
           },
         ],
+        members: [you, bob],
         currencyCode: 'AUD',
         symbol: '$',
       },
@@ -1435,7 +1436,7 @@ describe('SettleUpSheet', () => {
         myMemberId: you.id,
         youAreCreator: false,
         rows,
-        members:[you, bob],
+        members: [you, bob],
         currencyCode: 'AUD',
         symbol: '$',
       },
@@ -1643,12 +1644,12 @@ describe('SettleUpSheet Family mode', () => {
     // until the server actually accepts what was built.
     mocked
       .previewFamilies!.mockResolvedValueOnce({
-      families: [
-        { members: [fm(bob), fm(cara)], netMinor: 500, counterparts: [] },
-        { members: [fm(you)], netMinor: -250, counterparts: [] },
-        { members: [fm(dana)], netMinor: -250, counterparts: [] },
-      ],
-    }) // building {Bob, Cara} — the first fetch, since nothing built yet fetches nothing
+        families: [
+          { members: [fm(bob), fm(cara)], netMinor: 500, counterparts: [] },
+          { members: [fm(you)], netMinor: -250, counterparts: [] },
+          { members: [fm(dana)], netMinor: -250, counterparts: [] },
+        ],
+      }) // building {Bob, Cara} — the first fetch, since nothing built yet fetches nothing
       .mockRejectedValueOnce(new Error('a trip needs at least two families')) // the failed attempt
       .mockResolvedValueOnce({
         families: [

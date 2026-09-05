@@ -25,27 +25,27 @@ describe('ExpenseRow', () => {
     expect(row.text()).not.toContain('you owe')
   })
 
-  it('calls the payer’s stake what they fronted, not what they "get"', () => {
-  const row = mount(ExpenseRow, { props: { ...base, yourShareMinor: 37_500, paidByYou: true } })
-  expect(row.text()).toContain('$375.00')
-  expect(row.text()).toContain('you fronted')
-  expect(row.text()).not.toContain('you get')
-})
+  it('calls the payer\'s stake what they fronted, not what they "get"', () => {
+    const row = mount(ExpenseRow, { props: { ...base, yourShareMinor: 37_500, paidByYou: true } })
+    expect(row.text()).toContain('$375.00')
+    expect(row.text()).toContain('you fronted')
+    expect(row.text()).not.toContain('you get')
+  })
 
-it('reads settled from the item state, not from the share being zero', () => {
-  // An item is square when every sharer's approved paybacks cover their portion. Somebody whose
-  // own share happens to be nil is a different thing entirely, and must not read as settled.
-  const square = mount(ExpenseRow, { props: { ...base, allSquare: true } })
-  expect(square.text()).toContain('settled')
+  it('reads settled from the item state, not from the share being zero', () => {
+    // An item is square when every sharer's approved paybacks cover their portion. Somebody whose
+    // own share happens to be nil is a different thing entirely, and must not read as settled.
+    const square = mount(ExpenseRow, { props: { ...base, allSquare: true } })
+    expect(square.text()).toContain('settled')
 
-  const zeroShare = mount(ExpenseRow, { props: { ...base, yourShareMinor: 0 } })
-  expect(zeroShare.text()).not.toContain('settled')
-})
+    const zeroShare = mount(ExpenseRow, { props: { ...base, yourShareMinor: 0 } })
+    expect(zeroShare.text()).not.toContain('settled')
+  })
 
-it('falls back to the other category rather than rendering nothing', () => {
-  const row = mount(ExpenseRow, { props: { ...base, categoryKey: 'nonsense' } })
-  expect(row.findComponent(TallyIcon).props('name')).toBe('circle-dashed')
-})
+  it('falls back to the other category rather than rendering nothing', () => {
+    const row = mount(ExpenseRow, { props: { ...base, categoryKey: 'nonsense' } })
+    expect(row.findComponent(TallyIcon).props('name')).toBe('circle-dashed')
+  })
 })
 
 describe('BalanceRow', () => {
@@ -125,6 +125,17 @@ describe('FamilyCounterpartRow', () => {
       props: { members, owedMinor: 500, cardName: 'Erin', cardMemberCount: 1 },
     })
     expect(row.text()).toContain('Cara and Dana owe')
+  })
+
+  it('bolds the verb itself, never the names either side of it', () => {
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: 500, cardName: 'Alice and Bob', cardMemberCount: 2 },
+    })
+    const strong = row.find('strong')
+    expect(strong.exists()).toBe(true)
+    expect(strong.text()).toBe('owe')
+    // The names are still there, just not inside the bolded element — plain text either side of it.
+    expect(row.find('.counterpart__sentence').text()).toBe('Cara and Dana owe Alice and Bob')
   })
 
   it('reads all square at exactly zero, not a tolerance', () => {

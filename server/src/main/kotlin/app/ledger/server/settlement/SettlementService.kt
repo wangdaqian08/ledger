@@ -132,6 +132,7 @@ class SettlementService(
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "They do not owe you anything")
         }
     }
+
     /**
      * Every Family in the completed partition (§7b): the viewer's explicit Families, plus everyone
      * else as an automatic one-person Family. Pre-validates every condition explicitly, the same
@@ -191,5 +192,4 @@ class SettlementService(
             },
         )
     }
-
 }

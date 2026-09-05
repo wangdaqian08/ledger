@@ -36,7 +36,7 @@ const joinedNames = computed(() =>
 )
 const netLable = computed(() => {
   if (props.netMinor === 0) return t('money.allSquare')
-  return props.netMinor > 0 ? t('settle.familyNetOwed'):t('settle.familyNetOwes')
+  return props.netMinor > 0 ? t('settle.familyNetOwed') : t('settle.familyNetOwes')
 })
 </script>
 
@@ -58,7 +58,7 @@ const netLable = computed(() => {
 
     <!-- The family's own net across the whole trip — same convention as TripView.yourNetMinor
          (positive = owed to them), so no sign flip belongs here, unlike the counterpart rows below. -->
-    <div class="family__net-label">{{netLable}}</div>
+    <div class="family__net-label">{{ netLable }}</div>
     <AmountText
       :amount-minor="Math.abs(netMinor)"
       size="lg"

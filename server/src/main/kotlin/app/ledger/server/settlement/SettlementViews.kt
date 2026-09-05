@@ -64,4 +64,3 @@ data class FamilyView(
 )
 
 data class FamiliesView(val families: List<FamilyView>)
-

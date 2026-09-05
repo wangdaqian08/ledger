@@ -51,9 +51,12 @@ export default {
     familyOwesCardPlural: '{card}待收{other}的钱',
     familyCardOwesSingular: '{card}待付给{other}',
     familyCardOwesPlural: '{card}待付给{other}',
+    familyOwesCardVerbSingular: '待收',
+    familyOwesCardVerbPlural: '待收',
+    familyCardOwesVerbSingular: '待付',
+    familyCardOwesVerbPlural: '待付',
     familyNetOwed: '这个家庭待收',
     familyNetOwes: '这个家庭待付',
-
   },
   payback: {
     pending: '等待{name}确认',

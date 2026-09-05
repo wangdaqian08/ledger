@@ -24,6 +24,12 @@ import type {FamilyMemberView} from '@/lib/api'
  * Family on either side). `cardName`/`cardMemberCount` describe the *enclosing* `FamilyBalanceCard`,
  * supplied by it directly rather than re-joined here from its own members a second time.
  *
+ * The verb itself renders bold. Getting there without `v-html` (the names on either side of it are
+ * user-typed display names, so raw HTML injection is a real risk, not a theoretical one) means the
+ * component re-splits its own already-translated sentence on the exact verb text, rather than
+ * asking the translation for three pieces to begin with — the whole sentence stays one reviewable,
+ * translatable unit, and the split is just a rendering detail.
+ *
  * Same sign convention as `BalanceRow`: positive when the counterpart shown on *this* row owes the
  * enclosing Family, negative when the enclosing Family owes them. The wire figure
  * (`FamilyCounterpartView.owedMinor`) is stated the other way round — positive means the *enclosing*
@@ -50,18 +56,27 @@ const theirName = computed(() =>
   new Intl.ListFormat(locale.value, { type: 'conjunction' }).format(props.members.map((m) => m.displayName)),
 )
 
-// Positive owedMinor: the counterpart owes this card. Negative: this card owes the counterpart.
-const sentence = computed(() => {
+// Sentence and verb keys are chosen together — same direction, same count — so the verb text
+// below is guaranteed to be an exact substring of the sentence it's about to be split out of.
+const keys = computed(() => {
   const owesCard = props.owedMinor > 0
   const count = owesCard ? props.members.length : props.cardMemberCount
-  const key = owesCard
-    ? count === 1
-      ? 'settle.familyOwesCardSingular'
-      : 'settle.familyOwesCardPlural'
-    : count === 1
-      ? 'settle.familyCardOwesSingular'
-      : 'settle.familyCardOwesPlural'
-  return t(key, { other: theirName.value, card: props.cardName })
+  const suffix = count === 1 ? 'Singular' : 'Plural'
+  return owesCard
+    ? { sentence: `settle.familyOwesCard${suffix}`, verb: `settle.familyOwesCardVerb${suffix}` }
+    : { sentence: `settle.familyCardOwes${suffix}`, verb: `settle.familyCardOwesVerb${suffix}` }
+})
+
+/** The verb rendered bold, split out of the sentence rather than asked for separately — see the
+ *  component doc comment above for why this avoids `v-html`. Falls back to the plain sentence,
+ *  unbolded, if the verb text somehow isn't found in it (it always should be; this is a seatbelt,
+ *  not an expected path). */
+const sentenceParts = computed(() => {
+  const sentence = t(keys.value.sentence, { other: theirName.value, card: props.cardName })
+  const verb = t(keys.value.verb)
+  const at = sentence.indexOf(verb)
+  if (at < 0) return { before: sentence, verb: '', after: '' }
+  return { before: sentence.slice(0, at), verb, after: sentence.slice(at + verb.length) }
 })
 </script>
 
@@ -73,7 +88,10 @@ const sentence = computed(() => {
       <div class="counterpart__state">{{ t('money.allSquare') }}</div>
     </div>
     <div v-else class="counterpart__body">
-      <div class="counterpart__sentence">{{ sentence }}</div>
+      <div class="counterpart__sentence">
+        {{ sentenceParts.before }}<strong>{{ sentenceParts.verb }}</strong
+        >{{ sentenceParts.after }}
+      </div>
     </div>
     <AmountText
       :amount-minor="Math.abs(owedMinor)"

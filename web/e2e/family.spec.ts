@@ -181,8 +181,8 @@ test('reopening settle-up resets family mode to by-person, with nothing built', 
 })
 
 test('ticking every candidate on the first build is blocked before submission, with a real reason', async ({
-                                                                                                             page,
-                                                                                                           }) => {
+  page,
+}) => {
   await signIn(page, uniquePerson('Alice'))
   await createTrip(page, 'Family overflow')
   await addMembers(page, ['Bob'])
