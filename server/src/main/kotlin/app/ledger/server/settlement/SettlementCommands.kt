@@ -5,7 +5,7 @@ import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.NotEmpty
 import jakarta.validation.constraints.Positive
-import java.util.*
+import java.util.UUID
 
 /** The Pay button. A request to the person owed, not an act — it settles nothing on its own. */
 data class SubmitSettlement(

@@ -1,7 +1,7 @@
 package app.ledger.server.settlement
 
 import app.ledger.server.payback.PaybackView
-import java.util.*
+import java.util.UUID
 
 /**
  * One row of the Settle-up screen: your position with one other person.

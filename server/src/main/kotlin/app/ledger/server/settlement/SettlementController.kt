@@ -3,7 +3,7 @@ package app.ledger.server.settlement
 import app.ledger.server.auth.LedgerPrincipal
 import app.ledger.server.payback.PaybackView
 import jakarta.validation.Valid
-import java.util.*
+import java.util.UUID
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
