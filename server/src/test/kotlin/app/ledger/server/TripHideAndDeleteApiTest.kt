@@ -4,12 +4,9 @@ import app.ledger.server.receipt.ReceiptRepository
 import app.ledger.server.receipt.ReceiptStorage
 import app.ledger.server.trip.TripPurge
 import app.ledger.server.trip.TripRepository
-import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.dao.DataIntegrityViolationException
-import org.springframework.http.HttpStatus
 import java.time.Duration
 import java.time.Instant
-import java.util.UUID
+import java.util.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -17,6 +14,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.http.HttpStatus
 
 /**
  * Putting a finished trip away, and getting rid of one (spec §3 · §5).

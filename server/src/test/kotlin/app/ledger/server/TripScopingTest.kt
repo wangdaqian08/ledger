@@ -1,12 +1,12 @@
 package app.ledger.server
 
+import java.util.*
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.JdbcTemplate
-import java.util.UUID
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 
 /**
  * One trip must not be able to reach into another.

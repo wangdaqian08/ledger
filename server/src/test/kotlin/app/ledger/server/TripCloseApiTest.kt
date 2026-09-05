@@ -1,11 +1,11 @@
 package app.ledger.server
 
-import org.springframework.http.HttpStatus
-import java.util.UUID
+import java.util.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import org.springframework.http.HttpStatus
 
 /**
  * Ending a trip (spec §3 · §5). The trip's record of spending closes; the settling of it does not.
