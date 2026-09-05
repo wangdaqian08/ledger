@@ -23,8 +23,8 @@ import app.ledger.server.payback.PaybackEntity
 import app.ledger.server.payback.PaybackRepository
 import app.ledger.server.payback.PaybackStatusName
 import app.ledger.server.receipt.ReceiptRepository
-import java.util.UUID
 import org.springframework.stereotype.Component
+import java.util.UUID
 
 /**
  * The item's identity inside the engine: both the salt its split rotates on and the key its

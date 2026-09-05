@@ -1,11 +1,11 @@
 package app.ledger.server
 
 import com.fasterxml.jackson.databind.JsonNode
+import org.junit.jupiter.api.Test
+import org.springframework.http.HttpStatus
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import org.junit.jupiter.api.Test
-import org.springframework.http.HttpStatus
 
 /**
  * Families on the Settle-up screen (§7b): a trip member partitions the whole trip into Families,
