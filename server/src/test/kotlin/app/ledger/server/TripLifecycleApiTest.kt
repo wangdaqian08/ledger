@@ -1,7 +1,7 @@
 package app.ledger.server
 
 import com.fasterxml.jackson.databind.JsonNode
-import java.util.*
+import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
