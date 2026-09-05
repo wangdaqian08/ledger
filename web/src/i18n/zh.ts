@@ -47,8 +47,13 @@ export default {
     addFamily: '添加家庭',
     chooseFamily: '选择这个家庭的成员',
     familyCannotBeEveryone: '请至少留一人在外——第一个家庭不能包含所有人',
-    familyOwesShort: '欠款',
-    familyOwedShort: '被欠',
+    familyOwesCardSingular: '{card}待收{other}的钱',
+    familyOwesCardPlural: '{card}待收{other}的钱',
+    familyCardOwesSingular: '{card}待付给{other}',
+    familyCardOwesPlural: '{card}待付给{other}',
+    familyNetOwed: '这个家庭待收',
+    familyNetOwes: '这个家庭待付',
+
   },
   payback: {
     pending: '等待{name}确认',

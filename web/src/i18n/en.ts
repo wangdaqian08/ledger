@@ -51,8 +51,12 @@ export default {
     chooseFamily: 'Choose who is in this family',
     familyCannotBeEveryone: "Leave at least one person out — a first family can't be everyone",
     // Pronoun-free: a Family is never "you", so these drop the "you"/"them" BalanceRow can use.
-    familyOwesShort: 'Owes',
-    familyOwedShort: 'Owed',
+    familyOwesCardSingular: '{other} owes {card}',
+    familyOwesCardPlural: '{other} owe {card}',
+    familyCardOwesSingular: '{card} owes {other}',
+    familyCardOwesPlural: '{card} owe {other}',
+    familyNetOwed: 'This family is owed',
+    familyNetOwes: 'This family owes',
   },
   payback: {
     pending: 'Waiting for {name}',

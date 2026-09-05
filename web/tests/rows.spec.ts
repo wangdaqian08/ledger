@@ -3,15 +3,15 @@ import {describe, expect, it} from 'vitest'
 import AppBar from '../src/components/AppBar.vue'
 import BalanceRow from '../src/components/BalanceRow.vue'
 import ExpenseRow from '../src/components/ExpenseRow.vue'
+import FamilyBalanceCard from '../src/components/FamilyBalanceCard.vue'
+import FamilyCounterpartRow from '../src/components/FamilyCounterpartRow.vue'
 import GroupCard from '../src/components/GroupCard.vue'
 import ProgressBar from '../src/components/ProgressBar.vue'
 import TallyIcon from '../src/components/TallyIcon.vue'
 import TallyStepper from '../src/components/TallyStepper.vue'
 import TallyKeypad from '../src/components/TallyKeypad.vue'
+import type {FamilyCounterpartView, FamilyMemberView} from '@/lib/api'
 import {findAllByTestId, findByTestId} from './testids'
-import FamilyBalanceCard from "@/components/FamilyBalanceCard.vue";
-import FamilyCounterpartRow from "@/components/FamilyCounterpartRow.vue";
-import type {FamilyCounterpartView, FamilyMemberView} from "@/lib/api";
 
 describe('ExpenseRow', () => {
   const base = { title: 'Hotel', yourShareMinor: -14286, categoryKey: 'stay' }
@@ -25,27 +25,27 @@ describe('ExpenseRow', () => {
     expect(row.text()).not.toContain('you owe')
   })
 
-  it('calls the payer’s stake what they fronted, not what they “get”', () => {
-    const row = mount(ExpenseRow, { props: { ...base, yourShareMinor: 37_500, paidByYou: true } })
-    expect(row.text()).toContain('$375.00')
-    expect(row.text()).toContain('you fronted')
-    expect(row.text()).not.toContain('you get')
-  })
+  it('calls the payer’s stake what they fronted, not what they "get"', () => {
+  const row = mount(ExpenseRow, { props: { ...base, yourShareMinor: 37_500, paidByYou: true } })
+  expect(row.text()).toContain('$375.00')
+  expect(row.text()).toContain('you fronted')
+  expect(row.text()).not.toContain('you get')
+})
 
-  it('reads settled from the item state, not from the share being zero', () => {
-    // An item is square when every sharer's approved paybacks cover their portion. Somebody whose
-    // own share happens to be nil is a different thing entirely, and must not read as settled.
-    const square = mount(ExpenseRow, { props: { ...base, allSquare: true } })
-    expect(square.text()).toContain('settled')
+it('reads settled from the item state, not from the share being zero', () => {
+  // An item is square when every sharer's approved paybacks cover their portion. Somebody whose
+  // own share happens to be nil is a different thing entirely, and must not read as settled.
+  const square = mount(ExpenseRow, { props: { ...base, allSquare: true } })
+  expect(square.text()).toContain('settled')
 
-    const zeroShare = mount(ExpenseRow, { props: { ...base, yourShareMinor: 0 } })
-    expect(zeroShare.text()).not.toContain('settled')
-  })
+  const zeroShare = mount(ExpenseRow, { props: { ...base, yourShareMinor: 0 } })
+  expect(zeroShare.text()).not.toContain('settled')
+})
 
-  it('falls back to the other category rather than rendering nothing', () => {
-    const row = mount(ExpenseRow, { props: { ...base, categoryKey: 'nonsense' } })
-    expect(row.findComponent(TallyIcon).props('name')).toBe('circle-dashed')
-  })
+it('falls back to the other category rather than rendering nothing', () => {
+  const row = mount(ExpenseRow, { props: { ...base, categoryKey: 'nonsense' } })
+  expect(row.findComponent(TallyIcon).props('name')).toBe('circle-dashed')
+})
 })
 
 describe('BalanceRow', () => {
@@ -81,32 +81,63 @@ describe('BalanceRow', () => {
     expect(pending.findAll('button')).toHaveLength(0)
   })
 })
+
 describe('FamilyCounterpartRow', () => {
   const members: FamilyMemberView[] = [
     { id: 'm-c', displayName: 'Cara', personHue: 3 },
     { id: 'm-d', displayName: 'Dana', personHue: 4 },
   ]
 
-  it('shows a family that owes, with no Pay or Remind button — nobody could tap it on its behalf', () => {
-    const row = mount(FamilyCounterpartRow, { props: { members, owedMinor: 500 } })
-    expect(row.text()).toContain('Owes')
+  it('names both sides when the counterpart owes, with no Pay or Remind button — nobody could tap it on its behalf', () => {
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: 500, cardName: 'Alice and Bob', cardMemberCount: 2 },
+    })
+    expect(row.text()).toContain('Cara and Dana')
+    expect(row.text()).toContain('owe')
+    expect(row.text()).toContain('Alice and Bob')
     expect(row.text()).toContain('$5.00')
     expect(row.findAll('button')).toHaveLength(0)
   })
 
-  it('shows a family that is owed', () => {
-    const row = mount(FamilyCounterpartRow, { props: { members, owedMinor: -1250 } })
-    expect(row.text()).toContain('Owed')
+  it('names both sides the other way round when this card owes the counterpart', () => {
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: -1250, cardName: 'Alice and Bob', cardMemberCount: 2 },
+    })
+    expect(row.text()).toContain('Alice and Bob')
+    expect(row.text()).toContain('owe')
+    expect(row.text()).toContain('Cara and Dana')
     expect(row.text()).toContain('$12.50')
   })
 
+  it('conjugates for a one-person subject ("owes"), picked by the subject\'s own count', () => {
+    // The card (Erin, one person) owes the counterpart here, so the card is the subject and it is
+    // exactly one person — "Erin owes", never "Erin owe" — regardless of the counterpart's own size.
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: -1250, cardName: 'Erin', cardMemberCount: 1 },
+    })
+    expect(row.text()).toContain('Erin owes')
+  })
+
+  it('conjugates for a multi-person subject ("owe")', () => {
+    // Now the counterpart (Cara and Dana, two people) owes the card — the counterpart is the
+    // subject, and it is two people, so "owe", never "owes".
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: 500, cardName: 'Erin', cardMemberCount: 1 },
+    })
+    expect(row.text()).toContain('Cara and Dana owe')
+  })
+
   it('reads all square at exactly zero, not a tolerance', () => {
-    const row = mount(FamilyCounterpartRow, { props: { members, owedMinor: 0 } })
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: 0, cardName: 'Alice and Bob', cardMemberCount: 2 },
+    })
     expect(row.text()).toContain('All square')
   })
 
   it('joins every member of the counterpart into one label', () => {
-    const row = mount(FamilyCounterpartRow, { props: { members, owedMinor: 0 } })
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: 0, cardName: 'Alice and Bob', cardMemberCount: 2 },
+    })
     expect(row.text()).toContain('Cara')
     expect(row.text()).toContain('Dana')
   })

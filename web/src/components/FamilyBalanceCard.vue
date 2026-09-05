@@ -34,6 +34,10 @@ const { t, locale } = useI18n()
 const joinedNames = computed(() =>
   new Intl.ListFormat(locale.value, { type: 'conjunction' }).format(props.members.map((m) => m.displayName)),
 )
+const netLable = computed(() => {
+  if (props.netMinor === 0) return t('money.allSquare')
+  return props.netMinor > 0 ? t('settle.familyNetOwed'):t('settle.familyNetOwes')
+})
 </script>
 
 <template>
@@ -54,6 +58,7 @@ const joinedNames = computed(() =>
 
     <!-- The family's own net across the whole trip — same convention as TripView.yourNetMinor
          (positive = owed to them), so no sign flip belongs here, unlike the counterpart rows below. -->
+    <div class="family__net-label">{{netLable}}</div>
     <AmountText
       :amount-minor="Math.abs(netMinor)"
       size="lg"
@@ -68,6 +73,8 @@ const joinedNames = computed(() =>
         :key="counterpart.members.map((m) => m.id).join(',')"
         :members="counterpart.members"
         :owed-minor="-counterpart.owedMinor"
+        :card-name="joinedNames"
+        :card-member-count="members.length"
         :currency-code="currencyCode"
         :symbol="symbol"
       />
@@ -95,6 +102,10 @@ const joinedNames = computed(() =>
   font-weight: var(--weight-bold);
   color: var(--ink);
   overflow-wrap: anywhere;
+}
+.family__net-label {
+  font-size: var(--text-caption);
+  color: var(--text-muted);
 }
 
 .family__counterparts {

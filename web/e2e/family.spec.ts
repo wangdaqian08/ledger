@@ -91,17 +91,17 @@ test('building a family combines nets and shows a genuine family-vs-family figur
   // $20, Alice-Dana $20, Bob-Cathy $10 (the taxi), Bob-Dana $0 — which totals $50, and is never
   // reducible to either person's own row (Cathy alone owes $30 in total, Dana alone owes $10).
   const abVsCd = familyAB.getByTestId('family-counterpart-row').filter({ hasText: 'Cathy and Dana' })
-  await expect(abVsCd).toContainText('Owes')
+  await expect(abVsCd).toContainText(`Cathy and Dana owe ${aliceName} and Bob`)
   await expect(abVsCd).toContainText('50.00')
   const abVsErin = familyAB.getByTestId('family-counterpart-row').filter({ hasText: 'Erin' })
-  await expect(abVsErin).toContainText('Owes')
+  await expect(abVsErin).toContainText(`Erin owes ${aliceName} and Bob`)
   await expect(abVsErin).toContainText('20.00')
 
   // And Cathy+Dana's own card agrees exactly, the other way round.
   const familyCD = cards.filter({ hasText: 'Cathy and Dana' })
   await expect(familyCD).toContainText('40.00')
   const cdVsAb = familyCD.getByTestId('family-counterpart-row').filter({ hasText: `${aliceName} and Bob` })
-  await expect(cdVsAb).toContainText('Owed')
+  await expect(cdVsAb).toContainText(`Cathy and Dana owe ${aliceName} and Bob`)
   await expect(cdVsAb).toContainText('50.00')
 })
 
