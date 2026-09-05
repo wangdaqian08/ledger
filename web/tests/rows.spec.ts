@@ -1,5 +1,5 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import {mount} from '@vue/test-utils'
+import {describe, expect, it} from 'vitest'
 import AppBar from '../src/components/AppBar.vue'
 import BalanceRow from '../src/components/BalanceRow.vue'
 import ExpenseRow from '../src/components/ExpenseRow.vue'
@@ -8,7 +8,10 @@ import ProgressBar from '../src/components/ProgressBar.vue'
 import TallyIcon from '../src/components/TallyIcon.vue'
 import TallyStepper from '../src/components/TallyStepper.vue'
 import TallyKeypad from '../src/components/TallyKeypad.vue'
-import { findByTestId } from './testids'
+import {findAllByTestId, findByTestId} from './testids'
+import FamilyBalanceCard from "@/components/FamilyBalanceCard.vue";
+import FamilyCounterpartRow from "@/components/FamilyCounterpartRow.vue";
+import type {FamilyCounterpartView, FamilyMemberView} from "@/lib/api";
 
 describe('ExpenseRow', () => {
   const base = { title: 'Hotel', yourShareMinor: -14286, categoryKey: 'stay' }
@@ -76,6 +79,83 @@ describe('BalanceRow', () => {
     const pending = mount(BalanceRow, { props: { ...base, owedMinor: -3910, pending: true } })
     expect(pending.text()).toContain('Waiting for confirmation')
     expect(pending.findAll('button')).toHaveLength(0)
+  })
+})
+describe('FamilyCounterpartRow', () => {
+  const members: FamilyMemberView[] = [
+    { id: 'm-c', displayName: 'Cara', personHue: 3 },
+    { id: 'm-d', displayName: 'Dana', personHue: 4 },
+  ]
+
+  it('shows a family that owes, with no Pay or Remind button — nobody could tap it on its behalf', () => {
+    const row = mount(FamilyCounterpartRow, { props: { members, owedMinor: 500 } })
+    expect(row.text()).toContain('Owes')
+    expect(row.text()).toContain('$5.00')
+    expect(row.findAll('button')).toHaveLength(0)
+  })
+
+  it('shows a family that is owed', () => {
+    const row = mount(FamilyCounterpartRow, { props: { members, owedMinor: -1250 } })
+    expect(row.text()).toContain('Owed')
+    expect(row.text()).toContain('$12.50')
+  })
+
+  it('reads all square at exactly zero, not a tolerance', () => {
+    const row = mount(FamilyCounterpartRow, { props: { members, owedMinor: 0 } })
+    expect(row.text()).toContain('All square')
+  })
+
+  it('joins every member of the counterpart into one label', () => {
+    const row = mount(FamilyCounterpartRow, { props: { members, owedMinor: 0 } })
+    expect(row.text()).toContain('Cara')
+    expect(row.text()).toContain('Dana')
+  })
+})
+
+describe('FamilyBalanceCard', () => {
+  const members: FamilyMemberView[] = [
+    { id: 'm-a', displayName: 'Alice', personHue: 1 },
+    { id: 'm-b', displayName: 'Bob', personHue: 2 },
+  ]
+  const counterparts: FamilyCounterpartView[] = [
+    { members: [{ id: 'm-c', displayName: 'Cara', personHue: 3 }], owedMinor: 500 },
+    { members: [{ id: 'm-d', displayName: 'Dana', personHue: 4 }], owedMinor: -300 },
+  ]
+
+  it("shows the family's own net and one row per counterpart, never per individual", () => {
+    const card = mount(FamilyBalanceCard, {
+      props: { members, netMinor: 200, counterparts, removable: false },
+    })
+    expect(card.text()).toContain('$2.00')
+    expect(card.findAllComponents(FamilyCounterpartRow)).toHaveLength(2)
+  })
+
+  it('flips the wire sign once for each counterpart row, the same way SettleUpSheet flips it for BalanceRow', () => {
+    // The API states owedMinor from the enclosing Family's own point of view (positive = this
+    // Family owes them, matching SettlementRow.owedMinor's convention) — the same figure
+    // FamilyCounterpartRow displays the other way round (positive = they owe this Family), so the
+    // call site negates it exactly once, same as SettleUpSheet.vue does for BalanceRow.
+    const card = mount(FamilyBalanceCard, {
+      props: { members, netMinor: 0, counterparts, removable: false },
+    })
+    const rows = card.findAllComponents(FamilyCounterpartRow)
+    expect(rows[0]!.props('owedMinor')).toBe(-500) // raw +500 (this family owes Cara) -> Cara's row is -500
+    expect(rows[1]!.props('owedMinor')).toBe(300) // raw -300 (Dana owes this family) -> Dana's row is +300
+  })
+
+  it('offers Undo only when explicitly built, never for an auto-singleton', async () => {
+    const singleton = mount(FamilyBalanceCard, {
+      props: { members, netMinor: 0, counterparts: [], removable: false },
+    })
+    expect(findAllByTestId(singleton, 'family-undo')).toHaveLength(0)
+
+    const built = mount(FamilyBalanceCard, {
+      props: { members, netMinor: 0, counterparts: [], removable: true },
+    })
+    expect(findAllByTestId(built, 'family-undo')).toHaveLength(1)
+
+    await findByTestId(built, 'family-undo').trigger('click')
+    expect(built.emitted('remove')).toHaveLength(1)
   })
 })
 

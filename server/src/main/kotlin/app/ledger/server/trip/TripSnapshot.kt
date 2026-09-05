@@ -1,27 +1,13 @@
 package app.ledger.server.trip
 
-import app.ledger.engine.Item
-import app.ledger.engine.ItemId
-import app.ledger.engine.ItemState
-import app.ledger.engine.MemberId
-import app.ledger.engine.Payback
-import app.ledger.engine.PaybackStatus
-import app.ledger.engine.SplitRule
-import app.ledger.engine.Trip
-import app.ledger.engine.itemState
-import app.ledger.engine.settle
-import app.ledger.engine.shares
-import app.ledger.server.item.ItemEntity
-import app.ledger.server.item.ItemRepository
-import app.ledger.server.item.ItemShareEntity
-import app.ledger.server.item.ItemShareRepository
-import app.ledger.server.item.SplitRuleName
+import app.ledger.engine.*
+import app.ledger.server.item.*
 import app.ledger.server.payback.PaybackEntity
 import app.ledger.server.payback.PaybackRepository
 import app.ledger.server.payback.PaybackStatusName
 import app.ledger.server.receipt.ReceiptRepository
 import org.springframework.stereotype.Component
-import java.util.UUID
+import java.util.*
 
 /**
  * The item's identity inside the engine: both the salt its split rotates on and the key its
@@ -102,7 +88,13 @@ class TripSnapshot(
      */
     fun owesBetween(a: UUID, b: UUID): Long =
         // Qualified: this method's own name would otherwise shadow the engine function it calls.
-        app.ledger.engine.owesBetween(engineTrip, MemberId(a.toString()), MemberId(b.toString()))
+        owesBetween(engineTrip, MemberId(a.toString()), MemberId(b.toString()))
+
+    fun families(explicitFamilies: List<Set<UUID>>): List<FamilyBalance> =partitionIntoFamilies(
+        engineTrip,
+        explicitFamilies.map { it.mapTo(mutableSetOf()) { id -> MemberId(id.toString()) } },
+        settlement
+    )
 
     private fun PaybackEntity.toEnginePayback() = Payback(
         from = MemberId(fromMemberId.toString()),

@@ -187,3 +187,77 @@ fun owesBetween(trip: Trip, a: MemberId, b: MemberId): Long {
 
     return oneWay(a, b) - oneWay(b, a)
 }
+
+/** Any subset of the trip's members treated as one unit on the Settle-up screen. */
+data class Family(val members: Set<MemberId>)
+
+/**
+ * One Family's position in a completed partition (§7b): its own net across the whole trip, and
+ * its bilateral position with every *other* Family in the same partition — never with an
+ * individual, and never the minimised transfer set ([suggestTransfers] is for a different screen
+ * entirely — see the comment on it).
+ */
+data class FamilyBalance(val family: Family, val netMinor: Long, val betweenFamilies: Map<Family, Long>)
+
+/**
+ * Splits the whole trip into Families for the Settle-up screen (§7b).
+ *
+ * [explicitFamilies] is whatever the viewer has built so far — zero or more disjoint, non-empty
+ * subsets of [Trip.members], in build order. Everyone else becomes their own one-person Family
+ * automatically, so the result is always a complete partition of [Trip.members].
+ *
+ * Ephemeral by design: nothing here is persisted, so this is re-derived from scratch on every call
+ * from whatever the caller currently holds — the same way [owesBetween] is re-derived per row
+ * rather than stored.
+ *
+ * [settlement] defaults to a fresh [settle] so standalone callers/tests need not supply one, but a
+ * caller with one already cached (`TripSnapshot`) must pass it through instead of paying for a
+ * second pass.
+ *
+ * @throws IllegalArgumentException if an explicit Family is empty, if two explicit Families share
+ *   a member, if a named member is not on the trip, or if the completed partition would have
+ *   fewer than two Families (a single explicit Family naming everyone, leaving nobody to
+ *   auto-singleton).
+ */
+fun partitionIntoFamilies(
+    trip: Trip,
+    explicitFamilies: List<Set<MemberId>>,
+    settlement: Settlement = settle(trip),
+): List<FamilyBalance> {
+    val onTrip = trip.members.toSet()
+
+    explicitFamilies.forEach { family ->
+        require(family.isNotEmpty()) { "a family cannot be empty" }
+        require(onTrip.containsAll(family)) { "a family can only contain members of this trip" }
+    }
+
+    val seen = mutableSetOf<MemberId>()
+    explicitFamilies.forEach { family ->
+        require((family intersect seen).isEmpty()) { "somebody is in two families at once" }
+        seen += family
+    }
+
+    val singletons = (onTrip - seen).map { setOf(it) }
+    val families = (explicitFamilies + singletons).map(::Family)
+    require(families.size >= 2) { "a partition needs at least two families" }
+
+    fun netOf(family: Family) = family.members.sumOf(settlement::net)
+
+    fun owesBetweenFamilies(a: Family, b: Family) = a.members.sumOf { x ->
+        b.members.sumOf { y ->
+            owesBetween(
+                trip,
+                x,
+                y,
+            )
+        }
+    }
+
+    return families.map { family ->
+        FamilyBalance(
+            family = family,
+            netMinor = netOf(family),
+            betweenFamilies = families.filter { it != family }.associateWith { owesBetweenFamilies(family, it) },
+        )
+    }
+}

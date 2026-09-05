@@ -1,8 +1,8 @@
-import { flushPromises, mount } from '@vue/test-utils'
-import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
-import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import {flushPromises, mount} from '@vue/test-utils'
+import {createPinia, setActivePinia} from 'pinia'
+import {beforeEach, describe, expect, it, vi} from 'vitest'
+import {nextTick} from 'vue'
+import {createMemoryHistory, createRouter, type Router} from 'vue-router'
 import SheetPanel from '../src/components/SheetPanel.vue'
 import AddExpenseSheet from '../src/screens/sheets/AddExpenseSheet.vue'
 import ClaimPaybackSheet from '../src/screens/sheets/ClaimPaybackSheet.vue'
@@ -15,11 +15,13 @@ import JoinScreen from '../src/screens/JoinScreen.vue'
 import SignInScreen from '../src/screens/SignInScreen.vue'
 import TripScreen from '../src/screens/TripScreen.vue'
 import TripsScreen from '../src/screens/TripsScreen.vue'
-import { findAllByTestId, findByTestId } from './testids'
+import {findAllByTestId, findByTestId, testId} from './testids'
 import en from '../src/i18n/en'
-import { useSession } from '@/stores/session'
-import { saltFor, splitShares } from '@/lib/split'
+import {useSession} from '@/stores/session'
+import {saltFor, splitShares} from '@/lib/split'
 import type {
+  FamiliesView,
+  FamilyMemberView,
   ItemView,
   MemberView,
   PaybackView,
@@ -63,6 +65,7 @@ vi.mock('../src/lib/api', async () => {
       settlement: vi.fn(),
       submitSettlement: vi.fn(),
       remind: vi.fn(),
+      previewFamilies: vi.fn(),
       closeTrip: vi.fn(),
       reopenTrip: vi.fn(),
       hideTrip: vi.fn(),
@@ -1343,6 +1346,7 @@ describe('SettleUpSheet', () => {
             rejected: [],
           },
         ],
+        members:[you, bob],
         currencyCode: 'AUD',
         symbol: '$',
       },
@@ -1431,6 +1435,7 @@ describe('SettleUpSheet', () => {
         myMemberId: you.id,
         youAreCreator: false,
         rows,
+        members:[you, bob],
         currencyCode: 'AUD',
         symbol: '$',
       },
@@ -1458,6 +1463,341 @@ describe('SettleUpSheet', () => {
     // Retrying speaks for itself — the old decline should not sit beside the new pending claim.
     expect(findAllByTestId(sheet, 'declined-claim')).toHaveLength(0)
     expect(findByTestId(sheet, 'pending-claim')).toBeTruthy()
+  })
+})
+describe('SettleUpSheet Family mode', () => {
+  // A complete partition is built incrementally (§7b): 4 people so a single build still leaves 2+
+  // unassigned, keeping "Build a family" offered and the scenario worth narrating.
+  const dana: MemberView = { id: 'm-dana', displayName: 'Dana', personHue: 4, claimed: true, isYou: false }
+  const members = [you, bob, cara, dana]
+  const fm = (m: MemberView): FamilyMemberView => ({
+    id: m.id,
+    displayName: m.displayName,
+    personHue: m.personHue,
+  })
+
+  function mountFamily(rows: SettlementRow[] = []) {
+    return mount(SettleUpSheet, {
+      props: {
+        open: true,
+        tripId: 't-1',
+        myMemberId: you.id,
+        youAreCreator: true,
+        rows,
+        members,
+        currencyCode: 'AUD',
+        symbol: '$',
+      },
+      global: global(),
+    })
+  }
+
+  async function buildFamily(sheet: ReturnType<typeof mount>, names: string[]) {
+    await findByTestId(sheet, 'build-family').trigger('click')
+    for (const name of names) {
+      const row = findAllByTestId(sheet, 'person-toggle').find((r) => r.text().includes(name))!
+      await row.trigger('click')
+    }
+    await findByTestId(sheet, 'family-builder-add').trigger('click')
+    await flushPromises()
+  }
+
+  it('shows nothing until a family is built, and never fetches for an empty partition', async () => {
+    const sheet = mountFamily()
+    await nextTick()
+    expect(findByTestId(sheet, 'mode-by-family').attributes('aria-pressed')).toBe('false')
+
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await flushPromises()
+
+    // Nothing built yet reads as nothing to show — not four one-person "families" that are really
+    // just the per-person view relabelled, and not a wasted request for a partition that's empty.
+    expect(mocked.previewFamilies).not.toHaveBeenCalled()
+    expect(findAllByTestId(sheet, 'family-card')).toHaveLength(0)
+    expect(findByTestId(sheet, 'no-families-yet').exists()).toBe(true)
+    expect(findByTestId(sheet, 'build-family').exists()).toBe(true)
+  })
+
+  it("building a family removes its members from the next builder's candidate list", async () => {
+    mocked.previewFamilies!.mockResolvedValue({ families: [] })
+    const sheet = mountFamily()
+    await nextTick()
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await flushPromises()
+
+    await findByTestId(sheet, 'build-family').trigger('click')
+    // Nothing built yet: every trip member is a candidate.
+    expect(findAllByTestId(sheet, 'person-toggle')).toHaveLength(4)
+    await findByTestId(sheet, 'family-builder-cancel').trigger('click')
+
+    await buildFamily(sheet, ['Bob', 'Cara'])
+    expect(mocked.previewFamilies).toHaveBeenLastCalledWith('t-1', [[bob.id, cara.id]])
+
+    await findByTestId(sheet, 'build-family').trigger('click')
+    const secondBuilderRows = findAllByTestId(sheet, 'person-toggle')
+    expect(secondBuilderRows).toHaveLength(2) // only Alice (You) and Dana remain
+    expect(secondBuilderRows.some((r) => r.text().includes('Bob'))).toBe(false)
+    expect(secondBuilderRows.some((r) => r.text().includes('Cara'))).toBe(false)
+  })
+
+  it('undoing the only built family returns to the empty state, and never emits changed', async () => {
+    mocked.previewFamilies!.mockResolvedValueOnce({
+      families: [
+        {
+          members: [fm(bob), fm(cara)],
+          netMinor: 0,
+          counterparts: [
+            { members: [fm(you)], owedMinor: 0 },
+            { members: [fm(dana)], owedMinor: 0 },
+          ],
+        },
+        { members: [fm(you)], netMinor: 0, counterparts: [] },
+        { members: [fm(dana)], netMinor: 0, counterparts: [] },
+      ],
+    }) // the only real fetch this test makes — building {Bob, Cara}
+
+    const sheet = mountFamily()
+    await nextTick()
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await flushPromises()
+    expect(mocked.previewFamilies).not.toHaveBeenCalled() // nothing built yet, nothing fetched
+
+    await buildFamily(sheet, ['Bob', 'Cara'])
+    expect(findAllByTestId(sheet, 'family-card')).toHaveLength(3)
+    expect(findAllByTestId(sheet, 'family-undo')).toHaveLength(1)
+
+    await findByTestId(sheet, 'family-undo').trigger('click')
+    await flushPromises()
+
+    // Back to nothing built: the empty state, not a fresh fetch for a now-empty partition.
+    expect(mocked.previewFamilies).toHaveBeenCalledTimes(1)
+    expect(findAllByTestId(sheet, 'family-card')).toHaveLength(0)
+    expect(findByTestId(sheet, 'no-families-yet').exists()).toBe(true)
+    // Building and undoing a Family is a pure local/read affair — never the trip-changing act().
+    expect(sheet.emitted('changed')).toBeUndefined()
+  })
+
+  it('resets Family mode and anything built when the sheet reopens', async () => {
+    mocked.previewFamilies!.mockResolvedValue({
+      families: [
+        { members: [fm(bob)], netMinor: 0, counterparts: [] },
+        { members: [fm(you)], netMinor: 0, counterparts: [] },
+        { members: [fm(cara)], netMinor: 0, counterparts: [] },
+        { members: [fm(dana)], netMinor: 0, counterparts: [] },
+      ],
+    })
+    const sheet = mountFamily()
+    await nextTick()
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await flushPromises()
+    await buildFamily(sheet, ['Bob'])
+    expect(findByTestId(sheet, 'mode-by-family').attributes('aria-pressed')).toBe('true')
+
+    await sheet.setProps({ open: false })
+    await sheet.setProps({ open: true })
+    await nextTick()
+
+    expect(findByTestId(sheet, 'mode-by-person').attributes('aria-pressed')).toBe('true')
+    expect(findByTestId(sheet, 'mode-by-family').attributes('aria-pressed')).toBe('false')
+    expect(findAllByTestId(sheet, 'family-card')).toHaveLength(0)
+  })
+
+  it('surfaces a failed build without disturbing the per-person view', async () => {
+    mocked.previewFamilies!.mockRejectedValue(new Error('Network unreachable'))
+    const sheet = mountFamily([
+      {
+        memberId: bob.id,
+        displayName: 'Bob',
+        personHue: 2,
+        owedMinor: 6_000,
+        pending: [],
+        settled: [],
+        rejected: [],
+      },
+    ])
+    await nextTick()
+
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await flushPromises()
+    // Nothing built yet, so nothing has even been requested — let alone failed.
+    expect(mocked.previewFamilies).not.toHaveBeenCalled()
+
+    await buildFamily(sheet, ['Bob', 'Cara'])
+
+    expect(sheet.text()).toContain('Network unreachable')
+    expect(findAllByTestId(sheet, 'family-card')).toHaveLength(0)
+
+    await findByTestId(sheet, 'mode-by-person').trigger('click')
+
+    // The per-person row is untouched by the failed Family fetch.
+    expect(findByTestId(sheet, 'row-pay').exists()).toBe(true)
+  })
+
+  it('rolls back a rejected family and keeps the builder open to fix it, instead of getting stuck', async () => {
+    // Regression test: onFamilyBuilt used to commit to builtFamilies before the server round-trip
+    // and unconditionally close the builder. A rejection (e.g. this attempted partition, or any
+    // other reason the server refuses one) then left builtFamilies holding a partition nothing on
+    // screen matched: the builder was gone, no card carried Undo for it, and if the rejected
+    // attempt had also consumed the last unassigned people, "Build a family" vanished too — no way
+    // back short of closing the whole sheet. Now the builder simply stays open, selection intact,
+    // until the server actually accepts what was built.
+    mocked
+      .previewFamilies!.mockResolvedValueOnce({
+      families: [
+        { members: [fm(bob), fm(cara)], netMinor: 500, counterparts: [] },
+        { members: [fm(you)], netMinor: -250, counterparts: [] },
+        { members: [fm(dana)], netMinor: -250, counterparts: [] },
+      ],
+    }) // building {Bob, Cara} — the first fetch, since nothing built yet fetches nothing
+      .mockRejectedValueOnce(new Error('a trip needs at least two families')) // the failed attempt
+      .mockResolvedValueOnce({
+        families: [
+          { members: [fm(bob), fm(cara)], netMinor: 500, counterparts: [] },
+          { members: [fm(you)], netMinor: -250, counterparts: [] },
+          { members: [fm(dana)], netMinor: -250, counterparts: [] }, // auto-singleton: never ticked
+        ],
+      }) // the corrected retry (You alone) — Dana falls out as a singleton, same as before the attempt
+
+    const sheet = mountFamily()
+    await nextTick()
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await flushPromises()
+    expect(mocked.previewFamilies).not.toHaveBeenCalled() // nothing built yet, nothing fetched
+
+    await buildFamily(sheet, ['Bob', 'Cara'])
+    expect(findAllByTestId(sheet, 'family-card')).toHaveLength(3)
+
+    await buildFamily(sheet, ['You', 'Dana'])
+    expect(mocked.previewFamilies).toHaveBeenLastCalledWith('t-1', [
+      [bob.id, cara.id],
+      [you.id, dana.id],
+    ])
+
+    // Stuck would look like: no error, no builder, and no cards — the sheet's only way forward
+    // being to close entirely. None of that: the builder is still right here, over the same two
+    // candidates, with the error explaining what to change.
+    expect(sheet.text()).toContain('a trip needs at least two families')
+    expect(findAllByTestId(sheet, 'person-toggle')).toHaveLength(2) // still You and Dana, still open
+
+    // Not just the same two candidates listed — the exact selection that was submitted must still
+    // be ticked. Losing this silently (candidates unchanged, ticks wiped) was the actual bug: the
+    // builder used to be torn down and recreated on a rejection, resetting its local `ticked` state.
+    const youToggle = findAllByTestId(sheet, 'person-toggle').find((r) => r.text().includes('You'))!
+    const danaToggle = findAllByTestId(sheet, 'person-toggle').find((r) => r.text().includes('Dana'))!
+    expect(youToggle.attributes('aria-pressed')).toBe('true')
+    expect(danaToggle.attributes('aria-pressed')).toBe('true')
+
+    // Untick just Dana and retry — fixing the rejected selection means removing what's wrong, not
+    // rebuilding the partition from scratch, because the tick state survived the rejection.
+    await danaToggle.trigger('click')
+    await findByTestId(sheet, 'family-builder-add').trigger('click')
+    await flushPromises()
+
+    expect(mocked.previewFamilies).toHaveBeenLastCalledWith('t-1', [[bob.id, cara.id], [you.id]])
+    expect(findAllByTestId(sheet, 'family-card')).toHaveLength(3) // {Bob,Cara}, {You}, and Dana auto
+    expect(findAllByTestId(sheet, 'family-undo')).toHaveLength(2) // both explicit families, not Dana
+  })
+
+  it('never emits changed just from switching modes back and forth', async () => {
+    // A family already built, so re-entering Family mode below actually re-fetches — with nothing
+    // built, switching modes fetches nothing at all, which would make this guard vacuous.
+    mocked.previewFamilies!.mockResolvedValue({
+      families: [
+        { members: [fm(bob), fm(cara)], netMinor: 0, counterparts: [] },
+        { members: [fm(you)], netMinor: 0, counterparts: [] },
+        { members: [fm(dana)], netMinor: 0, counterparts: [] },
+      ],
+    })
+    const sheet = mountFamily()
+    await nextTick()
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await flushPromises()
+    await buildFamily(sheet, ['Bob', 'Cara'])
+
+    await findByTestId(sheet, 'mode-by-person').trigger('click')
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await flushPromises()
+
+    expect(sheet.emitted('changed')).toBeUndefined()
+  })
+
+  it('discards a stale disband response that resolves after a newer one, instead of resurrecting the card it just removed', async () => {
+    // Regression test for a request-ordering race in refreshFamilies(), which every caller
+    // (onFamilyBuilt, disband, both watches) shares with no guard against an older request's
+    // response overwriting a newer one. Reachable via disband alone: three explicit Families are
+    // built (Bob, Cara, Dana), leaving You as the sole automatic singleton. Undo on Bob's card
+    // fires a request for {Cara, Dana}; before it returns, Undo on Cara's card — a different,
+    // still-live card — fires a second request for {Dana} alone. On a real network the two
+    // responses can come back in either order; this test forces the OLDER request (Bob's) to
+    // resolve LAST, after the NEWER one (Cara's) has already resolved and been applied.
+    const built: FamiliesView = {
+      families: [
+        { members: [fm(bob)], netMinor: 0, counterparts: [] },
+        { members: [fm(cara)], netMinor: 0, counterparts: [] },
+        { members: [fm(dana)], netMinor: 0, counterparts: [] },
+        { members: [fm(you)], netMinor: 0, counterparts: [] }, // auto singleton, never ticked
+      ],
+    }
+    // What the server would have said for "minus Bob" alone — still carries Cara, because at the
+    // moment this request was fired Cara had not been undone yet. This is the stale answer.
+    const staleMinusBobOnly: FamiliesView = {
+      families: [
+        { members: [fm(cara)], netMinor: 0, counterparts: [] },
+        { members: [fm(dana)], netMinor: 0, counterparts: [] },
+        { members: [fm(you)], netMinor: 0, counterparts: [] },
+      ],
+    }
+    // "minus both Bob and Cara" — the correct, most-recently-requested state.
+    const freshMinusBoth: FamiliesView = {
+      families: [
+        { members: [fm(dana)], netMinor: 0, counterparts: [] },
+        { members: [fm(you)], netMinor: 0, counterparts: [] },
+      ],
+    }
+
+    let resolveStale!: (value: FamiliesView) => void
+    const stale = new Promise<FamiliesView>((resolve) => {
+      resolveStale = resolve
+    })
+
+    mocked
+      .previewFamilies!.mockResolvedValueOnce({ families: [] }) // building Bob
+      .mockResolvedValueOnce({ families: [] }) // building Cara
+      .mockResolvedValueOnce(built) // building Dana — the state the screen renders from below
+      .mockImplementationOnce(() => stale) // Undo Bob: left hanging, resolved by hand below
+      .mockResolvedValueOnce(freshMinusBoth) // Undo Cara: answers immediately
+
+    const sheet = mountFamily()
+    await nextTick()
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await flushPromises()
+
+    await buildFamily(sheet, ['Bob'])
+    await buildFamily(sheet, ['Cara'])
+    await buildFamily(sheet, ['Dana'])
+    expect(findAllByTestId(sheet, 'family-card')).toHaveLength(4)
+
+    const cardFor = (name: string) =>
+      findAllByTestId(sheet, 'family-card').find((card) => card.text().includes(name))!
+
+    // Undo Bob: fires the request for {Cara, Dana} and leaves it hanging (the deferred promise).
+    await cardFor('Bob').find(testId('family-undo')).trigger('click')
+    // Undo Cara, on a different, still-live card, before Bob's request has resolved: fires the
+    // second request for {Dana} alone, which resolves right away.
+    await cardFor('Cara').find(testId('family-undo')).trigger('click')
+    await flushPromises()
+
+    // The newer request has already answered; only now does the stale, older one resolve.
+    resolveStale(staleMinusBobOnly)
+    await flushPromises()
+
+    // The newer request — Dana (and the You singleton) only — must win, regardless of which
+    // resolved last. Bob's card is gone (undone first) and, critically, so is Cara's: the stale
+    // response answering "minus Bob" alone must not resurrect the card the viewer already undid.
+    expect(findAllByTestId(sheet, 'family-card')).toHaveLength(2)
+    expect(sheet.text()).not.toContain('Bob')
+    expect(sheet.text()).not.toContain('Cara')
+    expect(sheet.text()).toContain('Dana')
   })
 })
 

@@ -1,15 +1,17 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import {mount} from '@vue/test-utils'
+import {describe, expect, it} from 'vitest'
 import AmountInput from '../src/components/AmountInput.vue'
 import AmountKeypadField from '../src/components/AmountKeypadField.vue'
 import CategoryPicker from '../src/components/CategoryPicker.vue'
 import CommentField from '../src/components/CommentField.vue'
 import PersonToggleRow from '../src/components/PersonToggleRow.vue'
 import SplitBar from '../src/components/SplitBar.vue'
-import { saltFor, splitShares } from '@/lib/split'
-import { pressKey } from '@/lib/till'
-import { COMMENT_MAX_CHARS, COMMENT_MAX_WORDS } from '@/lib/words'
-import { findAllByTestId, findByTestId } from './testids'
+import {saltFor, splitShares} from '@/lib/split'
+import {pressKey} from '@/lib/till'
+import {COMMENT_MAX_CHARS, COMMENT_MAX_WORDS} from '@/lib/words'
+import {findAllByTestId, findByTestId} from './testids'
+import FamilyBuilder from "@/components/FamilyBuilder.vue";
+import type {MemberView} from "@/lib/api";
 
 const people = [
   { memberId: 'a', displayName: 'Bob', personHue: 1, weight: 2 },
@@ -368,6 +370,72 @@ describe('CategoryPicker', () => {
     const chosen = findAllByTestId(picker, 'category-item')[1]!
     expect(chosen.classes()).toContain('picker__item--on')
     expect(chosen.attributes('aria-checked')).toBe('true')
+  })
+})
+describe('FamilyBuilder', () => {
+  // Only the *unassigned* candidates ever reach this component — SettleUpSheet excludes anyone
+  // already placed in a built Family structurally, before this component ever mounts.
+  const candidates: MemberView[] = [
+    { id: 'm-c', displayName: 'Cara', personHue: 3, claimed: true, isYou: false },
+    { id: 'm-d', displayName: 'Dana', personHue: 4, claimed: true, isYou: false },
+  ]
+
+  it('commits only the ticked ids, in candidate order', async () => {
+    const builder = mount(FamilyBuilder, { props: { candidates, mustLeaveOneOut: false } })
+
+    await findAllByTestId(builder, 'person-toggle')[1]!.trigger('click') // Dana
+    await findAllByTestId(builder, 'person-toggle')[0]!.trigger('click') // Cara
+
+    await findByTestId(builder, 'family-builder-add').trigger('click')
+
+    expect(builder.emitted('built')).toEqual([[['m-c', 'm-d']]])
+  })
+
+  it('disables the commit until somebody is ticked', async () => {
+    const builder = mount(FamilyBuilder, { props: { candidates, mustLeaveOneOut: false } })
+    expect(findByTestId(builder, 'family-builder-add').attributes('disabled')).toBeDefined()
+
+    await findAllByTestId(builder, 'person-toggle')[0]!.trigger('click')
+    expect(findByTestId(builder, 'family-builder-add').attributes('disabled')).toBeUndefined()
+
+    // Unticking back to nobody disables it again — not a one-way latch.
+    await findAllByTestId(builder, 'person-toggle')[0]!.trigger('click')
+    expect(findByTestId(builder, 'family-builder-add').attributes('disabled')).toBeDefined()
+  })
+
+  it('cancel emits nothing committed', async () => {
+    const builder = mount(FamilyBuilder, { props: { candidates, mustLeaveOneOut: false } })
+    await findAllByTestId(builder, 'person-toggle')[0]!.trigger('click')
+    await findByTestId(builder, 'family-builder-cancel').trigger('click')
+
+    expect(builder.emitted('cancel')).toHaveLength(1)
+    expect(builder.emitted('built')).toBeUndefined()
+  })
+
+  // §7b: a single Family naming everyone leaves nobody to auto-singleton — the server refuses it,
+  // so the very first Family built this session is blocked from ticking every candidate at all,
+  // rather than letting the viewer hit that refusal after already committing.
+  it('blocks ticking everyone only when this would be the trip-covering first family', async () => {
+    const builder = mount(FamilyBuilder, { props: { candidates, mustLeaveOneOut: true } })
+
+    await findAllByTestId(builder, 'person-toggle')[0]!.trigger('click')
+    await findAllByTestId(builder, 'person-toggle')[1]!.trigger('click')
+    expect(findByTestId(builder, 'family-builder-add').attributes('disabled')).toBeDefined()
+    expect(builder.find('[data-testid="family-builder-hint"]').exists()).toBe(true)
+
+    // Leaving even one person out is fine again.
+    await findAllByTestId(builder, 'person-toggle')[1]!.trigger('click')
+    expect(findByTestId(builder, 'family-builder-add').attributes('disabled')).toBeUndefined()
+    expect(builder.find('[data-testid="family-builder-hint"]').exists()).toBe(false)
+  })
+
+  it('does not block ticking everyone once a family already exists this session', async () => {
+    const builder = mount(FamilyBuilder, { props: { candidates, mustLeaveOneOut: false } })
+
+    await findAllByTestId(builder, 'person-toggle')[0]!.trigger('click')
+    await findAllByTestId(builder, 'person-toggle')[1]!.trigger('click')
+
+    expect(findByTestId(builder, 'family-builder-add').attributes('disabled')).toBeUndefined()
   })
 })
 

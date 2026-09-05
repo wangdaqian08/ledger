@@ -120,6 +120,7 @@ deletes the image, and only the image: every number on the expense survives.
 | Item state | `ALL_SQUARE` when every sharer's approved paybacks ≥ their share. Card greys out, sinks down. |
 | Final settlement | **Recorded.** Tapping Pay sends a request to the person owed; it sits pending until they approve. Display-only is no longer possible — a pending approval is state. |
 | Settle-up rows | **Bilateral.** One row per person: what you owe them, or they owe you. Not a globally minimised transfer set. |
+| Settle-up Families | **Ephemeral, built one at a time.** A viewer partitions the whole trip into Families; anyone left out becomes their own one-person Family automatically. A Family's card shows its own net plus one bilateral row per *other* Family — never per individual, never minimised. Nothing persists; the partition resets when the sheet reopens. See §7b. |
 | Undo | **Either side, any time**, before or after approval. The row returns to unpaid. |
 | Remind | A nudge to someone who owes you. Changes no balance. |
 | Recalculation | Live everywhere, plus a dedicated Settle up screen. |
@@ -438,6 +439,9 @@ PATCH  /api/paybacks/{id}           claimant corrects a rejected claim → back 
 
 GET    /api/trips/{id}/settlement   bilateral rows: your position with each person
 POST   /api/trips/{id}/settlements  { toMemberId, amountMinor } — the Pay button
+POST   /api/trips/{id}/families     { families: [{memberIds}] } — partitions the trip into
+                                     Families for the Settle-up screen; ephemeral, nothing
+                                     persists (§7b)
 POST   /api/paybacks/{id}/undo      either side, before or after approval
 POST   /api/trips/{id}/remind       { memberId } — a nudge; changes no balance
 GET    /api/trips/{id}/expenses.csv the outward spend as a downloadable file — expenses only
@@ -644,6 +648,69 @@ and the recipient's received-back exactly as an item payback does, so `Σ net ==
 
 ---
 
+## 7b. Families on the Settle-up screen
+
+A trip's members are often not equally strangers to each other — a couple, a household, two
+friends who don't need to square up between themselves. Adding up several bilateral rows by hand
+to see what such a pair owes everyone else combined is exactly the kind of arithmetic this app
+exists to do instead. A viewer can partition the whole trip into **Families** right on the
+Settle-up screen.
+
+### A complete partition, built incrementally
+
+The viewer builds zero or more disjoint, non-empty, multi-person Families one at a time. Anyone
+never placed into an explicit Family automatically becomes their own one-person Family, so the
+result is always a **complete partition** of the trip — every member in exactly one Family. Every
+Family is shown at once, explicit and automatic together.
+
+```
+5 people: A, B, C, D, E
+build {A,B}, then {C,D}   →   3 Families shown: {A,B}, {C,D}, {E}
+build {A,B} only          →   4 Families shown: {A,B}, {C}, {D}, {E}
+build nothing             →   5 Families shown: {A}, {B}, {C}, {D}, {E}  (same figures as §7a today)
+```
+
+A Family's card shows its own net, plus one bilateral row per **other Family** in the partition —
+never per individual. With Families `{A,B}`, `{C,D}`, `{E}`, the `{A,B}` card shows 2 rows, not 3.
+
+### Bilateral, not minimised — same rule as §7a, one level up
+
+```
+owesBetween(FamilyX, FamilyY) = Σ over m in FamilyX, n in FamilyY of owesBetween(m, n)
+```
+
+Positive means FamilyX owes FamilyY. This is consistent with each Family's own net by construction,
+the direct Family-level analogue of §7a's own identity:
+
+```
+Σ over Y ≠ X of owesBetween(FamilyX, Y)  ==  −netOf(FamilyX)
+```
+
+which follows from two identities §7a already proves: `owesBetween(a,b) == −owesBetween(b,a)` and
+`Σ owesBetween(A,B) == −net(A)`. Telescoping the second identity over every member of `FamilyX`
+splits into a sum over outsiders (which becomes the left-hand side above) plus a sum over every
+ordered pair *within* `FamilyX` — and that inner sum cancels to exactly zero by the first identity,
+since it pairs every `owesBetween(x,y)` with its negation `owesBetween(y,x)`. Never `settle()`'s
+minimised transfer set — consistent with §7a's rows, and with §9.
+
+### Validation
+
+An explicit Family can't be empty. Two explicit Families can't share a member. Every named member
+must be on the trip. The completed partition must end up with **at least two** Families — a single
+explicit Family naming every trip member is refused, because it would leave nobody to
+auto-singleton, producing exactly one Family, which means nothing (nobody left to owe or be owed
+by). A one-person explicit Family is allowed, if redundant — identical to leaving that person out.
+
+### Ephemeral, on purpose
+
+Nothing here is persisted: no migration, no table, no session storage. The partition a viewer has
+built is re-derived from scratch on every call from whatever the current request states, and resets
+the moment the Settle-up sheet is reopened. This is the engine's first "net a cluster of people"
+primitive — `Family`, `FamilyBalance`, and `partitionIntoFamilies` — built entirely on `settle` and
+`owesBetween`, adding no new stored concept anywhere.
+
+---
+
 ## 8. Build order
 
 Each step ends with something runnable and tested.
@@ -682,6 +749,11 @@ Each step ends with something runnable and tested.
    never gave them a step of their own, so they are recorded here rather than left to fall between
    two. The `Σ owesBetween(A, B) == −net(A)` identity is asserted over HTTP as well as
    property-tested in the engine. **Remind validates but delivers nothing** — see §9.
+
+6b. **Families on the Settle-up screen.** `partitionIntoFamilies` in the engine, property-tested
+   the same way as 6a's bilateral rows; `POST /api/trips/{id}/families` returning every Family's
+   net and its position with each other Family; a Families toggle on `SettleUpSheet`. Ephemeral —
+   nothing here is persisted (§7b).
 
 7. **Screenshot upload** — Cloud Storage. *Receipts on expenses shipped 2026-08:* the
    `ReceiptStorage` seam (local disk on `dev`, a free-tier GCS bucket on `gcs-receipts`,
@@ -726,8 +798,9 @@ Each step ends with something runnable and tested.
 - **Multi-payer items.** One payer per item is how the group actually works.
 - **Refunds** (hotel refunds part of a deposit). Would be a negative-amount item.
 - **Globally minimised transfers.** `settle()` computes them and they are still property-tested,
-  but no screen shows them — Settle-up is bilateral (§7a). Kept in the engine because it is the
-  honest answer to "what is the least money that needs to move", and costs nothing to retain.
+  but no screen shows them — Settle-up is bilateral (§7a), including between Families (§7b). Kept
+  in the engine because it is the honest answer to "what is the least money that needs to move",
+  and costs nothing to retain.
 - **The demo's one-tap "mark everyone settled".** Replaced by the two-party approval, which was
   specified later and in more detail. The demo predates that requirement.
 - **"Jack isn't on 5 items" prompts.** Roster editing is manual by choice; noted as a future

@@ -231,6 +231,32 @@ export interface SettlementView {
   allSquare: boolean
 }
 
+/** Minimal member fields for display — same shape as the roster's own MemberView, id/name/hue only. */
+export interface FamilyMemberView {
+  id: string
+  displayName: string
+  personHue: number
+}
+
+/** One Family's position with one *other* Family in the partition — never an individual (§7b). */
+export interface FamilyCounterpartView {
+  members: FamilyMemberView[]
+  /** Positive: this Family owes the counterpart. Negative: the counterpart owes this Family. */
+  owedMinor: number
+}
+
+/** One Family in a completed partition of the whole trip: explicit, or an automatic singleton. */
+export interface FamilyView {
+  members: FamilyMemberView[]
+  netMinor: number
+  /** One row per *other* Family in the partition — never per individual. */
+  counterparts: FamilyCounterpartView[]
+}
+
+export interface FamiliesView {
+  families: FamilyView[]
+}
+
 export interface CategoryView {
   id: string
   key: string
@@ -351,4 +377,14 @@ export const api = {
     request<PaybackView>('POST', `/api/trips/${tripId}/settlements`, body),
   remind: (tripId: string, memberId: string) =>
     request<void>('POST', `/api/trips/${tripId}/remind`, { memberId }),
+
+  /**
+   * A read shaped as a POST (matching `claimable`): previews the whole trip partitioned into
+   * Families (§7b), given whatever explicit ones the viewer has built so far. Ephemeral — nothing
+   * here is persisted, so a fresh call with a different partition remembers nothing of the last one.
+   */
+  previewFamilies: (tripId: string, families: string[][]) =>
+    request<FamiliesView>('POST', `/api/trips/${tripId}/families`, {
+      families: families.map((memberIds) => ({ memberIds })),
+    }),
 }
