@@ -4,16 +4,16 @@ import app.ledger.server.receipt.ReceiptRepository
 import app.ledger.server.receipt.ReceiptStorage
 import app.ledger.server.trip.TripPurge
 import app.ledger.server.trip.TripRepository
-import java.time.Duration
-import java.time.Instant
-import java.util.UUID
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpStatus
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+import java.time.Duration
+import java.time.Instant
+import java.util.UUID
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * The purge commits one trip at a time, not one transaction around the whole sweep (see

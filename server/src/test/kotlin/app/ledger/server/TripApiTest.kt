@@ -1,6 +1,6 @@
 package app.ledger.server
 
-import java.util.*
+import java.util.UUID
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
 import kotlin.test.assertEquals
