@@ -227,6 +227,28 @@ class SettlementFamilyApiTest : ApiTest() {
     }
 
     @Test
+    fun `each member carries isYou for the actor asking, never a fixed identity`() {
+        val trip = fiveWayTrip()
+
+        val aliceView = trip.alice
+            .families(trip.id)
+            .json()["families"]
+            .flatMap { it["members"] }
+        val aliceEntry = aliceView.first { it["id"].asText() == trip.aliceMember.toString() }
+        assertTrue(aliceEntry["isYou"].asBoolean())
+        assertTrue(aliceView.filter { it !== aliceEntry }.none { it["isYou"].asBoolean() })
+
+        // The exact same roster, asked by a different member: isYou follows whoever is asking.
+        val bobView = trip.bob
+            .families(trip.id)
+            .json()["families"]
+            .flatMap { it["members"] }
+        val bobEntry = bobView.first { it["id"].asText() == trip.bobMember.toString() }
+        assertTrue(bobEntry["isYou"].asBoolean())
+        assertTrue(bobView.filter { it !== bobEntry }.none { it["isYou"].asBoolean() })
+    }
+
+    @Test
     fun `two calls with different selections don't remember each other`() {
         val trip = fiveWayTrip()
 

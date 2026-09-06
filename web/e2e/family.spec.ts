@@ -84,24 +84,33 @@ test('building a family combines nets and shows a genuine family-vs-family figur
   await page.getByTestId('family-builder-add').click()
   await expect(cards).toHaveCount(3)
 
-  const familyAB = cards.filter({ hasText: `${aliceName} and Bob` })
+  // Alice is the signed-in viewer, so her own Family is named after her — never a joined list —
+  // and, with one more person in it, "and another 1 household" rather than just her own name.
+  const aliceHousehold = `${aliceName} and another 1 household`
+  const familyAB = cards.filter({ has: page.getByTestId('family-name').filter({ hasText: aliceHousehold }) })
   await expect(familyAB).toContainText('70.00')
 
-  // The Cathy+Dana row on Alice+Bob's card is the raw sum of four pairwise debts — Alice-Cathy
-  // $20, Alice-Dana $20, Bob-Cathy $10 (the taxi), Bob-Dana $0 — which totals $50, and is never
-  // reducible to either person's own row (Cathy alone owes $30 in total, Dana alone owes $10).
-  const abVsCd = familyAB.getByTestId('family-counterpart-row').filter({ hasText: 'Cathy and Dana' })
-  await expect(abVsCd).toContainText(`Cathy and Dana owe ${aliceName} and Bob`)
+  // Neither Cathy nor Dana is the viewer, so their combined Family is named after just one of
+  // them — Cathy, first in roster order — never both names joined ("Cathy and Dana owe..." would
+  // be the very sentence-too-long-to-parse problem this naming exists to avoid). The row still
+  // carries the raw sum of four pairwise debts — Alice-Cathy $20, Alice-Dana $20, Bob-Cathy $10
+  // (the taxi), Bob-Dana $0 — which totals $50, and is never reducible to either person's own row
+  // (Cathy alone owes $30 in total, Dana alone owes $10).
+  const abVsCd = familyAB.getByTestId('family-counterpart-row').filter({ hasText: 'Cathy' })
+  await expect(abVsCd).toContainText(`Cathy owes ${aliceHousehold}`)
+  await expect(abVsCd).not.toContainText('Dana')
   await expect(abVsCd).toContainText('50.00')
   const abVsErin = familyAB.getByTestId('family-counterpart-row').filter({ hasText: 'Erin' })
-  await expect(abVsErin).toContainText(`Erin owes ${aliceName} and Bob`)
+  await expect(abVsErin).toContainText(`Erin owes ${aliceHousehold}`)
   await expect(abVsErin).toContainText('20.00')
 
-  // And Cathy+Dana's own card agrees exactly, the other way round.
-  const familyCD = cards.filter({ hasText: 'Cathy and Dana' })
+  // And Cathy's own card (Cathy+Dana) agrees exactly, the other way round. Scoped by its own
+  // family-name, not just any mention of "Cathy" — Alice's card above also mentions her in the
+  // counterpart row asserted on just now, so a bare hasText on the whole card would match both.
+  const familyCD = cards.filter({ has: page.getByTestId('family-name').filter({ hasText: 'Cathy' }) })
   await expect(familyCD).toContainText('40.00')
-  const cdVsAb = familyCD.getByTestId('family-counterpart-row').filter({ hasText: `${aliceName} and Bob` })
-  await expect(cdVsAb).toContainText(`Cathy and Dana owe ${aliceName} and Bob`)
+  const cdVsAb = familyCD.getByTestId('family-counterpart-row').filter({ hasText: aliceName })
+  await expect(cdVsAb).toContainText(`Cathy owes ${aliceHousehold}`)
   await expect(cdVsAb).toContainText('50.00')
 })
 
@@ -139,7 +148,12 @@ test('undo returns a built family to two singleton cards, with their original fi
   await page.getByTestId('person-toggle').filter({ hasText: 'Bob' }).click()
   await page.getByTestId('family-builder-add').click()
 
-  const familyCard = cards.filter({ hasText: `${aliceName} and Bob` })
+  // Alice is the viewer, so the built Family is named after her, never a joined "Alice and Bob" —
+  // and scoped by its own family-name, since Cathy's own card also mentions it as a counterpart.
+  const aliceHousehold = `${aliceName} and another 1 household`
+  const familyCard = cards.filter({
+    has: page.getByTestId('family-name').filter({ hasText: aliceHousehold }),
+  })
   await expect(cards).toHaveCount(2)
   await expect(familyCard).toContainText('10.00') // $20 (Alice) - $10 (Bob) = $10, owed to the family
   await expect(familyCard.getByTestId('family-undo')).toBeVisible()

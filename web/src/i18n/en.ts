@@ -50,6 +50,8 @@ export default {
     addFamily: 'Add family',
     chooseFamily: 'Choose who is in this family',
     familyCannotBeEveryone: "Leave at least one person out — a first family can't be everyone",
+    familyNameYouSolo: "{name}'s household",
+    familyNameYouGroup: '{name} and another {count} household',
     // Pronoun-free: a Family is never "you", so these drop the "you"/"them" BalanceRow can use.
     familyOwesCardSingular: '{other} owes {card}',
     familyOwesCardPlural: '{other} owe {card}',

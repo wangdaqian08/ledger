@@ -147,6 +147,8 @@ class SettlementService(
     fun families(tripId: UUID, command: PreviewFamilies, actor: UUID): FamiliesView {
         access.visibleTrip(tripId, actor)
         val snapshot = snapshots.load(tripId)
+        val you = snapshot.memberFor(actor)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
         val onTrip = snapshot.roster.associateBy { it.id }
 
         if (command.families.any { it.memberIds.isEmpty() }) {
@@ -182,7 +184,7 @@ class SettlementService(
         fun membersOf(family: app.ledger.engine.Family): List<FamilyMemberView> =
             snapshot.roster
                 .filter { MemberId(it.id.toString()) in family.members }
-                .map { FamilyMemberView(it.id, it.displayName, it.personHue) }
+                .map { FamilyMemberView(it.id, it.displayName, it.personHue, isYou = it.id == you.id) }
 
         return FamiliesView(
             snapshot.families(explicit).map { balance ->

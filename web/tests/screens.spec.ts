@@ -1475,6 +1475,7 @@ describe('SettleUpSheet Family mode', () => {
     id: m.id,
     displayName: m.displayName,
     personHue: m.personHue,
+    isYou: m.id === you.id,
   })
 
   function mountFamily(rows: SettlementRow[] = []) {

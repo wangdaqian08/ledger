@@ -236,6 +236,7 @@ export interface FamilyMemberView {
   id: string
   displayName: string
   personHue: number
+  isYou: boolean
 }
 
 /** One Family's position with one *other* Family in the partition — never an individual (§7b). */

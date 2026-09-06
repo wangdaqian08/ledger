@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AmountText from './AmountText.vue'
 import AvatarStack from './AvatarStack.vue'
+import { familyDisplayName, familyGrammaticalCount } from '@/lib/family'
 import type { FamilyMemberView } from '@/lib/api'
 
 /**
@@ -10,11 +11,14 @@ import type { FamilyMemberView } from '@/lib/api'
  * individual. `BalanceRow` cannot represent this: it expects one name/hue, and a Family has no
  * single person who could unambiguously tap Pay or Remind on its behalf, so this offers neither.
  *
- * Names both sides on the row itself — "Cara and Dana owe Alice and Bob" — rather than a bare
+ * Names both sides on the row itself — "Cara owes Luck's household" — rather than a bare
  * "Owes"/"Owed" caption sitting next to just the counterpart's name. That short form read as a
  * statement about the counterpart alone, with no way to tell which of the two families it was
  * relative to; a full sentence needs no anchor and reads the same regardless of which of the two
- * cards it's shown on.
+ * cards it's shown on. `theirName` is [familyDisplayName]: the viewer's own name when the
+ * counterpart is their Family, otherwise one arbitrary member's bare name — never every name in
+ * the counterpart joined together, which is what used to make a multi-person counterpart read as
+ * "Peter, Jack and Luck owe Rose money".
  *
  * The whole sentence is one translated unit, not assembled from a spliced-in verb: English puts
  * whichever side owes first ("X owes Y"), but Chinese's own phrasing (待收/待付) always keeps this
@@ -40,8 +44,9 @@ import type { FamilyMemberView } from '@/lib/api'
 const props = withDefaults(
   defineProps<{
     members: FamilyMemberView[]
-    /** This row's enclosing FamilyBalanceCard — already joined, so this doesn't redo that work. */
+    /** This row's enclosing FamilyBalanceCard — already named, so this doesn't redo that work. */
     cardName: string
+    /** The enclosing card's own [familyGrammaticalCount] — for verb agreement, not its real size. */
     cardMemberCount: number
     owedMinor: number
     currencyCode?: string
@@ -50,17 +55,18 @@ const props = withDefaults(
   { currencyCode: 'AUD', symbol: '$' },
 )
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 
-const theirName = computed(() =>
-  new Intl.ListFormat(locale.value, { type: 'conjunction' }).format(props.members.map((m) => m.displayName)),
-)
+const theirName = computed(() => familyDisplayName(props.members, t))
 
 // Sentence and verb keys are chosen together — same direction, same count — so the verb text
-// below is guaranteed to be an exact substring of the sentence it's about to be split out of.
+// below is guaranteed to be an exact substring of the sentence it's about to be split out of. The
+// count is grammatical, not real: a non-viewer counterpart is named after just one of its members
+// (familyDisplayName), so it has to agree as "owes", never "owe", however many people stand behind
+// that one name.
 const keys = computed(() => {
   const owesCard = props.owedMinor > 0
-  const count = owesCard ? props.members.length : props.cardMemberCount
+  const count = owesCard ? familyGrammaticalCount(props.members) : props.cardMemberCount
   const suffix = count === 1 ? 'Singular' : 'Plural'
   return owesCard
     ? { sentence: `settle.familyOwesCard${suffix}`, verb: `settle.familyOwesCardVerb${suffix}` }

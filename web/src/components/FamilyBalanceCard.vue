@@ -7,6 +7,7 @@ import FamilyCounterpartRow from './FamilyCounterpartRow.vue'
 import TallyButton from './TallyButton.vue'
 import TallyCard from './TallyCard.vue'
 import type { FamilyCounterpartView, FamilyMemberView } from '@/lib/api'
+import { familyDisplayName, familyGrammaticalCount } from '@/lib/family'
 
 /**
  * One Family's card in the Settle-up partition view (§7b): its own net across the whole trip, and
@@ -29,11 +30,10 @@ const props = withDefaults(
 )
 defineEmits<{ remove: [] }>()
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 
-const joinedNames = computed(() =>
-  new Intl.ListFormat(locale.value, { type: 'conjunction' }).format(props.members.map((m) => m.displayName)),
-)
+const cardName = computed(() => familyDisplayName(props.members, t))
+const cardGrammaticalCount = computed(() => familyGrammaticalCount(props.members))
 const netLabel = computed(() => {
   if (props.netMinor === 0) return t('money.allSquare')
   return props.netMinor > 0 ? t('settle.familyNetOwed') : t('settle.familyNetOwes')
@@ -44,7 +44,7 @@ const netLabel = computed(() => {
   <TallyCard class="family" data-testid="family-card">
     <div class="family__head">
       <AvatarStack :people="members" :size="32" />
-      <div class="family__name">{{ joinedNames }}</div>
+      <div class="family__name" data-testid="family-name">{{ cardName }}</div>
       <TallyButton
         v-if="removable"
         variant="ghost"
@@ -73,8 +73,8 @@ const netLabel = computed(() => {
         :key="counterpart.members.map((m) => m.id).join(',')"
         :members="counterpart.members"
         :owed-minor="-counterpart.owedMinor"
-        :card-name="joinedNames"
-        :card-member-count="members.length"
+        :card-name="cardName"
+        :card-member-count="cardGrammaticalCount"
         :currency-code="currencyCode"
         :symbol="symbol"
       />
@@ -103,6 +103,7 @@ const netLabel = computed(() => {
   color: var(--ink);
   overflow-wrap: anywhere;
 }
+
 .family__net-label {
   font-size: var(--text-caption);
   color: var(--text-muted);

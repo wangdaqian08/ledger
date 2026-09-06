@@ -1,6 +1,7 @@
 package app.ledger.server.settlement
 
 import app.ledger.server.payback.PaybackView
+import com.fasterxml.jackson.annotation.JsonProperty
 import java.util.UUID
 
 /**
@@ -45,7 +46,12 @@ data class SettlementView(
 )
 
 /** Same shape as app.ledger.server.trip.ClaimableMemberView — minimal member fields for display. */
-data class FamilyMemberView(val id: UUID, val displayName: String, val personHue: Short)
+data class FamilyMemberView(
+    val id: UUID,
+    val displayName: String,
+    val personHue: Short,
+    @get:JsonProperty("isYou") val isYou: Boolean,
+)
 
 /** One Family's position with one *other* Family in the partition — never an individual. */
 data class FamilyCounterpartView(
