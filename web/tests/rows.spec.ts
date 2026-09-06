@@ -3,12 +3,15 @@ import { describe, expect, it } from 'vitest'
 import AppBar from '../src/components/AppBar.vue'
 import BalanceRow from '../src/components/BalanceRow.vue'
 import ExpenseRow from '../src/components/ExpenseRow.vue'
+import FamilyBalanceCard from '../src/components/FamilyBalanceCard.vue'
+import FamilyCounterpartRow from '../src/components/FamilyCounterpartRow.vue'
 import GroupCard from '../src/components/GroupCard.vue'
 import ProgressBar from '../src/components/ProgressBar.vue'
 import TallyIcon from '../src/components/TallyIcon.vue'
 import TallyStepper from '../src/components/TallyStepper.vue'
 import TallyKeypad from '../src/components/TallyKeypad.vue'
-import { findByTestId } from './testids'
+import type { FamilyCounterpartView, FamilyMemberView } from '@/lib/api'
+import { findAllByTestId, findByTestId } from './testids'
 
 describe('ExpenseRow', () => {
   const base = { title: 'Hotel', yourShareMinor: -14286, categoryKey: 'stay' }
@@ -22,7 +25,7 @@ describe('ExpenseRow', () => {
     expect(row.text()).not.toContain('you owe')
   })
 
-  it('calls the payer’s stake what they fronted, not what they “get”', () => {
+  it('calls the payer\'s stake what they fronted, not what they "get"', () => {
     const row = mount(ExpenseRow, { props: { ...base, yourShareMinor: 37_500, paidByYou: true } })
     expect(row.text()).toContain('$375.00')
     expect(row.text()).toContain('you fronted')
@@ -76,6 +79,174 @@ describe('BalanceRow', () => {
     const pending = mount(BalanceRow, { props: { ...base, owedMinor: -3910, pending: true } })
     expect(pending.text()).toContain('Waiting for confirmation')
     expect(pending.findAll('button')).toHaveLength(0)
+  })
+})
+
+describe('FamilyCounterpartRow', () => {
+  const members: FamilyMemberView[] = [
+    { id: 'm-c', displayName: 'Cara', personHue: 3, isYou: false },
+    { id: 'm-d', displayName: 'Dana', personHue: 4, isYou: false },
+  ]
+
+  it('names the counterpart by one member when it owes, with no Pay or Remind button — nobody could tap it on its behalf', () => {
+    // Neither Cara nor Dana is the viewer, so the counterpart is named after just one of them —
+    // the very thing that keeps a multi-person subject from reading as "Peter, Jack and Luck owe
+    // Rose money" — and conjugated to match that one visible name, not its real headcount.
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: 500, cardName: 'Alice and Bob', cardMemberCount: 2 },
+    })
+    expect(row.text()).toContain('Cara owes')
+    expect(row.text()).not.toContain('Dana')
+    expect(row.text()).toContain('Alice and Bob')
+    expect(row.text()).toContain('$5.00')
+    expect(row.findAll('button')).toHaveLength(0)
+  })
+
+  it('names both sides the other way round when this card owes the counterpart', () => {
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: -1250, cardName: 'Alice and Bob', cardMemberCount: 2 },
+    })
+    expect(row.text()).toContain('Alice and Bob')
+    expect(row.text()).toContain('owe')
+    expect(row.text()).toContain('Cara')
+    expect(row.text()).not.toContain('Dana')
+    expect(row.text()).toContain('$12.50')
+  })
+
+  it('conjugates for a one-person subject ("owes"), picked by the subject\'s own count', () => {
+    // The card (Erin, one person) owes the counterpart here, so the card is the subject and it is
+    // exactly one person — "Erin owes", never "Erin owe" — regardless of the counterpart's own size.
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: -1250, cardName: 'Erin', cardMemberCount: 1 },
+    })
+    expect(row.text()).toContain('Erin owes')
+  })
+
+  it('never conjugates a non-viewer counterpart as plural, however many people stand behind its name', () => {
+    // Cara and Dana together owe the card here — two real people — but neither is the viewer, so
+    // the row is named "Cara" alone and must agree with what's on screen ("Cara owes"), not with
+    // the real headcount behind it ("Cara owe" would read as broken English).
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: 500, cardName: 'Erin', cardMemberCount: 1 },
+    })
+    expect(row.text()).toContain('Cara owes')
+    expect(row.text()).not.toContain('Dana')
+  })
+
+  it("names the viewer's own family after them in full, and still conjugates by its real size", () => {
+    // Reachable whenever another card's counterpart happens to be the Family the viewer is in
+    // (§7b) — unlike an ordinary counterpart, this one keeps the household phrasing and so keeps
+    // agreeing with its real headcount ("owe", not "owes").
+    const withYou: FamilyMemberView[] = [
+      { id: 'm-c', displayName: 'Cara', personHue: 3, isYou: true },
+      { id: 'm-d', displayName: 'Dana', personHue: 4, isYou: false },
+    ]
+    const row = mount(FamilyCounterpartRow, {
+      props: { members: withYou, owedMinor: 500, cardName: 'Erin', cardMemberCount: 1 },
+    })
+    expect(row.text()).toContain('Cara and another 1 household owe')
+  })
+
+  it("names the viewer's own solo family possessively, never as a bare name", () => {
+    const solo: FamilyMemberView[] = [{ id: 'm-you', displayName: 'Luck', personHue: 1, isYou: true }]
+    const row = mount(FamilyCounterpartRow, {
+      props: { members: solo, owedMinor: 500, cardName: 'Erin', cardMemberCount: 1 },
+    })
+    expect(row.text()).toContain("Luck's household owes")
+  })
+
+  it('bolds the verb itself, never the names either side of it', () => {
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: 500, cardName: 'Alice and Bob', cardMemberCount: 2 },
+    })
+    const strong = row.find('strong')
+    expect(strong.exists()).toBe(true)
+    expect(strong.text()).toBe('owes')
+    // The names are still there, just not inside the bolded element — plain text either side of it.
+    expect(row.find('.counterpart__sentence').text()).toBe('Cara owes Alice and Bob')
+  })
+
+  it('reads all square at exactly zero, not a tolerance', () => {
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: 0, cardName: 'Alice and Bob', cardMemberCount: 2 },
+    })
+    expect(row.text()).toContain('All square')
+  })
+
+  it('represents a multi-person counterpart by one of its names, never a joined list', () => {
+    const row = mount(FamilyCounterpartRow, {
+      props: { members, owedMinor: 0, cardName: 'Alice and Bob', cardMemberCount: 2 },
+    })
+    expect(row.text()).toContain('Cara')
+    expect(row.text()).not.toContain('Dana')
+  })
+})
+
+describe('FamilyBalanceCard', () => {
+  const members: FamilyMemberView[] = [
+    { id: 'm-a', displayName: 'Alice', personHue: 1, isYou: false },
+    { id: 'm-b', displayName: 'Bob', personHue: 2, isYou: false },
+  ]
+  const counterparts: FamilyCounterpartView[] = [
+    { members: [{ id: 'm-c', displayName: 'Cara', personHue: 3, isYou: false }], owedMinor: 500 },
+    { members: [{ id: 'm-d', displayName: 'Dana', personHue: 4, isYou: false }], owedMinor: -300 },
+  ]
+
+  it("shows the family's own net and one row per counterpart, never per individual", () => {
+    const card = mount(FamilyBalanceCard, {
+      props: { members, netMinor: 200, counterparts, removable: false },
+    })
+    expect(card.text()).toContain('$2.00')
+    expect(card.findAllComponents(FamilyCounterpartRow)).toHaveLength(2)
+  })
+
+  it("titles the card with the viewer's household name when they're in it, otherwise one member's name", () => {
+    const yours = mount(FamilyBalanceCard, {
+      props: {
+        members: [
+          { id: 'm-a', displayName: 'Alice', personHue: 1, isYou: true },
+          { id: 'm-b', displayName: 'Bob', personHue: 2, isYou: false },
+        ],
+        netMinor: 0,
+        counterparts: [],
+        removable: false,
+      },
+    })
+    expect(yours.text()).toContain('Alice and another 1 household')
+
+    const someoneElses = mount(FamilyBalanceCard, {
+      props: { members, netMinor: 0, counterparts: [], removable: false },
+    })
+    expect(someoneElses.text()).toContain('Alice')
+    expect(someoneElses.text()).not.toContain('Bob')
+  })
+
+  it('flips the wire sign once for each counterpart row, the same way SettleUpSheet flips it for BalanceRow', () => {
+    // The API states owedMinor from the enclosing Family's own point of view (positive = this
+    // Family owes them, matching SettlementRow.owedMinor's convention) — the same figure
+    // FamilyCounterpartRow displays the other way round (positive = they owe this Family), so the
+    // call site negates it exactly once, same as SettleUpSheet.vue does for BalanceRow.
+    const card = mount(FamilyBalanceCard, {
+      props: { members, netMinor: 0, counterparts, removable: false },
+    })
+    const rows = card.findAllComponents(FamilyCounterpartRow)
+    expect(rows[0]!.props('owedMinor')).toBe(-500) // raw +500 (this family owes Cara) -> Cara's row is -500
+    expect(rows[1]!.props('owedMinor')).toBe(300) // raw -300 (Dana owes this family) -> Dana's row is +300
+  })
+
+  it('offers Undo only when explicitly built, never for an auto-singleton', async () => {
+    const singleton = mount(FamilyBalanceCard, {
+      props: { members, netMinor: 0, counterparts: [], removable: false },
+    })
+    expect(findAllByTestId(singleton, 'family-undo')).toHaveLength(0)
+
+    const built = mount(FamilyBalanceCard, {
+      props: { members, netMinor: 0, counterparts: [], removable: true },
+    })
+    expect(findAllByTestId(built, 'family-undo')).toHaveLength(1)
+
+    await findByTestId(built, 'family-undo').trigger('click')
+    expect(built.emitted('remove')).toHaveLength(1)
   })
 })
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError, handleUnauthorized } from '../src/lib/api'
+import { api, ApiError, handleUnauthorized } from '@/lib/api'
 
 /** The client's three duties: echo the CSRF cookie, surface the server's reason, signal 401s. */
 describe('api client', () => {
@@ -74,6 +74,18 @@ describe('api client', () => {
     const [path, options] = fetchMock.mock.calls[0]!
     expect(path).toBe('/api/trips/trip-1/settlements')
     expect(JSON.parse(options.body)).toEqual({ toMemberId: 'm-2', amountMinor: 6_000 })
+  })
+
+  it('posts a partition of member-id arrays as {families: [{memberIds}]}', async () => {
+    respond(200, { families: [] })
+
+    await api.previewFamilies('trip-1', [['m-a', 'm-b'], ['m-c']])
+
+    const [path, options] = fetchMock.mock.calls[0]!
+    expect(path).toBe('/api/trips/trip-1/families')
+    expect(JSON.parse(options.body)).toEqual({
+      families: [{ memberIds: ['m-a', 'm-b'] }, { memberIds: ['m-c'] }],
+    })
   })
 
   it('passes a receipt upload through as FormData, letting the browser set the boundary', async () => {

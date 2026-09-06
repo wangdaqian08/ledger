@@ -1,5 +1,6 @@
 package app.ledger.server.trip
 
+import app.ledger.engine.FamilyBalance
 import app.ledger.engine.Item
 import app.ledger.engine.ItemId
 import app.ledger.engine.ItemState
@@ -9,6 +10,8 @@ import app.ledger.engine.PaybackStatus
 import app.ledger.engine.SplitRule
 import app.ledger.engine.Trip
 import app.ledger.engine.itemState
+import app.ledger.engine.owesBetween
+import app.ledger.engine.partitionIntoFamilies
 import app.ledger.engine.settle
 import app.ledger.engine.shares
 import app.ledger.server.item.ItemEntity
@@ -102,7 +105,13 @@ class TripSnapshot(
      */
     fun owesBetween(a: UUID, b: UUID): Long =
         // Qualified: this method's own name would otherwise shadow the engine function it calls.
-        app.ledger.engine.owesBetween(engineTrip, MemberId(a.toString()), MemberId(b.toString()))
+        owesBetween(engineTrip, MemberId(a.toString()), MemberId(b.toString()))
+
+    fun families(explicitFamilies: List<Set<UUID>>): List<FamilyBalance> = partitionIntoFamilies(
+        engineTrip,
+        explicitFamilies.map { it.mapTo(mutableSetOf()) { id -> MemberId(id.toString()) } },
+        settlement,
+    )
 
     private fun PaybackEntity.toEnginePayback() = Payback(
         from = MemberId(fromMemberId.toString()),

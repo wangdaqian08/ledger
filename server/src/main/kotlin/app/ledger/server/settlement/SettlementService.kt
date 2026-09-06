@@ -1,5 +1,6 @@
 package app.ledger.server.settlement
 
+import app.ledger.engine.MemberId
 import app.ledger.server.payback.PaybackEntity
 import app.ledger.server.payback.PaybackRepository
 import app.ledger.server.payback.PaybackStatusName
@@ -134,5 +135,67 @@ class SettlementService(
         if (snapshot.owesBetween(them.id, you.id) <= 0) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "They do not owe you anything")
         }
+    }
+
+    /**
+     * Every Family in the completed partition (§7b): the viewer's explicit Families, plus everyone
+     * else as an automatic one-person Family. Pre-validates every condition explicitly, the same
+     * division of labour as [app.ledger.server.item.ItemService]'s own roster validation, so the
+     * engine's own `require()`s are unreachable in practice.
+     */
+    @Transactional(readOnly = true)
+    fun families(tripId: UUID, command: PreviewFamilies, actor: UUID): FamiliesView {
+        access.visibleTrip(tripId, actor)
+        val snapshot = snapshots.load(tripId)
+        val you = snapshot.memberFor(actor)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
+        val onTrip = snapshot.roster.associateBy { it.id }
+
+        if (command.families.any { it.memberIds.isEmpty() }) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "a family can't be empty")
+        }
+
+        command.families.forEach { family ->
+            if (family.memberIds.toSet().size != family.memberIds.size) {
+                throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Somebody is listed twice in the same family")
+            }
+        }
+        val explicit = command.families.map { it.memberIds.toSet() }
+
+        if (!onTrip.keys.containsAll(explicit.flatten())) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Somebody in a family is not on this trip")
+        }
+
+        val seen = mutableSetOf<UUID>()
+        explicit.forEach { family ->
+            if ((family intersect seen).isNotEmpty()) {
+                throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Somebody is in two families at once")
+            }
+            seen += family
+        }
+
+        if (explicit.size + (onTrip.keys - seen).size < 2) {
+            throw ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "That covers everyone — a trip needs at least two families",
+            )
+        }
+
+        fun membersOf(family: app.ledger.engine.Family): List<FamilyMemberView> =
+            snapshot.roster
+                .filter { MemberId(it.id.toString()) in family.members }
+                .map { FamilyMemberView(it.id, it.displayName, it.personHue, isYou = it.id == you.id) }
+
+        return FamiliesView(
+            snapshot.families(explicit).map { balance ->
+                FamilyView(
+                    members = membersOf(balance.family),
+                    netMinor = balance.netMinor,
+                    counterparts = balance.betweenFamilies.map { (other, owed) ->
+                        FamilyCounterpartView(membersOf(other), owed)
+                    },
+                )
+            },
+        )
     }
 }

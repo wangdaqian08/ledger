@@ -413,6 +413,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       :focus-member-id="settleFocusMemberId"
       :currency-code="trip.currencyCode"
       :symbol="symbol"
+      :members="trip.members"
       @close="settleOpen = false"
       @changed="refresh"
     />

@@ -1,6 +1,7 @@
 package app.ledger.server.settlement
 
 import app.ledger.server.payback.PaybackView
+import com.fasterxml.jackson.annotation.JsonProperty
 import java.util.UUID
 
 /**
@@ -43,3 +44,29 @@ data class SettlementView(
     /** Derived, never a button (§7a): everyone is square when no row has anything left on it. */
     val allSquare: Boolean,
 )
+
+/** Same shape as app.ledger.server.trip.ClaimableMemberView — minimal member fields for display. */
+data class FamilyMemberView(
+    val id: UUID,
+    val displayName: String,
+    val personHue: Short,
+    @get:JsonProperty("isYou") val isYou: Boolean,
+)
+
+/** One Family's position with one *other* Family in the partition — never an individual. */
+data class FamilyCounterpartView(
+    val members: List<FamilyMemberView>,
+    /** Positive means this Family owes the counterpart; negative means the counterpart owes this Family. */
+    val owedMinor: Long,
+)
+
+/** One Family in the completed partition: explicit, or an automatic singleton. */
+data class FamilyView(
+    val members: List<FamilyMemberView>,
+    /** Positive means the Family is owed money overall. Equal to minus the sum of [counterparts], by construction. */
+    val netMinor: Long,
+    /** One row per *other* Family in the partition. */
+    val counterparts: List<FamilyCounterpartView>,
+)
+
+data class FamiliesView(val families: List<FamilyView>)

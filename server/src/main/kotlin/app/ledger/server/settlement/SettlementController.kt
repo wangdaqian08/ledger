@@ -38,4 +38,11 @@ class SettlementController(private val settlements: SettlementService) {
         @Valid @RequestBody command: Remind,
         @AuthenticationPrincipal principal: LedgerPrincipal,
     ) = settlements.remind(tripId, command, principal.userId)
+
+    @PostMapping("/families")
+    fun families(
+        @PathVariable tripId: UUID,
+        @Valid @RequestBody command: PreviewFamilies,
+        @AuthenticationPrincipal principal: LedgerPrincipal,
+    ): FamiliesView = settlements.families(tripId, command, principal.userId)
 }

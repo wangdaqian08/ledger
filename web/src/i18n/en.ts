@@ -41,6 +41,28 @@ export default {
     waiting: 'Waiting for confirmation',
     approve: 'Approve',
     reject: 'Decline',
+    // Families (§7b): a complete, ephemeral partition of the trip built right on this screen —
+    // never called a "group", which this app already uses for a whole trip.
+    byPerson: 'By person',
+    byFamily: 'By family',
+    noFamiliesYet: 'No families built yet.',
+    buildFamily: 'Build a family',
+    addFamily: 'Add family',
+    chooseFamily: 'Choose who is in this family',
+    familyCannotBeEveryone: "Leave at least one person out — a first family can't be everyone",
+    familyNameYouSolo: "{name}'s household",
+    familyNameYouGroup: '{name} and another {count} household',
+    // Pronoun-free: a Family is never "you", so these drop the "you"/"them" BalanceRow can use.
+    familyOwesCardSingular: '{other} owes {card}',
+    familyOwesCardPlural: '{other} owe {card}',
+    familyCardOwesSingular: '{card} owes {other}',
+    familyCardOwesPlural: '{card} owe {other}',
+    familyOwesCardVerbSingular: 'owes',
+    familyOwesCardVerbPlural: 'owe',
+    familyCardOwesVerbSingular: 'owes',
+    familyCardOwesVerbPlural: 'owe',
+    familyNetOwed: 'This family is owed',
+    familyNetOwes: 'This family owes',
   },
   payback: {
     pending: 'Waiting for {name}',
