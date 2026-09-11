@@ -87,7 +87,8 @@ async function send() {
         variant="primary"
         full-width
         data-testid="claim-send"
-        :disabled="amountMinor <= 0 || busy"
+        :loading="busy"
+        :disabled="amountMinor <= 0"
         @click="send"
       >
         {{ t('claim.send') }}

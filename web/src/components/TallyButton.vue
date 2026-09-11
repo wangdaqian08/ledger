@@ -1,26 +1,38 @@
 <script setup lang="ts">
-withDefaults(
+const props = withDefaults(
   defineProps<{
     variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
     size?: 'sm' | 'md' | 'lg'
     disabled?: boolean
+    /** In flight: a spinner joins the label, the button reads as working, and a second tap is
+     swallowed so a slow save cannot be double-submitted. */
+    loading?: boolean
     fullWidth?: boolean
     type?: 'button' | 'submit'
   }>(),
-  { variant: 'primary', size: 'md', disabled: false, fullWidth: false, type: 'button' },
+  { variant: 'primary', size: 'md', disabled: false, loading: false, fullWidth: false, type: 'button' },
 )
 
-defineEmits<{ click: [MouseEvent] }>()
+const emit = defineEmits<{ click: [MouseEvent] }>()
+
+function onClick(event: MouseEvent) {
+  // Disabled already blocks the pointer; loading has to block the synthetic click too, or a retry
+  // on a flaky line fires the save a second time — the very thing the spinner is there to cover.
+  if (props.disabled || props.loading) return
+  emit('click', event)
+}
 </script>
 
 <template>
   <button
     :type="type"
-    :disabled="disabled"
+    :disabled="disabled || loading"
+    :aria-busy="loading || undefined"
     class="btn"
-    :class="[`btn--${variant}`, `btn--${size}`, { 'btn--full': fullWidth }]"
-    @click="$emit('click', $event)"
+    :class="[`btn--${variant}`, `btn--${size}`, { 'btn--full': fullWidth, 'btn--loading': loading }]"
+    @click="onClick"
   >
+    <span v-if="loading" class="btn__spinner" data-testid="btn-spinner" aria-hidden="true" />
     <slot />
   </button>
 </template>
@@ -49,6 +61,40 @@ defineEmits<{ click: [MouseEvent] }>()
 .btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* Loading reads as working, not inert: brighter than a plain disabled button so the spinner shows,
+   with the busy cursor. Two classes (rather than :disabled) to match .btn:disabled's specificity and
+   win on source order — and to key the rule off the class the template actually toggles, since a
+   loading button is always disabled anyway. */
+.btn.btn--loading {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.btn__spinner {
+  width: 1em;
+  height: 1em;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  /* One transparent edge is what makes the rotation legible. */
+  border-right-color: transparent;
+  border-radius: var(--radius-circle);
+  animation: btn-spin 0.6s linear infinite;
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A reduced-motion preference still gets a turning spinner — the state has to stay visible — just
+   slow enough not to trigger anyone; aria-busy carries the same news to assistive tech. */
+@media (prefers-reduced-motion: reduce) {
+  .btn__spinner {
+    animation-duration: 1.6s;
+  }
 }
 
 .btn--full {

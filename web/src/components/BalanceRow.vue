@@ -44,7 +44,7 @@ const { t } = useI18n()
     <PersonAvatar :name="displayName" :hue="personHue" :size="40" />
 
     <div class="row__body">
-      <div class="row__name">{{ displayName }}</div>
+      <div class="row__name" :title="displayName" data-testid="balance-row-name">{{ displayName }}</div>
       <!-- Direction stays put even while a claim is pending: which way the money goes is the one
            thing the row must never drop. The waiting note sits under it, not in place of it. -->
       <div class="row__state">
@@ -55,35 +55,49 @@ const { t } = useI18n()
       <div v-if="pending" class="row__pending">{{ t('settle.waiting') }}</div>
     </div>
 
-    <AmountText
-      :amount-minor="Math.abs(owedMinor)"
-      :currency-code="currencyCode"
-      :symbol="symbol"
-      size="lg"
-      :tone="owedMinor === 0 ? 'settled' : owedMinor > 0 ? 'owed' : 'owe'"
-    />
+    <!-- Amount and its one action ride together: on a narrow row this whole group wraps to a second
+         line rather than crushing the name (see .row__trailing). -->
+    <div class="row__trailing">
+      <AmountText
+        :amount-minor="Math.abs(owedMinor)"
+        :currency-code="currencyCode"
+        :symbol="symbol"
+        size="lg"
+        :tone="owedMinor === 0 ? 'settled' : owedMinor > 0 ? 'owed' : 'owe'"
+      />
 
-    <TallyButton
-      v-if="owedMinor > 0 && !pending"
-      size="sm"
-      variant="secondary"
-      :disabled="reminded"
-      data-testid="row-remind"
-      @click="$emit('remind')"
-    >
-      {{ reminded ? t('settle.reminded') : t('settle.remind') }}
-    </TallyButton>
-    <TallyButton v-else-if="owedMinor < 0 && !pending" size="sm" data-testid="row-pay" @click="$emit('pay')">
-      {{ t('settle.pay') }}
-    </TallyButton>
+      <TallyButton
+        v-if="owedMinor > 0 && !pending"
+        size="sm"
+        variant="secondary"
+        :disabled="reminded"
+        data-testid="row-remind"
+        @click="$emit('remind')"
+      >
+        {{ reminded ? t('settle.reminded') : t('settle.remind') }}
+      </TallyButton>
+      <TallyButton
+        v-else-if="owedMinor < 0 && !pending"
+        size="sm"
+        data-testid="row-pay"
+        @click="$emit('pay')"
+      >
+        {{ t('settle.pay') }}
+      </TallyButton>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .row {
   display: flex;
+  /* Wrap rather than crush: when the name can't keep its width beside the amount and action, the
+     trailing group drops to a second line instead of the name clipping away to nothing. No width
+     breakpoint — the row reflows on its own content, the way the rest of this app's layouts do. */
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
   padding: 12px var(--space-4);
   min-height: 64px;
 }
@@ -99,28 +113,58 @@ const { t } = useI18n()
 }
 
 .row__body {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 auto;
+  /* Content-aware minimum: the body never shrinks below the name's own width, so the name never
+     clips — and a row whose name fits stays on one line. Only when the name genuinely can't sit
+     beside the amount + action does the trailing group wrap below it (flex-wrap on .row), rather
+     than a fixed breakpoint that would stack every row or none. */
+  min-width: min-content;
 }
 
 .row__name {
   font-weight: var(--weight-bold);
   color: var(--ink);
   line-height: 1.2;
-  overflow-wrap: anywhere;
+  /* One line, clipped with an ellipsis rather than broken mid-word ("Stephi/ne") when a long name
+     meets a big amount — the same treatment ExpenseRow.row__title gets. The avatar carries the
+     initial and the title attribute carries the full name, so a clipped name is never a lost one. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+/* Both sub-lines clip with the name, never overflow it. Without overflow:hidden a squeezed body
+   collapses to zero width and "Owes you" spills its nowrap text out over the amount beside it. */
 .row__state {
   font-size: var(--text-caption);
   color: var(--text-muted);
   margin-top: 2px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .row__pending {
   font-size: var(--text-caption);
-  color: var(--lemon-ink, var(--text-subtle));
+  /* --text-subtle, not the never-defined --lemon-ink whose fallback this always was: the note has
+     always rendered in this grey. If the "waiting" line should read amber to match the lemon-tint
+     pending theme, that wants a real --lemon-ink token in colors.css, not a phantom reference here. */
+  color: var(--text-subtle);
   margin-top: 1px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The amount and its action travel as one block that never shrinks: the money is never clipped (the
+   house rule) and the action stays tappable. margin-left:auto pins the block to the right — on a
+   wide row after the name, and on its own line once wrapped. So the name column is the only thing
+   that yields, and when it runs out of room the block drops below rather than squeezing it away. */
+.row__trailing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+  flex-shrink: 0;
 }
 </style>

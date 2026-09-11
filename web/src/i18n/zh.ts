@@ -159,6 +159,7 @@ export default {
     custom: '自定义',
     each: '每人{amount}',
     save: '保存支出',
+    saving: '保存中...',
     savedPhotoFailed: '支出已保存——照片未能上传：{reason}。点击“保存支出”重试照片。',
     discardConfirm: '放弃这笔支出？',
     back: '返回',

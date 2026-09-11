@@ -56,6 +56,7 @@ const paying = ref<SettlementRow | null>(null)
 const amountMinor = ref(0)
 const error = ref('')
 const busy = ref(false)
+const pendingTag = ref<string | null>(null)
 const reminded = ref<string | null>(null)
 const rejecting = ref<string | null>(null)
 const rejectReason = ref('')
@@ -109,9 +110,10 @@ function startPay(row: SettlementRow) {
   error.value = ''
 }
 
-async function act(action: () => Promise<unknown>) {
+async function act(action: () => Promise<unknown>, tag: string | null = null) {
   if (busy.value) return
   busy.value = true
+  pendingTag.value = tag
   error.value = ''
   try {
     await action()
@@ -120,14 +122,16 @@ async function act(action: () => Promise<unknown>) {
     error.value = failure instanceof Error ? failure.message : String(failure)
   } finally {
     busy.value = false
+    pendingTag.value = null
   }
 }
 
 async function pay() {
   const row = paying.value
   if (!row || amountMinor.value <= 0) return
-  await act(() =>
-    api.submitSettlement(props.tripId, { toMemberId: row.memberId, amountMinor: amountMinor.value }),
+  await act(
+    () => api.submitSettlement(props.tripId, { toMemberId: row.memberId, amountMinor: amountMinor.value }),
+    'pay',
   )
   if (!error.value) paying.value = null
 }
@@ -459,7 +463,8 @@ async function disband(entry: FamilyView) {
               variant="primary"
               size="sm"
               data-testid="pay-send"
-              :disabled="amountMinor <= 0 || busy"
+              :loading="pendingTag === 'pay'"
+              :disabled="amountMinor <= 0"
               @click="pay"
             >
               {{ t('settle.pay') }}
