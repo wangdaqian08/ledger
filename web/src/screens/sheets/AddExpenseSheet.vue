@@ -410,7 +410,7 @@ async function save() {
           :disabled="sharers.length === 0 || noteTooLong"
           @click="save"
         >
-          {{ busy? t('addExpense.saving') : t('addExpense.save') }}
+          {{ busy ? t('addExpense.saving') : t('addExpense.save') }}
         </TallyButton>
       </div>
     </div>
