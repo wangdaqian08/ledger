@@ -693,6 +693,70 @@ describe('AddExpenseSheet', () => {
       'Cara sat this one out',
     )
   })
+
+  it('spins the Save button while the create is in flight, then clears it on success', async () => {
+    // The save is a network round trip (create, then maybe a receipt) — long enough that a bare
+    // faded button reads as nothing happening. The spinner is the feedback: it appears the moment
+    // Save is tapped and is gone by the time the sheet reports itself saved.
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('cafebabe-dead-4eef-cafe-babedead4eef')
+    let resolveCreate!: (value: ItemView) => void
+    mocked.createItem!.mockImplementation(
+      () => new Promise((resolve) => (resolveCreate = resolve as (value: ItemView) => void)),
+    )
+
+    const sheet = mount(AddExpenseSheet, {
+      props: { open: false, trip: trip(), categories: foodCategories },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await nextTick()
+    await findByTestId(sheet, 'key-5').trigger('click')
+    await findByTestId(sheet, 'next-step').trigger('click')
+    await findByTestId(sheet, 'split-all').trigger('click')
+
+    await findByTestId(sheet, 'save-expense').trigger('click')
+    await nextTick()
+
+    const save = findByTestId(sheet, 'save-expense')
+    expect(save.attributes('aria-busy')).toBe('true')
+    expect(save.find(testId('btn-spinner')).exists()).toBe(true)
+    expect(save.text()).toContain(en.addExpense.saving)
+
+    resolveCreate(item({}))
+    await flushPromises()
+
+    expect(sheet.emitted('saved')).toBeTruthy()
+    expect(findAllByTestId(sheet, 'btn-spinner')).toHaveLength(0)
+  })
+
+  it('clears the Save spinner when the create fails, leaving the reason on screen', async () => {
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('cafebabe-dead-4eef-cafe-babedead4eef')
+    let rejectCreate!: (reason: Error) => void
+    mocked.createItem!.mockImplementation(
+      () => new Promise((_resolve, reject) => (rejectCreate = reject as (reason: Error) => void)),
+    )
+
+    const sheet = mount(AddExpenseSheet, {
+      props: { open: false, trip: trip(), categories: foodCategories },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await nextTick()
+    await findByTestId(sheet, 'key-5').trigger('click')
+    await findByTestId(sheet, 'next-step').trigger('click')
+    await findByTestId(sheet, 'split-all').trigger('click')
+
+    await findByTestId(sheet, 'save-expense').trigger('click')
+    await nextTick()
+    expect(findByTestId(sheet, 'save-expense').attributes('aria-busy')).toBe('true')
+
+    rejectCreate(new Error('Network unreachable'))
+    await flushPromises()
+
+    expect(sheet.text()).toContain('Network unreachable')
+    expect(findAllByTestId(sheet, 'btn-spinner')).toHaveLength(0)
+    expect(sheet.emitted('saved')).toBeFalsy()
+  })
 })
 
 describe('AddExpenseSheet custom weights', () => {
@@ -1161,6 +1225,26 @@ describe('InviteSheet', () => {
     expect(sheet.emitted('changed')).toBeTruthy()
   })
 
+  it('spins only the Add button while the member write is in flight, then clears it', async () => {
+    let resolveAdd!: (v: unknown) => void
+    mocked.addMember!.mockImplementation(() => new Promise((r) => (resolveAdd = r as (v: unknown) => void)))
+    const sheet = mount(InviteSheet, { props: { open: true, trip: trip() }, global: global() })
+    await nextTick()
+
+    await findByTestId(sheet, 'member-name').setValue('Dana')
+    await findByTestId(sheet, 'add-member').trigger('click')
+    await nextTick()
+
+    const add = findByTestId(sheet, 'add-member')
+    expect(add.attributes('aria-busy')).toBe('true')
+    expect(add.find(testId('btn-spinner')).exists()).toBe(true)
+
+    resolveAdd({ ...cara, id: 'm-new', displayName: 'Dana' })
+    await flushPromises()
+    expect(sheet.emitted('changed')).toBeTruthy()
+    expect(findAllByTestId(sheet, 'btn-spinner')).toHaveLength(0)
+  })
+
   it('lets the creator fix a name in place, and reports the change', async () => {
     mocked.renameMember!.mockResolvedValue({ ...bob, displayName: 'Robert' })
     const sheet = mount(InviteSheet, { props: { open: true, trip: trip() }, global: global() })
@@ -1235,6 +1319,36 @@ describe('ClaimPaybackSheet', () => {
       expect.objectContaining({ fromMemberId: bob.id, amountMinor: 2_500 }),
     )
     expect(sheet.emitted('saved')).toBeTruthy()
+  })
+
+  it('spins the Send button while the claim is in flight, then clears it', async () => {
+    let resolveClaim!: () => void
+    mocked.submitItemPayback!.mockImplementation(() => new Promise((r) => (resolveClaim = r as () => void)))
+    const sheet = mount(ClaimPaybackSheet, {
+      props: {
+        open: false,
+        itemId: 'i-1',
+        toName: 'Alice',
+        prefillMinor: 2_500,
+        fromMemberId: bob.id,
+        currencyCode: 'AUD',
+        symbol: '$',
+      },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await nextTick()
+
+    await findByTestId(sheet, 'claim-send').trigger('click')
+    await nextTick()
+    const send = findByTestId(sheet, 'claim-send')
+    expect(send.attributes('aria-busy')).toBe('true')
+    expect(send.find(testId('btn-spinner')).exists()).toBe(true)
+
+    resolveClaim()
+    await flushPromises()
+    expect(sheet.emitted('saved')).toBeTruthy()
+    expect(findAllByTestId(sheet, 'btn-spinner')).toHaveLength(0)
   })
 })
 
@@ -1362,6 +1476,47 @@ describe('SettleUpSheet', () => {
 
     expect(mocked.submitSettlement).toHaveBeenCalledWith('t-1', { toMemberId: bob.id, amountMinor: 6_000 })
     expect(sheet.emitted('changed')).toBeTruthy()
+  })
+
+  it('spins the Pay button while the settlement is in flight, then clears it', async () => {
+    let resolvePay!: () => void
+    mocked.submitSettlement!.mockImplementation(() => new Promise((r) => (resolvePay = r as () => void)))
+    const sheet = mount(SettleUpSheet, {
+      props: {
+        open: true,
+        tripId: 't-1',
+        myMemberId: you.id,
+        youAreCreator: true,
+        rows: [
+          {
+            memberId: bob.id,
+            displayName: 'Bob',
+            personHue: 2,
+            owedMinor: 6_000,
+            pending: [],
+            settled: [],
+            rejected: [],
+          },
+        ],
+        members: [you, bob],
+        currencyCode: 'AUD',
+        symbol: '$',
+      },
+      global: global(),
+    })
+    await nextTick()
+    await findByTestId(sheet, 'row-pay').trigger('click')
+    await findByTestId(sheet, 'pay-send').trigger('click')
+    await nextTick()
+
+    const pay = findByTestId(sheet, 'pay-send')
+    expect(pay.attributes('aria-busy')).toBe('true')
+    expect(pay.find(testId('btn-spinner')).exists()).toBe(true)
+
+    resolvePay()
+    await flushPromises()
+    expect(sheet.emitted('changed')).toBeTruthy()
+    expect(findAllByTestId(sheet, 'btn-spinner')).toHaveLength(0)
   })
 
   it('reminds somebody who owes you, and nothing more', async () => {

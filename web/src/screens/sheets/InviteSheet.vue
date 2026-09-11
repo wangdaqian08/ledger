@@ -32,6 +32,7 @@ const linkNote = ref('')
 const error = ref('')
 const busy = ref(false)
 const editingId = ref<string | null>(null)
+const activeAction = ref<'add' | null>(null)
 const editedName = ref('')
 
 watch(
@@ -71,6 +72,7 @@ async function saveRename() {
 async function addName() {
   if (!newName.value.trim() || busy.value) return
   busy.value = true
+  activeAction.value = 'add'
   error.value = ''
   try {
     await api.addMember(props.trip.id, newName.value.trim())
@@ -80,6 +82,7 @@ async function addName() {
     error.value = failure instanceof Error ? failure.message : String(failure)
   } finally {
     busy.value = false
+    activeAction.value = null
   }
 }
 
@@ -263,6 +266,7 @@ async function copyLink() {
             type="submit"
             variant="secondary"
             data-testid="add-member"
+            :loading="activeAction === 'add'"
             :disabled="!newName.trim() || busy"
             @click="addName"
           >

@@ -406,10 +406,11 @@ async function save() {
         <TallyButton
           variant="primary"
           data-testid="save-expense"
-          :disabled="busy || sharers.length === 0 || noteTooLong"
+          :loading="busy"
+          :disabled="sharers.length === 0 || noteTooLong"
           @click="save"
         >
-          {{ t('addExpense.save') }}
+          {{ busy? t('addExpense.saving') : t('addExpense.save') }}
         </TallyButton>
       </div>
     </div>

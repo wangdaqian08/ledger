@@ -7,6 +7,7 @@ import FamilyBalanceCard from '../src/components/FamilyBalanceCard.vue'
 import FamilyCounterpartRow from '../src/components/FamilyCounterpartRow.vue'
 import GroupCard from '../src/components/GroupCard.vue'
 import ProgressBar from '../src/components/ProgressBar.vue'
+import TallyButton from '../src/components/TallyButton.vue'
 import TallyIcon from '../src/components/TallyIcon.vue'
 import TallyStepper from '../src/components/TallyStepper.vue'
 import TallyKeypad from '../src/components/TallyKeypad.vue'
@@ -79,6 +80,16 @@ describe('BalanceRow', () => {
     const pending = mount(BalanceRow, { props: { ...base, owedMinor: -3910, pending: true } })
     expect(pending.text()).toContain('Waiting for confirmation')
     expect(pending.findAll('button')).toHaveLength(0)
+  })
+
+  it('keeps a long name whole for hover and readers, even when the row has to clip it', () => {
+    // A long name beside a big amount used to wrap character by character ("Stephi/ne"). The row now
+    // clips it to one line (the ExpenseRow treatment), so the full name must still survive somewhere
+    // the reader can reach it — the title, and the accessible text — never only the clipped glyphs.
+    const row = mount(BalanceRow, { props: { ...base, displayName: 'Gerofffince', owedMinor: 3_225 } })
+    const name = findByTestId(row, 'balance-row-name')
+    expect(name.text()).toBe('Gerofffince')
+    expect(name.attributes('title')).toBe('Gerofffince')
   })
 })
 
@@ -284,6 +295,30 @@ describe('ProgressBar', () => {
   it('shows nothing rather than dividing by zero', () => {
     const nothing = mount(ProgressBar, { props: { coveredMinor: 0, ofMinor: 0 } })
     expect(nothing.find('.bar__fill').attributes('style')).toContain('width: 0%')
+  })
+})
+
+describe('TallyButton', () => {
+  it('shows a spinner, marks itself busy, and takes no clicks while loading', async () => {
+    // A slow save (createItem, then a receipt upload) leaves the button looking idle. Loading turns
+    // it into visible, honest feedback — and must swallow a second tap, or a flaky connection double-
+    // submits the very thing the wait is about.
+    const btn = mount(TallyButton, { props: { loading: true }, slots: { default: 'Save' } })
+    expect(findByTestId(btn, 'btn-spinner').exists()).toBe(true)
+    expect(btn.attributes('aria-busy')).toBe('true')
+    expect(btn.attributes('disabled')).toBeDefined()
+
+    await btn.trigger('click')
+    expect(btn.emitted('click')).toBeUndefined()
+  })
+
+  it('carries no spinner and takes clicks when idle', async () => {
+    const btn = mount(TallyButton, { slots: { default: 'Save' } })
+    expect(findByTestId(btn, 'btn-spinner').exists()).toBe(false)
+    expect(btn.attributes('aria-busy')).toBeUndefined()
+
+    await btn.trigger('click')
+    expect(btn.emitted('click')).toHaveLength(1)
   })
 })
 

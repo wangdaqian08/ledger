@@ -179,6 +179,7 @@ export default {
     custom: 'Custom',
     each: '{amount} each',
     save: 'Save expense',
+    saving: 'Saving...',
     savedPhotoFailed: 'Expense saved — the photo didn’t upload: {reason}. Press Save to try the photo again.',
     discardConfirm: 'Discard this expense?',
     back: 'Back',
