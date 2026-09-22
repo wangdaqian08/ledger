@@ -10,8 +10,8 @@ import java.time.Duration
 class StaticResourceConfig : WebMvcConfigurer {
     override fun addResourceHandlers(registry: ResourceHandlerRegistry) {
         registry
-            .addResourceHandler("/asserts/**")
-            .addResourceLocations("classpath:/static/asserts/")
+            .addResourceHandler("/assets/**")
+            .addResourceLocations("classpath:/static/assets/")
             .setCacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePublic().immutable())
     }
 }
