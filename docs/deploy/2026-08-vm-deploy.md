@@ -119,3 +119,62 @@ pre-receipts jar (`4a000ac`, the first deploy) the whole time until then — mer
 actually running on the VM are two different things, and it's worth checking `readlink
 /opt/ledger/ledger.jar` against `git log` before assuming a merged PR is live. PRs #27-#30 landed
 in the same catch-up release, tagged `v0.1.0`.
+
+## JVM tuning (added 2026-09-22)
+
+Cold start was ~24 s on the shared vCPU and the box is memory-tight, so a few JVM flags cut startup
+CPU and trim footprint. **No code change** — this is launch config only, independent of the jar, so
+it survives releases and rollbacks untouched. (Keep-warm was considered and rejected: it would pin
+Ledger resident and fight `OOMScoreAdjust=500`.)
+
+Applied as a systemd drop-in, kept separate from the secrets in `/etc/ledger/env`. The value **must
+be quoted** — `Environment=` splits on unquoted whitespace, which would otherwise turn every flag
+after the first into its own bogus variable:
+
+ ```bash
+ sudo mkdir -p /etc/systemd/system/ledger.service.d
+ sudo tee /etc/systemd/system/ledger.service.d/10-jvm.conf >/dev/null <<'EOF'
+ [Service]
+ Environment="JAVA_TOOL_OPTIONS=-XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xmx256m -XX:+ExitOnOutOfMemoryError"
+ EOF
+ sudo systemctl daemon-reload
+ sudo systemctl restart ledger
+ ```
+
+Why these four:
+
+- `-XX:+UseSerialGC` — one GC thread, no region bookkeeping; G1's parallel machinery is pure overhead
+  on a single shared vCPU. Smaller footprint, fewer threads.
+- `-XX:TieredStopAtLevel=1` — C1-only JIT: faster warmup and far less JIT CPU on the shared core.
+  Peak throughput is irrelevant at friends scale.
+- `-Xmx256m` — pins the heap ceiling at what the JDK already defaults to on a 1 GB host, made
+  explicit so a bigger box could never silently grow it. Ledger has run fine at this default; drop to
+  `-Xmx192m` only if the RSS check below shows headroom.
+- `-XX:+ExitOnOutOfMemoryError` — die cleanly so systemd restarts, instead of a wedged JVM limping on.
+
+Verify — grab a before/after so the win is measured, not assumed:
+
+ ```bash
+ # startup time (the number this targets)
+ sudo journalctl -u ledger -o cat | grep -iE 'Started LedgerApplication|in [0-9.]+ seconds' | tail -1
+ # flags actually took (the JVM echoes them to stderr on boot)
+ sudo journalctl -u ledger -o cat | grep 'Picked up JAVA_TOOL_OPTIONS' | tail -1
+ # memory: Ledger's cgroup total, its RSS/swap, box headroom
+ systemctl show ledger -p MemoryCurrent
+ pid=$(pgrep -f 'ledger.*\.jar'); ps -o pid,rss,vsz,comm -p "$pid"; awk '/VmRSS|VmSwap/' /proc/$pid/status
+ free -m; vmstat 1 3        # si/so ≈ 0 = no new thrashing
+ ```
+
+Confirm no regression: `curl -s -o /dev/null -w %{http_code} http://127.0.0.1:8082/ledger/api/me`
+still returns 401, Werewolf's root page is unchanged, swap is no worse.
+
+Deliberately **not** set: a systemd `MemoryMax`. `OOMScoreAdjust=500` already makes Ledger the OOM
+victim, so a cgroup cap only adds a second way to kill it — and set too tight it would restart Ledger
+for no reason. Add one only after watching steady-state `MemoryCurrent`, at roughly 1.3× that.
+
+Rollback (instant, no redeploy):
+
+ ```bash
+ sudo rm /etc/systemd/system/ledger.service.d/10-jvm.conf
+ sudo systemctl daemon-reload && sudo systemctl restart ledger
+ ```
