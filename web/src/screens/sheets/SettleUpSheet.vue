@@ -1385,6 +1385,7 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
   background: none;
   cursor: pointer;
   text-align: left;
+  overflow: hidden;
 }
 
 /* The same uppercase micro-label as the comment fold, so it reads as a section, not a stray control. */
