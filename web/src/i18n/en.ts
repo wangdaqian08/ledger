@@ -60,7 +60,7 @@ export default {
     transferFamilies: 'Using your families: {families}',
     familiesJoin: '{a} · {b}',
     familySentForConfirmation: '{name} sent this for confirmation',
-    noTransfers: 'Everyone is settled. No transfers needed',
+    noTransfers: 'Everyone is settled. No transfers needed.',
     noFamiliesYet: 'No families built yet.',
     buildFamily: 'Build a family',
     addFamily: 'Add family',
@@ -90,7 +90,7 @@ export default {
     transfers: 'Transfers',
     total: 'Total',
     transferPair: '{byPerson} → {fewest}',
-    legend: 'Balance = paid - share + settled. Transfers: by person → fewest.',
+    legend: 'Balance = paid − share + settled. Transfers: by person → fewest.',
   },
   payId: {
     label: 'PayID',

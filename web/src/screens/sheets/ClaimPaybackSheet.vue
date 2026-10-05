@@ -73,7 +73,7 @@ async function send() {
     <form class="claim" @submit.prevent="send">
       <PayIdLine
         v-if="recipient"
-        :pay-id="recipient.id"
+        :pay-id="recipient.payId"
         :recently-changed="recipient.payIdChangedRecently"
         :owner-name="toName"
       />

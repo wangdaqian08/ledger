@@ -130,11 +130,11 @@ class DemoData {
 
         private fun weekendAway() {
             val payIds = mapOf("Ann" to "ann@example.com", "Cat" to "cat@example.com")
-            val people = listOf("Ann", "Cat", "Dan", "Eve").associateWith { signUp(it, payIds[it]) }
+            val people = listOf("Ann", "Ben", "Cat", "Dan", "Eve").associateWith { signUp(it, payIds[it]) }
 
             val trip = trips.save(
                 TripEntity(
-                    name = "Weekend Away",
+                    name = "Weekend away",
                     icon = "car-front",
                     hue = 2,
                     currencyCode = "AUD",
@@ -144,7 +144,7 @@ class DemoData {
             val (ann, ben, cat, dan, eve) =
                 people.entries.mapIndexed { i, (name, user) -> join(trip, name, hue = i + 1, userId = user.id)  }
 
-            bill(trip, "Breakfest", BREAKFAST_ID, ann, listOf(ann, ben, dan), amountMinor = 6_000)
+            bill(trip, "Breakfast", BREAKFAST_ID, ann, listOf(ann, ben, dan), amountMinor = 6_000)
             bill(
                 trip,
                 "Taxi",
@@ -154,10 +154,10 @@ class DemoData {
                 amountMinor = 6_000,
                 category = TRANSPORT_CATEGORY,
             )
-            bill(trip, "Lunch", LUNCH_ID, cat, sharedBy = listOf(ann, ben, cat, dan), amountMinor = 6_000)
+            bill(trip, "Lunch", LUNCH_ID, cat, sharedBy = listOf(ann,  cat, dan, eve), amountMinor = 6_000)
         }
 
-        private fun signUp(name: String, payId: String?) = users.save(
+        private fun signUp(name: String, payId: String? = null) = users.save(
             UserEntity(
                 provider = "mock",
                 subject = name.lowercase(),
