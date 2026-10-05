@@ -40,7 +40,7 @@ export default {
     youOweThem: 'You owe {name}',
     owesYouShort: 'Owes you',
     youOweShort: 'You owe',
-    squareOverall: "You're square overall - these cancel out",
+    squareOverall: "You're square overall — these cancel out",
     waiting: 'Waiting for confirmation',
     approve: 'Approve',
     reject: 'Decline',

@@ -39,7 +39,7 @@ export default {
     youOweThem: '你欠{name}',
     owesYouShort: '欠你',
     youOweShort: '你欠',
-    squareOverall: '你总体已结清-这些互相抵消了',
+    squareOverall: '你总体已结清 — 这些互相抵消了',
     waiting: '等待确认',
     approve: '确认',
     reject: '拒绝',
