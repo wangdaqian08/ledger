@@ -15,12 +15,12 @@ import app.ledger.server.trip.TripMemberRepository
 import app.ledger.server.trip.TripRepository
 import app.ledger.server.user.UserEntity
 import app.ledger.server.user.UserRepository
-import java.time.Duration
 import org.springframework.boot.ApplicationRunner
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Profile
 import org.springframework.transaction.annotation.Transactional
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
@@ -139,10 +139,10 @@ class DemoData {
                     hue = 2,
                     currencyCode = "AUD",
                     createdByUserId = people.getValue("Ann").id,
-                )
+                ),
             )
             val (ann, ben, cat, dan, eve) =
-                people.entries.mapIndexed { i, (name, user) -> join(trip,name, hue = i+1, userId = user.id)  }
+                people.entries.mapIndexed { i, (name, user) -> join(trip, name, hue = i + 1, userId = user.id)  }
 
             bill(trip, "Breakfest", BREAKFAST_ID, ann, listOf(ann, ben, dan), amountMinor = 6_000)
             bill(
@@ -154,7 +154,7 @@ class DemoData {
                 amountMinor = 6_000,
                 category = TRANSPORT_CATEGORY,
             )
-            bill(trip, "Lunch", LUNCH_ID,cat, sharedBy = listOf(ann, ben, cat, dan), amountMinor = 6_000)
+            bill(trip, "Lunch", LUNCH_ID, cat, sharedBy = listOf(ann, ben, cat, dan), amountMinor = 6_000)
         }
 
         private fun signUp(name: String, payId: String?) = users.save(
@@ -165,7 +165,7 @@ class DemoData {
                 displayName = name,
                 photoUrl = null,
                 payId = payId,
-                payIdUpdatedAt = payId?.let { Instant.now().minus(Duration.ofDays(30)) }
+                payIdUpdatedAt = payId?.let { Instant.now().minus(Duration.ofDays(30)) },
             ),
         )
 

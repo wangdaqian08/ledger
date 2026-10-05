@@ -28,6 +28,6 @@ class MeController(private val users: UserRepository, private val directory: Use
     @PutMapping("/api/me/pay-id")
     fun setPayId(
         @RequestBody command: SetPayId,
-        @AuthenticationPrincipal principal: LedgerPrincipal
+        @AuthenticationPrincipal principal: LedgerPrincipal,
     ): MeView = directory.setPayId(principal.userId, command.payId).toMeView()
 }

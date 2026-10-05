@@ -443,7 +443,6 @@ class SettlementApiTest : ApiTest() {
         )
     }
 
-
     @Test
     fun `square means your net is zero, even while your rows still cancel each other out`() {
         // The chain: Alice owes Bob $10 and Bob owes Carol $10, so Bob's net is already zero and the
