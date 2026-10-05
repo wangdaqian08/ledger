@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import {computed, ref, useId, watch} from 'vue'
-import {useI18n} from 'vue-i18n'
+import { computed, ref, useId, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AmountKeypadField from '@/components/AmountKeypadField.vue'
 import AmountText from '@/components/AmountText.vue'
 import BalanceRow from '@/components/BalanceRow.vue'
@@ -76,11 +76,11 @@ const props = withDefaults(
     /** "How it adds up", as the server derived it. Absent from an older server: no section then. */
     breakdown?: BreakdownView | null
   }>(),
-  {focusMemberId: null, allSquare: false, transfers: () => [], breakdown: null},
+  { focusMemberId: null, allSquare: false, transfers: () => [], breakdown: null },
 )
 const emit = defineEmits<{ close: []; changed: [] }>()
 
-const {t} = useI18n()
+const { t } = useI18n()
 
 // Real debts first, all-square people sunk and faded, so a $0 row never sits above money that still
 // needs acting on.
@@ -175,7 +175,7 @@ async function act(action: () => Promise<unknown>, tag: string | null = null) {
 async function pay() {
   const toMemberId = paying.value
   if (!toMemberId || amountMinor.value <= 0) return
-  await act(() => api.submitSettlement(props.tripId, {toMemberId, amountMinor: amountMinor.value}), 'pay')
+  await act(() => api.submitSettlement(props.tripId, { toMemberId, amountMinor: amountMinor.value }), 'pay')
   if (!error.value) paying.value = null
 }
 
@@ -220,10 +220,10 @@ function setMode(next: Mode) {
 /** "You pay Cat" / "Dan pays you" / "Dan pays Ben" — the viewer is always "you", grammatically. */
 function transferSentence(transfer: TransferView): string {
   if (transfer.fromMemberId === props.myMemberId) {
-    return t('settle.transferYouPay', {to: memberName(transfer.toMemberId)})
+    return t('settle.transferYouPay', { to: memberName(transfer.toMemberId) })
   }
   if (transfer.toMemberId === props.myMemberId) {
-    return t('settle.transferPaysYou', {from: memberName(transfer.fromMemberId)})
+    return t('settle.transferPaysYou', { from: memberName(transfer.fromMemberId) })
   }
   return t('settle.transferPays', {
     from: memberName(transfer.fromMemberId),
@@ -242,7 +242,7 @@ function pendingOnTransfer(transfer: TransferView): { claim: PaybackView; sentBy
   const other = mine ? transfer.toMemberId : transfer.fromMemberId
   const row = props.rows.find((r) => r.memberId === other)
   const claim = row ? pendingOf(row).find((p) => p.fromMemberId === transfer.fromMemberId) : undefined
-  return claim ? {claim, sentByYou: mine} : null
+  return claim ? { claim, sentByYou: mine } : null
 }
 
 function startTransferPay(transfer: TransferView) {
@@ -400,7 +400,7 @@ const planSize = computed<number | null>(() =>
 
 /** Folds names pairwise through a "{a} … {b}" message, so each language owns its separator. */
 function joinWith(key: string, parts: string[]): string {
-  return parts.slice(1).reduce((a, b) => t(key, {a, b}), parts[0] ?? '')
+  return parts.slice(1).reduce((a, b) => t(key, { a, b }), parts[0] ?? '')
 }
 
 /** A party by name, the viewer first: "You & Dan" leading a sentence, "you & Ben" after a verb. */
@@ -417,7 +417,7 @@ const familiesNote = computed(() =>
       'settle.familiesJoin',
       builtFamilies.value.map((ids) =>
         partyLabel(
-          ids.map((id) => ({id, displayName: memberName(id)})),
+          ids.map((id) => ({ id, displayName: memberName(id) })),
           true,
         ),
       ),
@@ -529,13 +529,13 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
             data-testid="pending-claim"
           >
             <div class="settle__pending-head">
-               <span class="settle__pending-text">
-                 {{
-                   claim.fromMemberId === myMemberId
-                     ? t('settle.sentForConfirmation', {name: row.displayName})
-                     : t('settle.awaitingYou', {name: row.displayName})
-                 }}
-               </span>
+              <span class="settle__pending-text">
+                {{
+                  claim.fromMemberId === myMemberId
+                    ? t('settle.sentForConfirmation', { name: row.displayName })
+                    : t('settle.awaitingYou', { name: row.displayName })
+                }}
+              </span>
               <!-- U1: the amount that is actually waiting, shown — not just that something is. -->
               <AmountText
                 :amount-minor="claim.amountMinor"
@@ -608,14 +608,14 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
             data-testid="settled-claim"
           >
             <div class="settle__pending-head">
-               <span class="settle__settled-text">
-                 {{
-                   claim.fromMemberId === myMemberId
-                     ? t('settle.youPaidThem', {name: row.displayName})
-                     : t('settle.theyPaidYou', {name: row.displayName})
-                 }}
-                 · {{ t('settle.settled') }}
-               </span>
+              <span class="settle__settled-text">
+                {{
+                  claim.fromMemberId === myMemberId
+                    ? t('settle.youPaidThem', { name: row.displayName })
+                    : t('settle.theyPaidYou', { name: row.displayName })
+                }}
+                · {{ t('settle.settled') }}
+              </span>
               <AmountText
                 :amount-minor="claim.amountMinor"
                 size="sm"
@@ -640,9 +640,9 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
             data-testid="declined-claim"
           >
             <div class="settle__pending-head">
-               <span class="settle__declined-text">{{
-                   t('settle.declinedByThem', {name: row.displayName})
-                 }}</span>
+              <span class="settle__declined-text">{{
+                t('settle.declinedByThem', { name: row.displayName })
+              }}</span>
               <AmountText
                 :amount-minor="claim.amountMinor"
                 size="sm"
@@ -721,8 +721,8 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
             <p class="settle__transfer-count" data-testid="transfer-count">
               {{
                 planSize === 1
-                  ? t('settle.transferCountOne', {count: planSize})
-                  : t('settle.transferCount', {count: planSize})
+                  ? t('settle.transferCountOne', { count: planSize })
+                  : t('settle.transferCount', { count: planSize })
               }}
             </p>
             <!-- Each side a Family or a lone person, rendered as the server sent it. -->
@@ -763,13 +763,13 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                     data-testid="transfer-pending"
                   >
                     <div class="settle__pending-head">
-                       <span class="settle__pending-text">
-                         {{
-                           claim.fromMemberId === myMemberId
-                             ? t('settle.sentForConfirmation', {name: memberName(claim.toMemberId)})
-                             : t('settle.familySentForConfirmation', {name: memberName(claim.fromMemberId)})
-                         }}
-                       </span>
+                      <span class="settle__pending-text">
+                        {{
+                          claim.fromMemberId === myMemberId
+                            ? t('settle.sentForConfirmation', { name: memberName(claim.toMemberId) })
+                            : t('settle.familySentForConfirmation', { name: memberName(claim.fromMemberId) })
+                        }}
+                      </span>
                       <AmountText
                         :amount-minor="claim.amountMinor"
                         size="sm"
@@ -850,13 +850,13 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                   data-testid="transfer-pending"
                 >
                   <div class="settle__pending-head">
-                     <span class="settle__pending-text">
-                       {{
-                         pendingOnTransfer(transfer)!.sentByYou
-                           ? t('settle.sentForConfirmation', {name: memberName(transfer.toMemberId)})
-                           : t('settle.awaitingYou', {name: memberName(transfer.fromMemberId)})
-                       }}
-                     </span>
+                    <span class="settle__pending-text">
+                      {{
+                        pendingOnTransfer(transfer)!.sentByYou
+                          ? t('settle.sentForConfirmation', { name: memberName(transfer.toMemberId) })
+                          : t('settle.awaitingYou', { name: memberName(transfer.fromMemberId) })
+                      }}
+                    </span>
                     <AmountText
                       :amount-minor="pendingOnTransfer(transfer)!.claim.amountMinor"
                       size="sm"
@@ -1006,7 +1006,7 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                   class="sums__num"
                   role="columnheader"
                   data-testid="breakdown-head-settled"
-                >{{ t('breakdown.settled') }}</span
+                  >{{ t('breakdown.settled') }}</span
                 >
                 <span class="sums__num" role="columnheader">{{ t('breakdown.balance') }}</span>
                 <span class="sums__transfers" role="columnheader">{{ t('breakdown.transfers') }}</span>
@@ -1019,101 +1019,101 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                 role="row"
                 data-testid="breakdown-row"
               >
-                 <span
-                   class="sums__name"
-                   role="rowheader"
-                   :title="row.displayName"
-                   data-testid="breakdown-name"
-                 >{{ row.isYou ? t('common.you') : row.displayName }}</span
-                 >
+                <span
+                  class="sums__name"
+                  role="rowheader"
+                  :title="row.displayName"
+                  data-testid="breakdown-name"
+                  >{{ row.isYou ? t('common.you') : row.displayName }}</span
+                >
                 <span class="sums__num" role="cell" data-testid="breakdown-paid">
-                   <AmountText
-                     :amount-minor="row.paidMinor"
-                     size="xs"
-                     :currency-code="currencyCode"
-                     :symbol="symbol"
-                   />
-                 </span>
+                  <AmountText
+                    :amount-minor="row.paidMinor"
+                    size="xs"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
                 <span class="sums__num" role="cell" data-testid="breakdown-share">
-                   <AmountText
-                     :amount-minor="row.shareMinor"
-                     size="xs"
-                     :currency-code="currencyCode"
-                     :symbol="symbol"
-                   />
-                 </span>
+                  <AmountText
+                    :amount-minor="row.shareMinor"
+                    size="xs"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
                 <span v-if="showSettled" class="sums__num" role="cell" data-testid="breakdown-settled">
-                   <AmountText
-                     :amount-minor="row.settledMinor"
-                     size="xs"
-                     :show-sign="row.settledMinor !== 0"
-                     :currency-code="currencyCode"
-                     :symbol="symbol"
-                   />
-                 </span>
+                  <AmountText
+                    :amount-minor="row.settledMinor"
+                    size="xs"
+                    :show-sign="row.settledMinor !== 0"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
                 <span class="sums__num" role="cell" data-testid="breakdown-balance">
-                   <AmountText
-                     :amount-minor="row.netMinor"
-                     size="xs"
-                     :tone="balanceTone(row.netMinor)"
-                     :show-sign="row.netMinor !== 0"
-                     :currency-code="currencyCode"
-                     :symbol="symbol"
-                   />
-                 </span>
+                  <AmountText
+                    :amount-minor="row.netMinor"
+                    size="xs"
+                    :tone="balanceTone(row.netMinor)"
+                    :show-sign="row.netMinor !== 0"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
                 <span class="sums__transfers" role="cell" data-testid="breakdown-transfers">{{
-                    t('breakdown.transferPair', {
-                      byPerson: row.transfersByPerson,
-                      fewest: row.transfersFewest,
-                    })
-                  }}</span>
+                  t('breakdown.transferPair', {
+                    byPerson: row.transfersByPerson,
+                    fewest: row.transfersFewest,
+                  })
+                }}</span>
               </div>
 
               <div class="sums__line sums__line--total" role="row" data-testid="breakdown-total">
-                 <span class="sums__name" role="rowheader" data-testid="breakdown-name">{{
-                     t('breakdown.total')
-                   }}</span>
+                <span class="sums__name" role="rowheader" data-testid="breakdown-name">{{
+                  t('breakdown.total')
+                }}</span>
                 <span class="sums__num" role="cell" data-testid="breakdown-paid">
-                   <AmountText
-                     :amount-minor="breakdown.totals.paidMinor"
-                     size="xs"
-                     :currency-code="currencyCode"
-                     :symbol="symbol"
-                   />
-                 </span>
+                  <AmountText
+                    :amount-minor="breakdown.totals.paidMinor"
+                    size="xs"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
                 <span class="sums__num" role="cell" data-testid="breakdown-share">
-                   <AmountText
-                     :amount-minor="breakdown.totals.shareMinor"
-                     size="xs"
-                     :currency-code="currencyCode"
-                     :symbol="symbol"
-                   />
-                 </span>
+                  <AmountText
+                    :amount-minor="breakdown.totals.shareMinor"
+                    size="xs"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
                 <span v-if="showSettled" class="sums__num" role="cell" data-testid="breakdown-settled">
-                   <AmountText
-                     :amount-minor="breakdown.totals.settledMinor"
-                     size="xs"
-                     :show-sign="breakdown.totals.settledMinor !== 0"
-                     :currency-code="currencyCode"
-                     :symbol="symbol"
-                   />
-                 </span>
+                  <AmountText
+                    :amount-minor="breakdown.totals.settledMinor"
+                    size="xs"
+                    :show-sign="breakdown.totals.settledMinor !== 0"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
                 <span class="sums__num" role="cell" data-testid="breakdown-balance">
-                   <AmountText
-                     :amount-minor="breakdown.totals.netMinor"
-                     size="xs"
-                     :tone="balanceTone(breakdown.totals.netMinor)"
-                     :show-sign="breakdown.totals.netMinor !== 0"
-                     :currency-code="currencyCode"
-                     :symbol="symbol"
-                   />
-                 </span>
+                  <AmountText
+                    :amount-minor="breakdown.totals.netMinor"
+                    size="xs"
+                    :tone="balanceTone(breakdown.totals.netMinor)"
+                    :show-sign="breakdown.totals.netMinor !== 0"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
                 <span class="sums__transfers" role="cell" data-testid="breakdown-transfers">{{
-                    t('breakdown.transferPair', {
-                      byPerson: breakdown.totals.transfersByPerson,
-                      fewest: breakdown.totals.transfersFewest,
-                    })
-                  }}</span>
+                  t('breakdown.transferPair', {
+                    byPerson: breakdown.totals.transfersByPerson,
+                    fewest: breakdown.totals.transfersFewest,
+                  })
+                }}</span>
               </div>
             </div>
 
@@ -1123,7 +1123,7 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
       </section>
 
       <TallyButton variant="secondary" full-width data-testid="settle-done" @click="emit('close')"
-      >{{ t('common.done') }}
+        >{{ t('common.done') }}
       </TallyButton>
     </div>
   </SheetPanel>
