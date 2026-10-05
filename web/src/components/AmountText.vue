@@ -14,7 +14,7 @@ const props = withDefaults(
     amountMinor: number
     currencyCode?: string
     symbol?: string
-    size?: 'sm' | 'md' | 'lg' | 'hero'
+    size?: 'xs' | 'sm' | 'md' | 'lg' | 'hero'
     tone?: 'neutral' | 'owed' | 'owe' | 'settled' | 'onDark'
     showSign?: boolean
   }>(),
@@ -50,6 +50,10 @@ const text = computed(() =>
   letter-spacing: -0.01em;
 }
 
+.amount--xs {
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+}
 .amount--sm {
   font-size: var(--text-money-sm);
   font-weight: var(--weight-medium);

@@ -231,6 +231,98 @@ class FamilyTest {
         }
     }
 
+    // ---- the fewest-transfers plan between families -----------------------------------------
+
+    @Test
+    fun `the family plan breaks ties on partition order, so an explicit family beats a singleton`() {
+        // {cathy,dana} and {alice} are each owed $20 and bob owes $40, with no exact pair. Roster
+        // order would have bob pay alice first; partition order puts the explicit family first,
+        // even though it was built from names after alice's.
+        val trip = Trip(
+            members = listOf(alice, bob, cathy, dana),
+            items = listOf(
+                Item(ItemId(1), 2_000, payer = alice, sharedBy = listOf(bob)),
+                Item(ItemId(2), 1_000, payer = cathy, sharedBy = listOf(bob)),
+                Item(ItemId(3), 1_000, payer = dana, sharedBy = listOf(bob)),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                FamilyTransfer(Family(setOf(bob)), Family(setOf(cathy, dana)), 2_000),
+                FamilyTransfer(Family(setOf(bob)), Family(setOf(alice)), 2_000),
+            ),
+            familyTransfers(partitionIntoFamilies(trip, listOf(setOf(cathy, dana)))),
+        )
+    }
+
+    @Test
+    fun `the family plan leaves every family square`() {
+        (1..500).forEach { seed ->
+            val random = Random(seed)
+            val trip = randomTrip(random)
+            val families = partitionIntoFamilies(trip, randomExplicitFamilies(trip.members, random))
+            val plan = familyTransfers(families)
+
+            families.forEach { balance ->
+                val received = plan.filter { it.to == balance.family }.sumOf { it.amountMinor }
+                val sent = plan.filter { it.from == balance.family }.sumOf { it.amountMinor }
+                assertEquals(
+                    balance.netMinor,
+                    received - sent,
+                    "seed $seed: ${balance.family.members} is not square afterwards",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `the family plan never needs more than one transfer fewer than the families not square`() {
+        (1..500).forEach { seed ->
+            val random = Random(seed)
+            val trip = randomTrip(random)
+            val families = partitionIntoFamilies(trip, randomExplicitFamilies(trip.members, random))
+            val unsquare = families.count { it.netMinor != 0L }
+
+            val plan = familyTransfers(families)
+
+            assertTrue(
+                plan.size <= maxOf(unsquare - 1, 0),
+                "seed $seed: ${plan.size} transfers for $unsquare families that are not square",
+            )
+        }
+    }
+
+    @Test
+    fun `in the family plan money only moves from a family that owes to one that is owed`() {
+        (1..500).forEach { seed ->
+            val random = Random(seed)
+            val trip = randomTrip(random)
+            val plan = familyTransfers(partitionIntoFamilies(trip, randomExplicitFamilies(trip.members, random)))
+
+            plan.forEach { assertTrue(it.amountMinor > 0, "seed $seed: a transfer of zero or less") }
+            assertEquals(
+                emptySet(),
+                plan.map { it.from }.toSet() intersect plan.map { it.to }.toSet(),
+                "seed $seed: a family both sends and receives",
+            )
+        }
+    }
+
+    @Test
+    fun `with no explicit families the family plan is exactly the per-person plan`() {
+        // One algorithm, not two: everybody a Family of one must give settle()'s list, line for line.
+        (1..500).forEach { seed ->
+            val trip = randomTrip(Random(seed))
+            val perPerson = settle(trip).transfers.map {
+                FamilyTransfer(Family(setOf(it.from)), Family(setOf(it.to)), it.amountMinor)
+            }
+
+            assertEquals(perPerson, familyTransfers(partitionIntoFamilies(trip, emptyList())), "seed $seed")
+        }
+    }
+
+
     @Test
     fun `a family's figure with another is the exact negative of that family's figure back`() {
         (1..500).forEach { seed ->

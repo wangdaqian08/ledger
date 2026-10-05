@@ -65,6 +65,66 @@ class TransferTest {
     }
 
     @Test
+    fun `one person fronting for three is paid back once by each of the other two`() {
+        // AC-06 from the RevenueSplit PRD: Ann pays $120 shared by Ann, Ben and Cat. Ben and Cat owe
+        // the same $40, so the tie between them breaks on roster order.
+        val ann = m("ann")
+        val ben = m("ben")
+        val cat = m("cat")
+        val trip = Trip(
+            members = listOf(ann, ben, cat),
+            items = listOf(Item(ItemId(1), 12_000, payer = ann, sharedBy = listOf(ann, ben, cat))),
+        )
+
+        assertEquals(listOf(Transfer(ben, ann, 4_000), Transfer(cat, ann, 4_000)), settle(trip).transfers)
+    }
+
+    @Test
+    fun `exact pairs are matched in roster order when debts and credits tie`() {
+        // Pia and Quinn are each owed $70; Xavi and Yan each owe $70. Nets are all the engine sees,
+        // so who bought for whom does not decide the pairs — roster order does: the first debtor
+        // takes the first creditor.
+        val trip = Trip(
+            members = listOf(m("pia"), m("quinn"), m("xavi"), m("yan")),
+            items = listOf(
+                Item(ItemId(1), 7_000, m("pia"), listOf(m("yan"))),
+                Item(ItemId(2), 7_000, m("quinn"), listOf(m("xavi"))),
+            ),
+        )
+
+        assertEquals(
+            listOf(Transfer(m("xavi"), m("pia"), 7_000), Transfer(m("yan"), m("quinn"), 7_000)),
+            settle(trip).transfers,
+        )
+    }
+
+    @Test
+    fun `the largest remaining debt and credit are re-chosen after every payment`() {
+        // Amy owes $50 and Bob $40; Cal, Dee and Eli are owed $30 each, so there are no exact pairs.
+        // After Amy pays Cal $30 she owes only $20, so Bob — now the larger debt — pays next. Walking
+        // the lists in their starting order would have Amy pay Dee instead.
+        val trip = Trip(
+            members = listOf(m("amy"), m("bob"), m("cal"), m("dee"), m("eli")),
+            items = listOf(
+                Item(ItemId(1), 3_000, m("cal"), listOf(m("amy"))),
+                Item(ItemId(2), 3_000, m("dee"), listOf(m("bob"))),
+                Item(ItemId(3), 2_000, m("eli"), listOf(m("amy"))),
+                Item(ItemId(4), 1_000, m("eli"), listOf(m("bob"))),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                Transfer(m("amy"), m("cal"), 3_000),
+                Transfer(m("bob"), m("dee"), 3_000),
+                Transfer(m("amy"), m("eli"), 2_000),
+                Transfer(m("bob"), m("eli"), 1_000),
+            ),
+            settle(trip).transfers,
+        )
+    }
+
+    @Test
     fun `clears everyone in at most one transfer fewer than there are people`() {
         val trip = lopsidedTrip()
 

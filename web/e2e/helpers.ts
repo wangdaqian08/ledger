@@ -62,7 +62,14 @@ export async function expectRowsToSumToHero(page: Page) {
   const upper = heroText.toUpperCase()
   const heroSign = upper.includes('ARE OWED') ? 1 : upper.includes('YOU OWE') ? -1 : 0
 
-  const rows = page.getByTestId('who-owes').getByTestId('balance-row')
+  await page.getByTestId('settle-up').click()
+  const sheet = page.getByTestId('sheet-panel')
+  await expect(sheet).toBeVisible()
+  // Every opening lands on By person; checked rather than assumed, since another mode's lines
+  // would read as no rows at all and sum to a convincing zero.
+  await expect(sheet.getByTestId('mode-by-person')).toHaveAttribute('aria-pressed', 'true')
+
+  const rows = sheet.getByTestId('balance-row')
   const count = await rows.count()
   let sum = 0
   for (let index = 0; index < count; index += 1) {
@@ -71,6 +78,8 @@ export async function expectRowsToSumToHero(page: Page) {
     if (text.includes('Owes you')) sum += amount
     else if (text.includes('You owe')) sum -= amount
   }
+  await sheet.getByTestId('settle-done').click()
+  await expect(page.getByTestId('sheet-panel')).toHaveCount(0)
 
   expect(sum, `rows must sum to the hero: ${heroText}`).toBe(heroSign * heroAmount)
 }

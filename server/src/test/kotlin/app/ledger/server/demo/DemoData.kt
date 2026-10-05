@@ -15,6 +15,7 @@ import app.ledger.server.trip.TripMemberRepository
 import app.ledger.server.trip.TripRepository
 import app.ledger.server.user.UserEntity
 import app.ledger.server.user.UserRepository
+import java.time.Duration
 import org.springframework.boot.ApplicationRunner
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -74,10 +75,12 @@ class DemoData {
             val bobUser = signUp("Bob")
             hokkaido(bobUser)
             flat(signUp("Mei"))
+            weekendAway()
 
             println(
-                "Demo data ready. Sign in as Bob (Hokkaido) or Mei (Flat) to land on a seeded trip. " +
-                    "Friend 1..12 and Jack are unclaimed seats, not sign-ins — invite and claim them from inside a trip.",
+                "Demo data ready. Sign in as Bob (Hokkaido),Mei (Flat) or any of Ann, Ben, Cat, Dan and Eve " +
+                    "(Weekend away) to land on a seeded trip. Friend 1..12 and Jack are unclaimed seats, not " +
+                    "sign-ins — invite and claim them from inside a trip.",
             )
         }
 
@@ -125,13 +128,44 @@ class DemoData {
             repay(trip, dinner, sam, meiMember, 3_125)
         }
 
-        private fun signUp(name: String) = users.save(
+        private fun weekendAway() {
+            val payIds = mapOf("Ann" to "ann@example.com", "Cat" to "cat@example.com")
+            val people = listOf("Ann", "Cat", "Dan", "Eve").associateWith { signUp(it, payIds[it]) }
+
+            val trip = trips.save(
+                TripEntity(
+                    name = "Weekend Away",
+                    icon = "car-front",
+                    hue = 2,
+                    currencyCode = "AUD",
+                    createdByUserId = people.getValue("Ann").id,
+                )
+            )
+            val (ann, ben, cat, dan, eve) =
+                people.entries.mapIndexed { i, (name, user) -> join(trip,name, hue = i+1, userId = user.id)  }
+
+            bill(trip, "Breakfest", BREAKFAST_ID, ann, listOf(ann, ben, dan), amountMinor = 6_000)
+            bill(
+                trip,
+                "Taxi",
+                TAXI_ID,
+                ben,
+                listOf(ben, cat, dan, eve),
+                amountMinor = 6_000,
+                category = TRANSPORT_CATEGORY,
+            )
+            bill(trip, "Lunch", LUNCH_ID,cat, sharedBy = listOf(ann, ben, cat, dan), amountMinor = 6_000)
+        }
+
+        private fun signUp(name: String, payId: String?) = users.save(
             UserEntity(
                 provider = "mock",
                 subject = name.lowercase(),
                 email = "${name.lowercase()}@ledger.test",
                 displayName = name,
                 photoUrl = null,
+                payId = payId,
+                payIdUpdatedAt = payId?.let { Instant.now().minus(Duration.ofDays(30)) }
             ),
         )
 
@@ -151,13 +185,14 @@ class DemoData {
             payer: TripMemberEntity,
             sharedBy: List<TripMemberEntity>,
             amountMinor: Long = 100_000,
+            category: UUID = if (amountMinor == 100_000L) STAY_CATEGORY else FOOD_CATEGORY,
         ): ItemEntity {
             val item = items.save(
                 ItemEntity(
                     id = id,
                     tripId = trip.id,
                     title = title,
-                    categoryId = if (amountMinor == 100_000L) STAY_CATEGORY else FOOD_CATEGORY,
+                    categoryId = category,
                     amountMinor = amountMinor,
                     splitRule = SplitRuleName.EQUAL,
                     payerMemberId = payer.id,
@@ -199,9 +234,13 @@ class DemoData {
             /** Seeded by V1__init.sql. */
             val STAY_CATEGORY: UUID = UUID.fromString("00000000-0000-0000-0000-000000000004")
             val FOOD_CATEGORY: UUID = UUID.fromString("00000000-0000-0000-0000-000000000001")
+            val TRANSPORT_CATEGORY: UUID = UUID.fromString("00000000-0000-0000-0000-000000000003")
 
             val DEPOSIT_ID: UUID = UUID.fromString("dddddddd-0000-4000-8000-000000000001")
             val BALANCE_ID: UUID = UUID.fromString("dddddddd-0000-4000-8000-000000000002")
+            val BREAKFAST_ID: UUID = UUID.fromString("dddddddd-0000-4000-8000-000000000004")
+            val TAXI_ID: UUID = UUID.fromString("dddddddd-0000-4000-8000-000000000005")
+            val LUNCH_ID: UUID = UUID.fromString("dddddddd-0000-4000-8000-000000000006")
             val FLAT_ITEM_ID: UUID = UUID.fromString("dddddddd-0000-4000-8000-000000000003")
         }
     }

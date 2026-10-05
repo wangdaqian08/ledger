@@ -105,7 +105,7 @@ class SettlementApiTest : ApiTest() {
     }
 
     @Test
-    fun `a trip goes all square only when every row is clear`() {
+    fun `you are square once your own net is zero`() {
         val trip = threeWayTrip()
 
         listOf(trip.bob, trip.carol).forEach { debtor ->
@@ -443,6 +443,196 @@ class SettlementApiTest : ApiTest() {
         )
     }
 
+
+    @Test
+    fun `square means your net is zero, even while your rows still cancel each other out`() {
+        // The chain: Alice owes Bob $10 and Bob owes Carol $10, so Bob's net is already zero and the
+        // fewest-transfers list skips him — Alice pays Carol directly. Once Carol approves, every
+        // net is zero yet Alice still "owes Bob" and Carol still "owes Alice" on By person. Those
+        // rows are true history and they cancel; insisting every row be zero would leave a trip
+        // paid exactly as the app told everyone to pay forever unsquare.
+        val chain = chainTrip()
+        assertEquals(
+            listOf(Triple(chain.aliceMember, chain.carolMember, 1_000L)),
+            chain.alice.transfers(chain.id),
+            "Bob is square overall from the start, so no transfer passes through him",
+        )
+
+        val paid = chain.alice
+            .post(
+                "/api/trips/${chain.id}/settlements",
+                mapOf("toMemberId" to chain.carolMember.toString(), "amountMinor" to 1_000),
+            ).id()
+        chain.carol.post("/api/paybacks/$paid/approve", emptyMap<String, String>())
+
+        for ((label, viewer) in listOf("Alice" to chain.alice, "Bob" to chain.bob, "Carol" to chain.carol)) {
+            val view = viewer.get("/api/trips/${chain.id}/settlement").json()
+            val rows = view["rows"].map { it["owedMinor"].asLong() }
+
+            assertEquals(0, view["yourNetMinor"].asLong(), "$label's net")
+            assertTrue(view["allSquare"].asBoolean(), "$label is square overall")
+            assertEquals(0, view["transfers"].size(), "$label: nothing left to transfer")
+            // Invariant 2 holds over the cancelling rows exactly as it does over any other.
+            assertEquals(-view["yourNetMinor"].asLong(), rows.sum(), "$label's rows must still sum to minus net")
+        }
+        assertEquals(1_000, chain.alice.rows(chain.id).getValue(chain.bobMember), "Alice still owes Bob, on paper")
+        assertEquals(-1_000, chain.alice.rows(chain.id).getValue(chain.carolMember), "and Carol owes her back")
+    }
+
+    @Test
+    fun `a reminder is refused once you are square overall, even if somebody's row says they owe you`() {
+        // Bob's net is zero from the start: Alice owes him $10 and he owes Carol $10. Nudging Alice
+        // would chase money that is, overall, not his — what she owes him he owes on.
+        val chain = chainTrip()
+        assertEquals(-1_000, chain.bob.rows(chain.id).getValue(chain.aliceMember), "negative: Alice owes Bob on paper")
+        assertEquals(
+            0,
+            chain.bob
+                .get("/api/trips/${chain.id}")
+                .json()["yourNetMinor"]
+                .asLong(),
+            "yet Bob is square",
+        )
+
+        val nudge = chain.bob.post("/api/trips/${chain.id}/remind", mapOf("memberId" to chain.aliceMember.toString()))
+
+        assertEquals(HttpStatus.BAD_REQUEST, nudge.statusCode)
+        assertTrue(nudge.body!!.contains("square"), "the refusal should say why: ${nudge.body}")
+    }
+
+    // ---- By minimum transfer ----------------------------------------------------------------
+
+    @Test
+    fun `the settlement carries the whole trip's fewest transfers, the same from every seat`() {
+        // Alice is owed $30 by each of the other two. Bob and Carol owe the same, so roster order
+        // puts Bob first.
+        val trip = threeWayTrip()
+        val expected = listOf(
+            Triple(trip.bobMember, trip.aliceMember, 3_000L),
+            Triple(trip.carolMember, trip.aliceMember, 3_000L),
+        )
+
+        assertEquals(expected, trip.alice.transfers(trip.id))
+        assertEquals(expected, trip.bob.transfers(trip.id), "not filtered to the viewer — the whole trip's list")
+        assertEquals(expected, trip.carol.transfers(trip.id))
+    }
+
+    @Test
+    fun `a settlement waiting for approval leaves the transfers as they were`() {
+        val trip = threeWayTrip()
+        val before = trip.alice.transfers(trip.id)
+
+        trip.bob.post(
+            "/api/trips/${trip.id}/settlements",
+            mapOf("toMemberId" to trip.aliceMember.toString(), "amountMinor" to 3_000),
+        )
+
+        assertEquals(before, trip.alice.transfers(trip.id), "a claim nobody has agreed to moves nothing")
+    }
+
+    @Test
+    fun `approving a settlement takes it off the transfers`() {
+        val trip = threeWayTrip()
+        val paid = trip.bob
+            .post(
+                "/api/trips/${trip.id}/settlements",
+                mapOf("toMemberId" to trip.aliceMember.toString(), "amountMinor" to 3_000),
+            ).id()
+
+        trip.alice.post("/api/paybacks/$paid/approve", emptyMap<String, String>())
+
+        assertEquals(listOf(Triple(trip.carolMember, trip.aliceMember, 3_000L)), trip.bob.transfers(trip.id))
+    }
+
+    @Test
+    fun `following the transfers would square every seat on a mixed trip`() {
+        // The HTTP twin of the engine property: from every chair, what the list has you receive less
+        // what it has you send is exactly your net — so paying it clears everyone.
+        val mixed = mixedTrip()
+        val tripId = mixed.id
+        val seats = mixed.seats
+        val transfers = mixed.alice.transfers(tripId)
+        assertTrue(transfers.isNotEmpty(), "a trip this lopsided cannot already be square")
+        assertTrue(transfers.size <= seats.size - 1, "at most one fewer transfer than people: $transfers")
+        assertTrue(transfers.all { (_, _, amount) -> amount > 0 }, "a transfer of zero or less: $transfers")
+        for ((viewer, me) in seats) {
+            val view = viewer.get("/api/trips/$tripId/settlement").json()
+            val received = transfers.filter { it.second == me }.sumOf { it.third }
+            val sent = transfers.filter { it.first == me }.sumOf { it.third }
+
+            assertEquals(transfers, viewer.transfers(tripId), "every seat sees the same list")
+            assertEquals(view["yourNetMinor"].asLong(), received - sent, "the transfers would not square $me")
+        }
+    }
+
+    // ---- How it adds up -----------------------------------------------------------------------
+
+    @Test
+    fun `how it adds up ties out on a mixed trip, from every seat`() {
+        // The HTTP twin of the engine's breakdown properties: every row is paid − share + settled =
+        // net, paid and shares both total the group spend the trip screen shows, and settled and net
+        // both total zero — the identities a person checks by hand, which is the table's whole job.
+        val mixed = mixedTrip()
+        val groupSpend = mixed.alice
+            .get("/api/trips/${mixed.id}")
+            .json()["groupSpendMinor"]
+            .asLong()
+        assertEquals(100_001L + 23_457L + 9_999L, groupSpend)
+
+        for ((viewer, me) in mixed.seats) {
+            val view = viewer.get("/api/trips/${mixed.id}/settlement").json()
+            val rows = view["breakdown"]["rows"].toList()
+            val totals = view["breakdown"]["totals"]
+
+            assertEquals(mixed.seats.map { it.second.toString() }, rows.map { it["memberId"].asText() }, "roster order")
+            rows.forEach {
+                assertEquals(
+                    it["netMinor"].asLong(),
+                    it["paidMinor"].asLong() - it["shareMinor"].asLong() + it["settledMinor"].asLong(),
+                    "$me: the row for ${it["memberId"].asText()} does not tie out",
+                )
+            }
+            assertEquals(0L, rows.sumOf { it["netMinor"].asLong() }, "$me: balances must sum to zero")
+            assertEquals(0L, rows.sumOf { it["settledMinor"].asLong() }, "$me: every cent settled was received")
+            assertEquals(groupSpend, rows.sumOf { it["paidMinor"].asLong() }, "$me: paid is the group spend")
+            assertEquals(groupSpend, rows.sumOf { it["shareMinor"].asLong() }, "$me: shares are the group spend")
+
+            // The totals are the server's, so the browser never adds a column up — and they agree.
+            assertEquals(groupSpend, totals["paidMinor"].asLong())
+            assertEquals(groupSpend, totals["shareMinor"].asLong())
+            assertEquals(0L, totals["settledMinor"].asLong())
+            assertEquals(0L, totals["netMinor"].asLong())
+            assertEquals(view["transfers"].size(), totals["transfersFewest"].asInt(), "$me: the plan's size")
+            assertEquals(2 * totals["transfersFewest"].asInt(), rows.sumOf { it["transfersFewest"].asInt() })
+            assertEquals(2 * totals["transfersByPerson"].asInt(), rows.sumOf { it["transfersByPerson"].asInt() })
+
+            // Your own row is the hero figure and your own By person rows, not a third opinion.
+            val yours = rows.single { it["isYou"].asBoolean() }
+            assertEquals(me.toString(), yours["memberId"].asText())
+            assertEquals(view["yourNetMinor"].asLong(), yours["netMinor"].asLong(), "$me: not the hero figure")
+            assertEquals(
+                view["rows"].count { it["owedMinor"].asLong() != 0L },
+                yours["transfersByPerson"].asInt(),
+                "$me: not the number of non-zero By person rows",
+            )
+        }
+
+        // Only approved money is settled: Dave's approved $50 to Bob counts, Carol's pending $20 does not.
+        val settled = mixed.alice
+            .get("/api/trips/${mixed.id}/settlement")
+            .json()["breakdown"]["rows"]
+            .associate { UUID.fromString(it["memberId"].asText()) to it["settledMinor"].asLong() }
+        assertEquals(
+            mapOf(
+                mixed.aliceMember to 0L,
+                mixed.bobMember to -5_000L,
+                mixed.carolMember to 0L,
+                mixed.daveMember to 5_000L,
+            ),
+            settled,
+        )
+    }
+
     // --- helpers -----------------------------------------------------------------------------
 
     private class Fixture(
@@ -452,6 +642,7 @@ class SettlementApiTest : ApiTest() {
         val id: UUID,
         val aliceMember: UUID,
         val bobMember: UUID,
+        val carolMember: UUID,
         val item: UUID,
     )
 
@@ -484,8 +675,108 @@ class SettlementApiTest : ApiTest() {
                 ),
             ).id()
 
-        return Fixture(alice, bob, carol, tripId, aliceMember, bobMember, item)
+        return Fixture(alice, bob, carol, tripId, aliceMember, bobMember, carolMember, item)
     }
+
+    private class Chain(
+        val alice: SessionAwareClient,
+        val bob: SessionAwareClient,
+        val carol: SessionAwareClient,
+        val id: UUID,
+        val aliceMember: UUID,
+        val bobMember: UUID,
+        val carolMember: UUID,
+    )
+
+    /** Bob fronts $20 for himself and Alice; Carol fronts $20 for herself and Bob. A→B $10, B→C $10. */
+    private fun chainTrip(): Chain {
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip()
+        val aliceMember = alice.yourMemberId(tripId)
+        val bobMember = alice.addMember(tripId, "Bob")
+        val carolMember = alice.addMember(tripId, "Carol")
+        val invite = alice.invite(tripId)
+        val bob = signedIn("Bob").also { it.claim(tripId, invite, bobMember) }
+        val carol = signedIn("Carol").also { it.claim(tripId, invite, carolMember) }
+        val food = alice.builtInCategory(tripId)
+
+        bob.post("/api/trips/$tripId/items", expense("Dinner", 2_000, food, bobMember, listOf(aliceMember, bobMember)))
+        carol.post(
+            "/api/trips/$tripId/items",
+            expense("Taxi", 2_000, food, carolMember, listOf(bobMember, carolMember)),
+        )
+
+        return Chain(alice, bob, carol, tripId, aliceMember, bobMember, carolMember)
+    }
+
+    private class Mixed(
+        val alice: SessionAwareClient,
+        val id: UUID,
+        val aliceMember: UUID,
+        val bobMember: UUID,
+        val carolMember: UUID,
+        val daveMember: UUID,
+        /** Every seat with its own member id, in roster order. */
+        val seats: List<Pair<SessionAwareClient, UUID>>,
+    )
+
+    /**
+     * Four people, several payers, a weighted split, an approved repayment and a pending one, so
+     * nothing about it is tidy: Alice's cabin for all four, Bob's groceries for three, Carol's fuel
+     * weighted 1:2:3:4; Dave repays Bob $50 (approved) and Carol claims $20 (still pending).
+     */
+    private fun mixedTrip(): Mixed {
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip()
+        val aliceMember = alice.yourMemberId(tripId)
+        val bobMember = alice.addMember(tripId, "Bob")
+        val carolMember = alice.addMember(tripId, "Carol")
+        val daveMember = alice.addMember(tripId, "Dave")
+        val invite = alice.invite(tripId)
+        val bob = signedIn("Bob").also { it.claim(tripId, invite, bobMember) }
+        val carol = signedIn("Carol").also { it.claim(tripId, invite, carolMember) }
+        val dave = signedIn("Dave").also { it.claim(tripId, invite, daveMember) }
+        val food = alice.builtInCategory(tripId)
+        val everyone = listOf(aliceMember, bobMember, carolMember, daveMember)
+
+        alice.post("/api/trips/$tripId/items", expense("Cabin", 100_001, food, aliceMember, everyone))
+        val groceries = bob
+            .post(
+                "/api/trips/$tripId/items",
+                expense("Groceries", 23_457, food, bobMember, listOf(bobMember, carolMember, daveMember)),
+            ).id()
+        carol.post(
+            "/api/trips/$tripId/items",
+            expense("Fuel", 9_999, food, carolMember, everyone, splitRule = "WEIGHTED").plus(
+                "sharedBy" to everyone.mapIndexed { i, id -> mapOf("memberId" to id.toString(), "weight" to i + 1) },
+            ),
+        )
+        val repaid = dave
+            .post(
+                "/api/items/$groceries/paybacks",
+                mapOf("fromMemberId" to daveMember.toString(), "amountMinor" to 5_000, "paidOn" to "2026-08-02"),
+            ).id()
+        bob.post("/api/paybacks/$repaid/approve", emptyMap<String, String>())
+        carol.post(
+            "/api/items/$groceries/paybacks",
+            mapOf("fromMemberId" to carolMember.toString(), "amountMinor" to 2_000, "paidOn" to "2026-08-02"),
+        )
+
+        val seats = listOf(alice to aliceMember, bob to bobMember, carol to carolMember, dave to daveMember)
+        return Mixed(alice, tripId, aliceMember, bobMember, carolMember, daveMember, seats)
+    }
+
+    /** The settlement's `transfers`, as (from, to, amount) in the order the server sent them. */
+    private fun SessionAwareClient.transfers(tripId: UUID): List<Triple<UUID, UUID, Long>> =
+        get("/api/trips/$tripId/settlement")
+            .json()["transfers"]
+            .map {
+                Triple(
+                    UUID.fromString(it["fromMemberId"].asText()),
+                    UUID.fromString(it["toMemberId"].asText()),
+                    it["amountMinor"].asLong(),
+                )
+            }
 
     private fun SessionAwareClient.rows(tripId: UUID): Map<UUID, Long> =
         get("/api/trips/$tripId/settlement")

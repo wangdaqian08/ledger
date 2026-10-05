@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type DOMWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -20,6 +20,8 @@ import en from '../src/i18n/en'
 import { useSession } from '@/stores/session'
 import { saltFor, splitShares } from '@/lib/split'
 import type {
+  BreakdownRow,
+  BreakdownView,
   FamiliesView,
   FamilyMemberView,
   ItemView,
@@ -45,6 +47,7 @@ vi.mock('../src/lib/api', async () => {
       signIn: vi.fn(),
       signOut: vi.fn(),
       me: vi.fn(),
+      setPayId: vi.fn(),
       trips: vi.fn(),
       createTrip: vi.fn(),
       trip: vi.fn(),
@@ -78,14 +81,38 @@ vi.mock('../src/lib/api', async () => {
   }
 })
 
-const { api } = await import('../src/lib/api')
+const { api, ApiError } = await import('../src/lib/api')
 const mocked = api as unknown as Record<string, ReturnType<typeof vi.fn>>
 
 // ---- Fixtures: one small trip, stated once. ----
 
-const you: MemberView = { id: 'm-you', displayName: 'Alice', personHue: 1, claimed: true, isYou: true }
-const bob: MemberView = { id: 'm-bob', displayName: 'Bob', personHue: 2, claimed: true, isYou: false }
-const cara: MemberView = { id: 'm-cara', displayName: 'Cara', personHue: 3, claimed: false, isYou: false }
+const you: MemberView = {
+  id: 'm-you',
+  displayName: 'Alice',
+  personHue: 1,
+  claimed: true,
+  isYou: true,
+  payId: null,
+  payIdChangedRecently: false,
+}
+const bob: MemberView = {
+  id: 'm-bob',
+  displayName: 'Bob',
+  personHue: 2,
+  claimed: true,
+  isYou: false,
+  payId: null,
+  payIdChangedRecently: false,
+}
+const cara: MemberView = {
+  id: 'm-cara',
+  displayName: 'Cara',
+  personHue: 3,
+  claimed: false,
+  isYou: false,
+  payId: null,
+  payIdChangedRecently: false,
+}
 
 const foodCategories = [
   { id: 'c-food', key: 'food', nameEn: 'Food', nameZh: '餐饮', icon: 'utensils', hue: 1, builtIn: true },
@@ -137,7 +164,7 @@ function trip(overrides: Partial<TripView> = {}): TripView {
   }
 }
 
-const emptySettlement: SettlementView = { rows: [], yourNetMinor: 0, allSquare: true }
+const emptySettlement: SettlementView = { rows: [], yourNetMinor: 0, allSquare: true, transfers: [] }
 
 function makeRouter(): Router {
   const stub = { template: '<div />' }
@@ -403,16 +430,18 @@ describe('TripScreen', () => {
     // Two different days, two day headers.
     expect(findAllByTestId(screen, 'expense-day')).toHaveLength(2)
 
-    // The feed speaks the signed delta, both ways round: the bill you paid is money coming back
-    // (total − your share), the bill Bob paid is your share going out.
+    // The feed shows each bill's total — what the payer paid — whoever paid it. Never the viewer's
+    // stake (total − share, or −share), which read as a debt that never moved when paid back.
     const rows = screen.findAllComponents({ name: 'ExpenseRow' })
-    expect(rows[0]!.props('yourShareMinor')).toBe(6_000) // 9000 you paid, minus your 3000 share
-    expect(rows[0]!.text()).toContain('you fronted') // you paid → what you fronted for the others
-    expect(rows[1]!.props('yourShareMinor')).toBe(-1_000) // Bob paid; your share of 1000 is owed
-    expect(rows[1]!.text()).toContain('your share') // Bob paid → your slice of his bill, not a debt
+    expect(rows[0]!.props('amountMinor')).toBe(9_000) // you paid the 9000 bill; your 3000 share is not it
+    expect(rows[0]!.text()).toContain('$90.00')
+    expect(rows[0]!.text()).toContain('total')
+    expect(rows[1]!.props('amountMinor')).toBe(3_000) // Bob paid 3000; your 1000 share is not it
+    expect(rows[1]!.text()).toContain('$30.00')
+    expect(rows[1]!.text()).toContain('total')
   })
 
-  it('speaks the viewer’s frame on who-owes-who: an API +6000 is “You owe”', async () => {
+  it('has no Who owes who card: the hero says where you stand, and Settle up opens on nobody', async () => {
     serve(trip({ yourNetMinor: -6_000 }), {
       rows: [
         {
@@ -427,15 +456,31 @@ describe('TripScreen', () => {
       ],
       yourNetMinor: -6_000,
       allSquare: false,
+      transfers: [],
     })
 
     const screen = mount(TripScreen, { props: { tripId: 't-1' }, global: global() })
     await flushPromises()
 
-    const row = screen.findComponent({ name: 'BalanceRow' })
-    expect(row.props('owedMinor')).toBe(-6_000)
-    expect(row.text()).toContain('You owe')
-    expect(row.text()).toContain('Pay')
+    // The per-person rows, with their Pay and Remind, live in Settle up → By person now. None of
+    // them is on the trip screen itself.
+    expect(findAllByTestId(screen, 'who-owes')).toHaveLength(0)
+    expect(screen.text()).not.toContain('Who owes who')
+    expect(findAllByTestId(screen, 'balance-row')).toHaveLength(0)
+    expect(findAllByTestId(screen, 'row-pay')).toHaveLength(0)
+    expect(findAllByTestId(screen, 'row-remind')).toHaveLength(0)
+
+    const hero = findByTestId(screen, 'trip-position')
+    expect(hero.text()).toContain('You owe')
+    expect(hero.text()).toContain('$60.00')
+
+    await findByTestId(screen, 'settle-up').trigger('click')
+    const sheet = screen.findComponent(SettleUpSheet)
+    expect(sheet.props('open')).toBe(true)
+    expect(sheet.props('focusMemberId')).toBeNull()
+    // Opened on nobody: the By person rows are there, and no pay form is unfolded for anyone.
+    expect(findByTestId(screen, 'sheet-panel').findAll(testId('balance-row'))).toHaveLength(1)
+    expect(findAllByTestId(screen, 'pay-form')).toHaveLength(0)
   })
 
   it('offers the expense export as a plain download of this trip', async () => {
@@ -451,16 +496,17 @@ describe('TripScreen', () => {
     expect(link.attributes('download')).toBeDefined()
   })
 
-  it('sinks all-square people below real debts in who-owes-who, and fades them', async () => {
-    // You're square with Bob but owe Cara. Cara must lead; Bob is kept for reassurance but sunk to
-    // the bottom and muted, so a $0 row never sits above money that still needs acting on.
-    serve(trip({ yourNetMinor: -6_000 }), {
+  it('leaves rows that cancel out to Settle up: the trip screen says only All square', async () => {
+    // Fewest transfers settles nets, not pairs: you can owe Bob $15 while Cara owes you $15 and be
+    // square overall. Repeated on the trip screen those rows read as debts nobody had, so the hero
+    // alone speaks there, and the cancelling rows — with their note — wait in Settle up.
+    serve(trip({ yourNetMinor: 0 }), {
       rows: [
         {
           memberId: bob.id,
           displayName: 'Bob',
           personHue: 2,
-          owedMinor: 0,
+          owedMinor: 1_500,
           pending: [],
           settled: [],
           rejected: [],
@@ -469,24 +515,104 @@ describe('TripScreen', () => {
           memberId: cara.id,
           displayName: 'Cara',
           personHue: 3,
-          owedMinor: 6_000,
+          owedMinor: -1_500,
           pending: [],
           settled: [],
           rejected: [],
         },
       ],
-      yourNetMinor: -6_000,
-      allSquare: false,
+      yourNetMinor: 0,
+      allSquare: true,
+      transfers: [],
     })
 
     const screen = mount(TripScreen, { props: { tripId: 't-1' }, global: global() })
     await flushPromises()
 
-    const rows = screen.findAllComponents({ name: 'BalanceRow' })
-    expect(rows[0]!.props('displayName')).toBe('Cara')
-    expect(rows[0]!.props('muted')).toBe(false)
-    expect(rows[1]!.props('displayName')).toBe('Bob')
-    expect(rows[1]!.props('muted')).toBe(true)
+    expect(findByTestId(screen, 'trip-position').text()).toContain('All square')
+    expect(findAllByTestId(screen, 'who-owes')).toHaveLength(0)
+    expect(findAllByTestId(screen, 'square-overall')).toHaveLength(0)
+    expect(findAllByTestId(screen, 'balance-row')).toHaveLength(0)
+
+    // Still one tap away, faded and with nothing to act on — the sheet's own tests own the detail.
+    await findByTestId(screen, 'settle-up').trigger('click')
+    const panel = findByTestId(screen, 'sheet-panel')
+    expect(panel.find(testId('square-overall')).text()).toContain("You're square overall — these cancel out")
+    expect(panel.findAll(testId('balance-row'))).toHaveLength(2)
+    expect(panel.findAll(testId('row-pay'))).toHaveLength(0)
+  })
+
+  it("hands Settle up the server's transfers, breakdown and square verdict, untouched", async () => {
+    const transfers = [{ fromMemberId: you.id, toMemberId: bob.id, amountMinor: 1_500 }]
+    const breakdown: BreakdownView = {
+      rows: [
+        {
+          memberId: you.id,
+          displayName: 'Alice',
+          personHue: 1,
+          isYou: true,
+          paidMinor: 0,
+          shareMinor: 1_500,
+          settledMinor: 0,
+          netMinor: -1_500,
+          transfersByPerson: 1,
+          transfersFewest: 1,
+        },
+      ],
+      totals: {
+        paidMinor: 1_500,
+        shareMinor: 1_500,
+        settledMinor: 0,
+        netMinor: 0,
+        transfersByPerson: 1,
+        transfersFewest: 1,
+      },
+    }
+    serve(trip({ yourNetMinor: -1_500 }), {
+      rows: [
+        {
+          memberId: bob.id,
+          displayName: 'Bob',
+          personHue: 2,
+          owedMinor: 1_500,
+          pending: [],
+          settled: [],
+          rejected: [],
+        },
+      ],
+      yourNetMinor: -1_500,
+      allSquare: false,
+      transfers,
+      breakdown,
+    })
+
+    const screen = mount(TripScreen, { props: { tripId: 't-1' }, global: global() })
+    await flushPromises()
+
+    const sheet = screen.findComponent(SettleUpSheet)
+    expect(sheet.props('transfers')).toEqual(transfers)
+    expect(sheet.props('breakdown')).toEqual(breakdown)
+    expect(sheet.props('allSquare')).toBe(false)
+  })
+
+  it("opens Pay this back on the bill payer's PayID — the payer, not whoever happens to be named", async () => {
+    // Bob paid the taxi; Cara also has a PayID, so landing on hers (or on nobody's) would show.
+    serve(
+      trip({
+        members: [you, { ...bob, payId: 'bob@example.com' }, { ...cara, payId: 'cara@example.com' }],
+        items: [item({ id: 'i-2', payerMemberId: bob.id, title: 'Taxi' })],
+      }),
+    )
+
+    const screen = mount(TripScreen, { props: { tripId: 't-1' }, global: global() })
+    await flushPromises()
+
+    screen.findComponent(ItemDetailSheet).vm.$emit('payBack', 'i-2', 'Bob', 3_000)
+    await flushPromises()
+
+    const claim = screen.findComponent(ClaimPaybackSheet)
+    expect(claim.props('open')).toBe(true)
+    expect(findByTestId(claim, 'payid-value').text()).toBe('bob@example.com')
   })
 
   it('filters the feed to unsettled without touching the data', async () => {
@@ -1291,6 +1417,118 @@ describe('InviteSheet', () => {
   })
 })
 
+describe('InviteSheet PayID', () => {
+  // PayID lives on the account and only its owner writes it: your own row edits, everyone else's
+  // row shows theirs with a Copy. Nothing here checks the format — the bank is what knows.
+  const withPayIds = (over: Partial<TripView> = {}) =>
+    trip({
+      members: [
+        { ...you, payId: 'alice@example.com' },
+        { ...bob, payId: 'bob@example.com', payIdChangedRecently: true },
+        cara,
+      ],
+      ...over,
+    })
+  const meView = (payId: string | null) => ({
+    id: 'u-alice',
+    displayName: 'Alice',
+    email: 'a@x',
+    photoUrl: null,
+    friends: [],
+    payId,
+  })
+  const rowFor = (sheet: ReturnType<typeof mount>, name: string) =>
+    findAllByTestId(sheet, 'invite-member').find((r) => r.text().includes(name))!
+
+  it('lets you change your own PayID, trimmed, and reports the change', async () => {
+    mocked.setPayId!.mockResolvedValue(meView('alice@new.example'))
+    const sheet = mount(InviteSheet, { props: { open: true, trip: withPayIds() }, global: global() })
+    await nextTick()
+
+    const own = rowFor(sheet, 'You')
+    expect(own.find(testId('payid-value')).text()).toBe('alice@example.com')
+    // Your own PayID is yours to edit, not to copy.
+    expect(own.find(testId('payid-copy')).exists()).toBe(false)
+    // Worded without "everyone": e2e finds roster rows by a name substring, and it contains "Eve".
+    expect(findByTestId(sheet, 'payid-hint').text()).toBe('Your PayID shows in all your groups.')
+
+    await own.find(testId('payid-edit')).trigger('click')
+    const field = findByTestId(sheet, 'payid-input')
+    expect((field.element as HTMLInputElement).value).toBe('alice@example.com')
+    expect(field.attributes('placeholder')).toBe('Email, phone or ABN')
+
+    await field.setValue('  alice@new.example  ')
+    await findByTestId(sheet, 'payid-save').trigger('click')
+    await flushPromises()
+
+    expect(mocked.setPayId).toHaveBeenCalledWith('alice@new.example')
+    expect(sheet.emitted('changed')).toBeTruthy()
+    expect(useSession().me?.payId).toBe('alice@new.example')
+    expect(findAllByTestId(sheet, 'payid-input')).toHaveLength(0)
+  })
+
+  it('clears your PayID when the field is saved empty', async () => {
+    mocked.setPayId!.mockResolvedValue(meView(null))
+    const sheet = mount(InviteSheet, { props: { open: true, trip: withPayIds() }, global: global() })
+    await nextTick()
+
+    await rowFor(sheet, 'You').find(testId('payid-edit')).trigger('click')
+    await findByTestId(sheet, 'payid-input').setValue('   ')
+    await findByTestId(sheet, 'payid-form').trigger('submit')
+    await flushPromises()
+
+    expect(mocked.setPayId).toHaveBeenCalledWith(null)
+  })
+
+  it('offers to add a PayID when you have none, and cancelling writes nothing', async () => {
+    const sheet = mount(InviteSheet, { props: { open: true, trip: trip() }, global: global() })
+    await nextTick()
+
+    const own = rowFor(sheet, 'You')
+    expect(own.find(testId('payid-edit')).exists()).toBe(false)
+    await own.find(testId('payid-add')).trigger('click')
+    expect((findByTestId(sheet, 'payid-input').element as HTMLInputElement).value).toBe('')
+
+    await findByTestId(sheet, 'payid-cancel').trigger('click')
+    expect(findAllByTestId(sheet, 'payid-input')).toHaveLength(0)
+    expect(mocked.setPayId).not.toHaveBeenCalled()
+  })
+
+  it("keeps the field open with the server's reason when the save is refused", async () => {
+    mocked.setPayId!.mockRejectedValue(new ApiError(400, 'A PayID can be at most 256 characters'))
+    const sheet = mount(InviteSheet, { props: { open: true, trip: withPayIds() }, global: global() })
+    await nextTick()
+
+    await rowFor(sheet, 'You').find(testId('payid-edit')).trigger('click')
+    await findByTestId(sheet, 'payid-input').setValue('x'.repeat(300))
+    await findByTestId(sheet, 'payid-save').trigger('click')
+    await flushPromises()
+
+    expect(sheet.text()).toContain('A PayID can be at most 256 characters')
+    expect(findAllByTestId(sheet, 'payid-input')).toHaveLength(1)
+    expect(sheet.emitted('changed')).toBeUndefined()
+  })
+
+  it("shows everyone else's PayID read-only with a Copy, flagged when recently changed", async () => {
+    const sheet = mount(InviteSheet, {
+      props: { open: true, trip: withPayIds({ youAreCreator: false }) },
+      global: global(),
+    })
+    await nextTick()
+
+    const bobRow = rowFor(sheet, 'Bob')
+    expect(bobRow.find(testId('payid-value')).text()).toBe('bob@example.com')
+    expect(bobRow.find(testId('payid-copy')).attributes('aria-label')).toBe("Copy Bob's PayID")
+    expect(bobRow.find(testId('payid-recent')).text()).toBe('Updated recently')
+    expect(bobRow.find(testId('payid-edit')).exists()).toBe(false)
+
+    // An unclaimed seat has no account behind it, so nothing to show yet — and nothing to edit.
+    const caraRow = rowFor(sheet, 'Cara')
+    expect(caraRow.find(testId('payid-unclaimed')).text()).toBe('No PayID yet')
+    expect(caraRow.find(testId('payid-copy')).exists()).toBe(false)
+  })
+})
+
 describe('ClaimPaybackSheet', () => {
   it('pre-fills what is still owed and files the claim against the bill', async () => {
     mocked.submitItemPayback!.mockResolvedValue({})
@@ -1350,6 +1588,51 @@ describe('ClaimPaybackSheet', () => {
     expect(sheet.emitted('saved')).toBeTruthy()
     expect(findAllByTestId(sheet, 'btn-spinner')).toHaveLength(0)
   })
+
+  // Paying a bill back means sending money first and filing the claim after, so where to send it
+  // belongs at the top of the sheet the Pay button opens — copyable, and flagged if just changed.
+  it("shows the payer's PayID with Copy, flagged when it changed recently", async () => {
+    const sheet = mount(ClaimPaybackSheet, {
+      props: {
+        open: false,
+        itemId: 'i-1',
+        toName: 'Alice',
+        prefillMinor: 2_500,
+        fromMemberId: bob.id,
+        currencyCode: 'AUD',
+        symbol: '$',
+        recipient: { ...you, payId: 'alice@example.com', payIdChangedRecently: true },
+      },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await nextTick()
+
+    expect(findByTestId(sheet, 'payid-value').text()).toBe('alice@example.com')
+    expect(findByTestId(sheet, 'payid-copy').exists()).toBe(true)
+    expect(findByTestId(sheet, 'payid-recent').exists()).toBe(true)
+  })
+
+  it('says plainly when the payer has no PayID, rather than showing nothing', async () => {
+    const sheet = mount(ClaimPaybackSheet, {
+      props: {
+        open: false,
+        itemId: 'i-1',
+        toName: 'Bob',
+        prefillMinor: 2_500,
+        fromMemberId: you.id,
+        currencyCode: 'AUD',
+        symbol: '$',
+        recipient: bob,
+      },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await nextTick()
+
+    expect(findByTestId(sheet, 'payid-none').text()).toContain('(no PayID provided)')
+    expect(findAllByTestId(sheet, 'payid-copy')).toHaveLength(0)
+  })
 })
 
 describe('JoinScreen', () => {
@@ -1406,7 +1689,14 @@ describe('JoinScreen', () => {
       members: [{ id: cara.id, displayName: 'Cara', personHue: 3 }],
     })
     const session = useSession()
-    session.me = { id: 'u-1', displayName: 'jack', email: 'jack@ledger.test', photoUrl: null, friends: [] }
+    session.me = {
+      id: 'u-1',
+      displayName: 'jack',
+      email: 'jack@ledger.test',
+      photoUrl: null,
+      friends: [],
+      payId: null
+    }
     session.checked = true
     await router.push('/join/t-1#token=tok-abc')
 
@@ -1621,10 +1911,673 @@ describe('SettleUpSheet', () => {
     expect(findByTestId(sheet, 'pending-claim')).toBeTruthy()
   })
 })
+describe('SettleUpSheet square overall', () => {
+  // Square is the viewer's net, not every row: after paying by fewest transfers, Alice can owe Bob
+  // $15 while Cara owes her $15. Those rows are history — true, but nothing left to act on.
+  const claim = (over: Partial<PaybackView>): PaybackView => ({
+    id: 'p-1',
+    itemId: null,
+    fromMemberId: you.id,
+    toMemberId: bob.id,
+    amountMinor: 1_000,
+    paidOn: '2026-08-13',
+    note: null,
+    status: 'APPROVED',
+    proofObjectName: null,
+    rejectReason: null,
+    reviewedAt: '2026-08-13T02:00:00Z',
+    viewerCanDecide: false,
+    viewerCanUndo: true,
+    ...over,
+  })
+  const cancellingRows = (): SettlementRow[] => [
+    {
+      memberId: bob.id,
+      displayName: 'Bob',
+      personHue: 2,
+      owedMinor: 1_500,
+      pending: [],
+      settled: [claim({ id: 'p-settled' })],
+      rejected: [],
+    },
+    {
+      memberId: cara.id,
+      displayName: 'Cara',
+      personHue: 3,
+      owedMinor: -1_500,
+      pending: [
+        claim({
+          id: 'p-pending',
+          fromMemberId: cara.id,
+          toMemberId: you.id,
+          status: 'PENDING',
+          reviewedAt: null,
+          viewerCanDecide: true,
+          viewerCanUndo: false,
+        }),
+      ],
+      settled: [],
+      rejected: [],
+    },
+  ]
+
+  function mountSquare(over: Record<string, unknown> = {}) {
+    return mount(SettleUpSheet, {
+      props: {
+        open: true,
+        tripId: 't-1',
+        myMemberId: you.id,
+        youAreCreator: false,
+        rows: cancellingRows(),
+        members: [you, bob, cara],
+        currencyCode: 'AUD',
+        symbol: '$',
+        allSquare: true,
+        transfers: [],
+        ...over,
+      },
+      global: global(),
+    })
+  }
+
+  it('says so, fades every row and offers no Pay or Remind — but keeps every claim strip', async () => {
+    const sheet = mountSquare()
+    await nextTick()
+
+    expect(findByTestId(sheet, 'square-overall').text()).toContain("You're square overall — these cancel out")
+    const rows = sheet.findAllComponents({ name: 'BalanceRow' })
+    expect(rows).toHaveLength(2)
+    for (const row of rows) expect(row.props('muted')).toBe(true)
+    expect(findAllByTestId(sheet, 'row-pay')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'row-remind')).toHaveLength(0)
+
+    // Claims are still claims: the settled record stays undoable and the pending one decidable.
+    expect(findAllByTestId(sheet, 'settled-claim')).toHaveLength(1)
+    expect(findByTestId(sheet, 'pending-claim').find(testId('pending-approve')).exists()).toBe(true)
+  })
+
+  it('does not unfold a pay form when reopened on a row, because there is nothing to pay', async () => {
+    const sheet = mountSquare({ open: false, focusMemberId: bob.id })
+    await sheet.setProps({ open: true })
+    await nextTick()
+
+    expect(findAllByTestId(sheet, 'pay-form')).toHaveLength(0)
+  })
+
+  it('says nothing about square overall when every row is already clear', async () => {
+    const clear = cancellingRows().map((row) => ({ ...row, owedMinor: 0, pending: [], settled: [] }))
+    const sheet = mountSquare({ rows: clear })
+    await nextTick()
+
+    expect(findAllByTestId(sheet, 'square-overall')).toHaveLength(0)
+  })
+
+  // These three were the trip screen's who-owes card's to prove; By person is the only place the
+  // rows live now, so they are proved here.
+
+  it('says nothing about square overall while there is still money to move', async () => {
+    const owing = cancellingRows()
+      .slice(0, 1)
+      .map((row) => ({ ...row, settled: [] }))
+    const sheet = mountSquare({ rows: owing, allSquare: false })
+    await nextTick()
+
+    expect(findAllByTestId(sheet, 'square-overall')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'row-pay')).toHaveLength(1)
+  })
+
+  it("speaks the viewer's frame: an API +6000 is 'You owe', with Pay", async () => {
+  const sheet = mountSquare({
+    rows: [{ ...cancellingRows()[0]!, owedMinor: 6_000, settled: [] }],
+    allSquare: false,
+  })
+  await nextTick()
+
+  const row = sheet.findComponent({ name: 'BalanceRow' })
+  expect(row.props('owedMinor')).toBe(-6_000)
+  expect(row.text()).toContain('You owe')
+  expect(row.find(testId('row-pay')).exists()).toBe(true)
+})
+
+it('sinks all-square people below real debts, and fades them', async () => {
+  // You're square with Bob but owe Cara. Cara must lead; Bob is kept for reassurance but sunk to
+  // the bottom and muted, so a $0 row never sits above money that still needs acting on.
+  const [bobRow, caraRow] = cancellingRows()
+  const sheet = mountSquare({
+    rows: [
+      { ...bobRow!, owedMinor: 0, settled: [] },
+      { ...caraRow!, owedMinor: 6_000, pending: [] },
+    ],
+    allSquare: false,
+  })
+  await nextTick()
+
+  const rows = sheet.findAllComponents({ name: 'BalanceRow' })
+  expect(rows[0]!.props('displayName')).toBe('Cara')
+  expect(rows[0]!.props('muted')).toBe(false)
+  expect(rows[1]!.props('displayName')).toBe('Bob')
+  expect(rows[1]!.props('muted')).toBe(true)
+})
+})
+
+describe('SettleUpSheet How it adds up', () => {
+  // UC-1, the weekend away (spec S8), from Ann's chair. Every figure is the server's: the sheet lays
+  // the breakdown and its totals out as sent, and never sums, signs or re-derives one of them.
+  const seat = (id: string, displayName: string, personHue: number, isYou = false): MemberView => ({
+    id,
+    displayName,
+    personHue,
+    claimed: true,
+    isYou,
+    payId: null,
+    payIdChangedRecently: false,
+  })
+  const ann = seat('m-ann', 'Ann', 1, true)
+  const ben = seat('m-ben', 'Ben', 2)
+  const cat = seat('m-cat', 'Cat', 3)
+  const dan = seat('m-dan', 'Dan', 4)
+  const eve = seat('m-eve', 'Eve', 5)
+
+  /** paid, share, settled, balance, then transfers by person → fewest: the table's own order. */
+  function line(
+    member: MemberView,
+    paidMinor: number,
+    shareMinor: number,
+    settledMinor: number,
+    netMinor: number,
+    transfersByPerson: number,
+    transfersFewest: number,
+  ): BreakdownRow {
+    return {
+      memberId: member.id,
+      displayName: member.displayName,
+      personHue: member.personHue,
+      isYou: member.isYou,
+      paidMinor,
+      shareMinor,
+      settledMinor,
+      netMinor,
+      transfersByPerson,
+      transfersFewest,
+    }
+  }
+
+  const uc1 = (): BreakdownView => ({
+    rows: [
+      line(ann, 6_000, 3_500, 0, 2_500, 3, 1),
+      line(ben, 6_000, 3_500, 0, 2_500, 4, 1),
+      line(cat, 6_000, 3_000, 0, 3_000, 4, 1),
+      line(dan, 0, 5_000, 0, -5_000, 3, 2),
+      line(eve, 0, 3_000, 0, -3_000, 2, 1),
+    ],
+    // Eight non-zero pairs, not the rows' 16: a pair is counted once, which is exactly the kind of
+    // figure a browser summing the column would get wrong.
+    totals: {
+      paidMinor: 18_000,
+      shareMinor: 18_000,
+      settledMinor: 0,
+      netMinor: 0,
+      transfersByPerson: 8,
+      transfersFewest: 3,
+    },
+  })
+
+  function mountBreakdown(over: Record<string, unknown> = {}) {
+    return mount(SettleUpSheet, {
+      props: {
+        open: true,
+        tripId: 't-1',
+        myMemberId: ann.id,
+        youAreCreator: true,
+        rows: [],
+        members: [ann, ben, cat, dan, eve],
+        currencyCode: 'AUD',
+        symbol: '$',
+        allSquare: false,
+        transfers: [],
+        breakdown: uc1(),
+        ...over,
+      },
+      global: global(),
+    })
+  }
+
+  /** One rendered line, cell by cell; a cell that is not there reads null, so a hidden column shows. */
+  function read(row: DOMWrapper<Element>) {
+    const cell = (id: string) => {
+      const found = row.find(testId(id))
+      return found.exists() ? found.text() : null
+    }
+    return {
+      name: cell('breakdown-name'),
+      paid: cell('breakdown-paid'),
+      share: cell('breakdown-share'),
+      settled: cell('breakdown-settled'),
+      balance: cell('breakdown-balance'),
+      transfers: cell('breakdown-transfers'),
+    }
+  }
+
+  it('UC-1: shows every figure as sent — the viewer as You, in roster order, totals from the totals', async () => {
+    const sheet = mountBreakdown()
+    await nextTick()
+    await findByTestId(sheet, 'breakdown-toggle').trigger('click')
+
+    const table = findByTestId(sheet, 'breakdown')
+    expect(table.findAll(testId('breakdown-row')).map(read)).toEqual([
+      { name: 'You', paid: '$60.00', share: '$35.00', settled: null, balance: '+$25.00', transfers: '3 → 1' },
+      { name: 'Ben', paid: '$60.00', share: '$35.00', settled: null, balance: '+$25.00', transfers: '4 → 1' },
+      { name: 'Cat', paid: '$60.00', share: '$30.00', settled: null, balance: '+$30.00', transfers: '4 → 1' },
+      { name: 'Dan', paid: '$0.00', share: '$50.00', settled: null, balance: '−$50.00', transfers: '3 → 2' },
+      { name: 'Eve', paid: '$0.00', share: '$30.00', settled: null, balance: '−$30.00', transfers: '2 → 1' },
+    ])
+    expect(read(table.find(testId('breakdown-total')))).toEqual({
+      name: 'Total',
+      paid: '$180.00',
+      share: '$180.00',
+      settled: null,
+      balance: '$0.00',
+      transfers: '8 → 3',
+    })
+
+    // Balance carries its direction in colour as well as sign, the way every balance here does.
+    const balance = (row: DOMWrapper<Element>) => row.find(testId('breakdown-balance')).find('.amount')
+    const rows = table.findAll(testId('breakdown-row'))
+    expect(balance(rows[0]!).classes()).toContain('amount--owed')
+    expect(balance(rows[3]!).classes()).toContain('amount--owe')
+    expect(balance(table.find(testId('breakdown-total'))).classes()).toContain('amount--settled')
+
+    const legend = table.find(testId('breakdown-legend')).text()
+    expect(legend).toContain('paid − share + settled')
+    expect(legend).toContain('by person → fewest')
+  })
+
+  it('shows the Settled column only once something has been settled', async () => {
+    const none = mountBreakdown()
+    await nextTick()
+    await findByTestId(none, 'breakdown-toggle').trigger('click')
+    expect(findAllByTestId(none, 'breakdown-head-settled')).toHaveLength(0)
+    expect(findAllByTestId(none, 'breakdown-settled')).toHaveLength(0)
+
+    // Dan has paid Ann her $25, approved: Ann's balance is 0, Dan's −25, and settled ties both out.
+    const paid = uc1()
+    paid.rows[0] = line(ann, 6_000, 3_500, -2_500, 0, 2, 0)
+    paid.rows[3] = line(dan, 0, 5_000, 2_500, -2_500, 2, 1)
+    const some = mountBreakdown({ breakdown: paid })
+    await nextTick()
+    await findByTestId(some, 'breakdown-toggle').trigger('click')
+
+    expect(findByTestId(some, 'breakdown-head-settled').text()).toBe('Settled')
+    const rows = findAllByTestId(some, 'breakdown-row').map(read)
+    expect(rows[0]).toMatchObject({ settled: '−$25.00', balance: '$0.00' })
+    expect(rows[1]).toMatchObject({ settled: '$0.00' })
+    expect(rows[3]).toMatchObject({ settled: '+$25.00', balance: '−$25.00' })
+    expect(read(findByTestId(some, 'breakdown-total'))).toMatchObject({ settled: '$0.00' })
+
+    // The rule is "any row or the total", so a total alone that says otherwise still shows it.
+    const odd = uc1()
+    odd.totals = { ...odd.totals, settledMinor: 100 }
+    const totalOnly = mountBreakdown({ breakdown: odd })
+    await nextTick()
+    await findByTestId(totalOnly, 'breakdown-toggle').trigger('click')
+    expect(findAllByTestId(totalOnly, 'breakdown-head-settled')).toHaveLength(1)
+    expect(read(findByTestId(totalOnly, 'breakdown-total'))).toMatchObject({ settled: '+$1.00' })
+  })
+
+  it('folds away by default, opens and shuts on the toggle, and is folded again on reopen', async () => {
+    const sheet = mountBreakdown({ open: false })
+    await sheet.setProps({ open: true })
+    await nextTick()
+
+    const toggle = () => findByTestId(sheet, 'breakdown-toggle')
+    expect(toggle().text()).toContain('How it adds up')
+    expect(toggle().attributes('aria-expanded')).toBe('false')
+    expect(findAllByTestId(sheet, 'breakdown')).toHaveLength(0)
+
+    await toggle().trigger('click')
+    expect(toggle().attributes('aria-expanded')).toBe('true')
+    expect(findAllByTestId(sheet, 'breakdown')).toHaveLength(1)
+    expect(sheet.find(`#${toggle().attributes('aria-controls')}`).exists()).toBe(true)
+
+    await toggle().trigger('click')
+    expect(toggle().attributes('aria-expanded')).toBe('false')
+    expect(findAllByTestId(sheet, 'breakdown')).toHaveLength(0)
+
+    // Left open, then the sheet closes and reopens: back to folded, like the rest of its state.
+    await toggle().trigger('click')
+    await sheet.setProps({ open: false })
+    await sheet.setProps({ open: true })
+    await nextTick()
+    expect(toggle().attributes('aria-expanded')).toBe('false')
+    expect(findAllByTestId(sheet, 'breakdown')).toHaveLength(0)
+  })
+
+  it('sits at the foot of every mode, just above Done for now', async () => {
+    const sheet = mountBreakdown()
+    await nextTick()
+
+    for (const mode of ['mode-min-transfer', 'mode-by-family', 'mode-by-person']) {
+      await findByTestId(sheet, mode).trigger('click')
+      await flushPromises()
+      expect(findAllByTestId(sheet, 'breakdown-toggle'), mode).toHaveLength(1)
+      const html = sheet.html()
+      expect(html.indexOf('data-testid="breakdown-toggle"'), mode).toBeLessThan(
+        html.indexOf('data-testid="settle-done"'),
+      )
+    }
+    // Nothing built, so Family mode fetched nothing — the table is a read of what the sheet holds.
+    expect(mocked.previewFamilies).not.toHaveBeenCalled()
+  })
+
+  it('renders figures that do not add up exactly as sent — the browser never sums a column', async () => {
+    // Deliberately inconsistent: a balance that is not paid − share + settled, and totals that are
+    // not the rows' sums. Showing these as sent is the proof nothing here is recomputed.
+    const skewed = uc1()
+    skewed.rows[0] = line(ann, 6_000, 3_500, 0, 999, 3, 1)
+    skewed.totals = {
+      paidMinor: 12_345,
+      shareMinor: 54_321,
+      settledMinor: 0,
+      netMinor: 777,
+      transfersByPerson: 99,
+      transfersFewest: 42,
+    }
+    const sheet = mountBreakdown({ breakdown: skewed })
+    await nextTick()
+    await findByTestId(sheet, 'breakdown-toggle').trigger('click')
+
+    expect(read(findAllByTestId(sheet, 'breakdown-row')[0]!)).toMatchObject({ balance: '+$9.99' })
+    expect(read(findByTestId(sheet, 'breakdown-total'))).toEqual({
+      name: 'Total',
+      paid: '$123.45',
+      share: '$543.21',
+      settled: null,
+      balance: '+$7.77',
+      transfers: '99 → 42',
+    })
+  })
+
+  it('leaves the section out entirely for an older server that sends no breakdown', async () => {
+    for (const breakdown of [undefined, null]) {
+      const sheet = mountBreakdown({ breakdown })
+      await nextTick()
+      expect(findAllByTestId(sheet, 'breakdown-toggle')).toHaveLength(0)
+      expect(findByTestId(sheet, 'settle-done').exists()).toBe(true)
+    }
+  })
+})
+
+describe('SettleUpSheet By minimum transfer', () => {
+  // UC-1, "Weekend away" (spec §2 S8), from Eve's chair. Nets: Ann +25, Ben +25, Cat +30, Dan −50,
+  // Eve −30. The server's fewest-transfers plan is three payments, in this order — the screen
+  // renders it as sent and computes nothing.
+  const seat = (id: string, displayName: string, personHue: number, over: Partial<MemberView> = {}) => ({
+    id,
+    displayName,
+    personHue,
+    claimed: true,
+    isYou: false,
+    payId: null,
+    payIdChangedRecently: false,
+    ...over,
+  })
+  const ann = seat('m-ann', 'Ann', 1, { payId: 'ann@example.com' })
+  const ben = seat('m-ben', 'Ben', 2)
+  const cat = seat('m-cat', 'Cat', 3, { payId: 'cat@example.com' })
+  const dan = seat('m-dan', 'Dan', 4)
+  const eve = seat('m-eve', 'Eve', 5, { isYou: true })
+  const members: MemberView[] = [ann, ben, cat, dan, eve]
+  const transfers = [
+    { fromMemberId: eve.id, toMemberId: cat.id, amountMinor: 3_000 },
+    { fromMemberId: dan.id, toMemberId: ann.id, amountMinor: 2_500 },
+    { fromMemberId: dan.id, toMemberId: ben.id, amountMinor: 2_500 },
+  ]
+  // Eve's bilateral rows (positive = Eve owes them): Ben 15 for the taxi, Cat 15 for lunch.
+  const row = (m: MemberView, owedMinor: number, over: Partial<SettlementRow> = {}): SettlementRow => ({
+    memberId: m.id,
+    displayName: m.displayName,
+    personHue: m.personHue,
+    owedMinor,
+    pending: [],
+    settled: [],
+    rejected: [],
+    ...over,
+  })
+  const eveRows = () => [row(ann, 0), row(ben, 1_500), row(cat, 1_500), row(dan, 0)]
+  const pendingClaim = (from: string, to: string): PaybackView => ({
+    id: `p-${from}-${to}`,
+    itemId: null,
+    fromMemberId: from,
+    toMemberId: to,
+    amountMinor: 3_000,
+    paidOn: '2026-10-04',
+    note: null,
+    status: 'PENDING',
+    proofObjectName: null,
+    rejectReason: null,
+    reviewedAt: null,
+    viewerCanDecide: false,
+    viewerCanUndo: true,
+  })
+
+  function mountTransfers(over: Record<string, unknown> = {}) {
+    return mount(SettleUpSheet, {
+      props: {
+        open: true,
+        tripId: 't-1',
+        myMemberId: eve.id,
+        youAreCreator: false,
+        rows: eveRows(),
+        members,
+        currencyCode: 'AUD',
+        symbol: '$',
+        allSquare: false,
+        transfers,
+        ...over,
+      },
+      global: global(),
+    })
+  }
+
+  async function openTransfers(sheet: ReturnType<typeof mountTransfers>) {
+    await nextTick()
+    await findByTestId(sheet, 'mode-min-transfer').trigger('click')
+  }
+
+  it('lists the fewest transfers in server order, numbered, each with the recipient PayID', async () => {
+    const sheet = mountTransfers()
+    await openTransfers(sheet)
+
+    expect(findByTestId(sheet, 'mode-min-transfer').attributes('aria-pressed')).toBe('true')
+    expect(findByTestId(sheet, 'mode-min-transfer').text()).toBe('By minimum transfer')
+    expect(findByTestId(sheet, 'transfer-count').text()).toBe('3 transfers settle everyone')
+
+    const lines = findAllByTestId(sheet, 'transfer-row')
+    expect(lines).toHaveLength(3)
+    // An ordered list, so the numbering is the list's own, not decoration.
+    expect(lines[0]!.element.tagName).toBe('LI')
+    expect(lines[0]!.element.parentElement!.tagName).toBe('OL')
+
+    expect(lines[0]!.text()).toContain('1')
+    expect(lines[0]!.text()).toContain('You pay Cat')
+    expect(lines[0]!.text()).toContain('$30.00')
+    expect(lines[0]!.find(testId('payid-value')).text()).toBe('cat@example.com')
+
+    expect(lines[1]!.text()).toContain('Dan pays Ann')
+    expect(lines[1]!.text()).toContain('$25.00')
+    expect(lines[1]!.find(testId('payid-value')).text()).toBe('ann@example.com')
+
+    expect(lines[2]!.text()).toContain('Dan pays Ben')
+    expect(lines[2]!.text()).toContain('$25.00')
+    expect(lines[2]!.find(testId('payid-none')).text()).toBe('(no PayID provided)')
+  })
+
+  it('offers Pay only on your own transfer, prefilled, and files it as a settlement to that person', async () => {
+    mocked.submitSettlement!.mockResolvedValue({})
+    const sheet = mountTransfers()
+    await openTransfers(sheet)
+
+    const pays = findAllByTestId(sheet, 'transfer-pay')
+    expect(pays).toHaveLength(1)
+    const mine = findAllByTestId(sheet, 'transfer-row')[0]!
+    expect(mine.find(testId('transfer-pay')).exists()).toBe(true)
+
+    await pays[0]!.trigger('click')
+    expect(findByTestId(sheet, 'pay-amount').text()).toContain('30.00')
+    await findByTestId(sheet, 'pay-send').trigger('click')
+    await flushPromises()
+
+    expect(mocked.submitSettlement).toHaveBeenCalledWith('t-1', { toMemberId: cat.id, amountMinor: 3_000 })
+    expect(sheet.emitted('changed')).toBeTruthy()
+  })
+
+  it('hides Pay behind the claim you already sent that person, read-only', async () => {
+    const rows = eveRows().map((r) =>
+      r.memberId === cat.id ? { ...r, pending: [pendingClaim(eve.id, cat.id)] } : r,
+    )
+    const sheet = mountTransfers({ rows })
+    await openTransfers(sheet)
+
+    expect(findAllByTestId(sheet, 'transfer-pay')).toHaveLength(0)
+    const waiting = findAllByTestId(sheet, 'transfer-row')[0]!.find(testId('transfer-pending'))
+    expect(waiting.text()).toContain('Sent to Cat for confirmation')
+    expect(waiting.text()).toContain('$30.00')
+    expect(waiting.findAll('button')).toHaveLength(0)
+  })
+
+  it('tells the recipient a sender says they paid, read-only — approving stays on By person', async () => {
+    // Cat's chair: Eve's claim to her is waiting. The transfer line reports it, but the decision
+    // lives on the By person strip (§7a), so nothing here can approve it.
+    const catSeat = { ...cat, isYou: true }
+    const eveSeat = { ...eve, isYou: false }
+    const claim = { ...pendingClaim(eve.id, cat.id), viewerCanDecide: true, viewerCanUndo: false }
+    const sheet = mountTransfers({
+      myMemberId: cat.id,
+      members: [ann, ben, catSeat, dan, eveSeat],
+      rows: [row(ann, 1_500), row(ben, -1_500), row(dan, -1_500), row(eveSeat, -1_500, { pending: [claim] })],
+    })
+    await openTransfers(sheet)
+
+    const first = findAllByTestId(sheet, 'transfer-row')[0]!
+    expect(first.text()).toContain('Eve pays you')
+    expect(first.find(testId('transfer-pending')).text()).toContain('Eve says they paid you')
+    expect(first.findAll('button').filter((b) => b.text() !== 'Copy')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'transfer-pay')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'pending-approve')).toHaveLength(0)
+  })
+
+  it('does not mistake a claim going the other way for your payment of the transfer', async () => {
+    // Cat says she paid Eve something. That is Cat's claim, not Eve paying her $30: Eve's Pay stays,
+    // and nothing on the line may tell her she has "sent" anything.
+    const rows = eveRows().map((r) =>
+      r.memberId === cat.id ? { ...r, pending: [pendingClaim(cat.id, eve.id)] } : r,
+    )
+    const sheet = mountTransfers({ rows })
+    await openTransfers(sheet)
+
+    const mine = findAllByTestId(sheet, 'transfer-row')[0]!
+    expect(mine.find(testId('transfer-pay')).exists()).toBe(true)
+    expect(mine.find(testId('transfer-pending')).exists()).toBe(false)
+  })
+
+  it('drops a half-filled By person pay form on switching, so the transfer is paid at its own amount', async () => {
+    // Eve unfolds Pay on her $15 row with Cat, then switches to the plan, where she pays Cat $30.
+    // A form carried across would sit open on that transfer still holding $15.
+    const sheet = mountTransfers()
+    await nextTick()
+    const catRow = findAllByTestId(sheet, 'balance-row').find((r) => r.text().includes('Cat'))!
+    await catRow.find(testId('row-pay')).trigger('click')
+    expect(findAllByTestId(sheet, 'pay-form')).toHaveLength(1)
+
+    await findByTestId(sheet, 'mode-min-transfer').trigger('click')
+
+    expect(findAllByTestId(sheet, 'pay-form')).toHaveLength(0)
+    await findByTestId(sheet, 'transfer-pay').trigger('click')
+    expect(findByTestId(sheet, 'pay-amount').text()).toContain('30.00')
+  })
+
+  it("flags a recipient's freshly changed PayID right where you pay them", async () => {
+    // The badge is the only defence against a swapped PayID under name sign-in, so it has to be on
+    // the two places money is about to be sent: the plan's line and the By person pay form.
+    const freshCat = { ...cat, payIdChangedRecently: true }
+    const sheet = mountTransfers({ members: [ann, ben, freshCat, dan, eve] })
+    await openTransfers(sheet)
+
+    const lines = findAllByTestId(sheet, 'transfer-row')
+    expect(lines[0]!.find(testId('payid-recent')).exists()).toBe(true)
+    expect(lines[1]!.find(testId('payid-recent')).exists()).toBe(false)
+
+    await findByTestId(sheet, 'mode-by-person').trigger('click')
+    const catRow = findAllByTestId(sheet, 'balance-row').find((r) => r.text().includes('Cat'))!
+    await catRow.find(testId('row-pay')).trigger('click')
+    expect(findByTestId(sheet, 'pay-form').find(testId('payid-recent')).exists()).toBe(true)
+  })
+
+  it('says everyone is settled when there is nothing to transfer', async () => {
+    const sheet = mountTransfers({ transfers: [] })
+    await openTransfers(sheet)
+
+    expect(findByTestId(sheet, 'no-transfers').text()).toBe('Everyone is settled. No transfers needed.')
+    expect(findAllByTestId(sheet, 'transfer-row')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'transfer-count')).toHaveLength(0)
+  })
+
+  it('counts a single transfer in the singular', async () => {
+    const sheet = mountTransfers({ transfers: transfers.slice(0, 1) })
+    await openTransfers(sheet)
+
+    expect(findByTestId(sheet, 'transfer-count').text()).toBe('1 transfer settles everyone')
+  })
+
+  it('shows the recipient PayID inside the By person pay form too', async () => {
+    const sheet = mountTransfers()
+    await nextTick()
+
+    const catRow = findAllByTestId(sheet, 'balance-row').find((r) => r.text().includes('Cat'))!
+    await catRow.find(testId('row-pay')).trigger('click')
+
+    expect(findByTestId(sheet, 'pay-form').find(testId('payid-value')).text()).toBe('cat@example.com')
+  })
+
+  it('goes back to By person whenever the sheet reopens', async () => {
+    const sheet = mountTransfers()
+    await openTransfers(sheet)
+    expect(findAllByTestId(sheet, 'transfer-row')).toHaveLength(3)
+
+    await sheet.setProps({ open: false })
+    await sheet.setProps({ open: true })
+    await nextTick()
+
+    expect(findByTestId(sheet, 'mode-by-person').attributes('aria-pressed')).toBe('true')
+    expect(findByTestId(sheet, 'mode-min-transfer').attributes('aria-pressed')).toBe('false')
+    expect(findAllByTestId(sheet, 'transfer-row')).toHaveLength(0)
+  })
+
+  it('never emits changed just from switching between the three modes', async () => {
+    const sheet = mountTransfers()
+    await openTransfers(sheet)
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await findByTestId(sheet, 'mode-min-transfer').trigger('click')
+    await findByTestId(sheet, 'mode-by-person').trigger('click')
+    await flushPromises()
+
+    expect(sheet.emitted('changed')).toBeUndefined()
+    expect(mocked.submitSettlement).not.toHaveBeenCalled()
+  })
+})
+
 describe('SettleUpSheet Family mode', () => {
   // A complete partition is built incrementally (§7b): 4 people so a single build still leaves 2+
   // unassigned, keeping "Build a family" offered and the scenario worth narrating.
-  const dana: MemberView = { id: 'm-dana', displayName: 'Dana', personHue: 4, claimed: true, isYou: false }
+  const dana: MemberView = {
+    id: 'm-dana',
+    displayName: 'Dana',
+    personHue: 4,
+    claimed: true,
+    isYou: false,
+    payId: null,
+    payIdChangedRecently: false,
+  }
   const members = [you, bob, cara, dana]
   const fm = (m: MemberView): FamilyMemberView => ({
     id: m.id,
@@ -1894,6 +2847,7 @@ describe('SettleUpSheet Family mode', () => {
         { members: [fm(dana)], netMinor: 0, counterparts: [] },
         { members: [fm(you)], netMinor: 0, counterparts: [] }, // auto singleton, never ticked
       ],
+      transfers: [],
     }
     // What the server would have said for "minus Bob" alone — still carries Cara, because at the
     // moment this request was fired Cara had not been undone yet. This is the stale answer.
@@ -1903,6 +2857,7 @@ describe('SettleUpSheet Family mode', () => {
         { members: [fm(dana)], netMinor: 0, counterparts: [] },
         { members: [fm(you)], netMinor: 0, counterparts: [] },
       ],
+      transfers: [],
     }
     // "minus both Bob and Cara" — the correct, most-recently-requested state.
     const freshMinusBoth: FamiliesView = {
@@ -1910,6 +2865,7 @@ describe('SettleUpSheet Family mode', () => {
         { members: [fm(dana)], netMinor: 0, counterparts: [] },
         { members: [fm(you)], netMinor: 0, counterparts: [] },
       ],
+      transfers: [],
     }
 
     let resolveStale!: (value: FamiliesView) => void
@@ -1955,6 +2911,390 @@ describe('SettleUpSheet Family mode', () => {
     expect(sheet.text()).not.toContain('Bob')
     expect(sheet.text()).not.toContain('Cara')
     expect(sheet.text()).toContain('Dana')
+  })
+})
+
+describe('SettleUpSheet By minimum transfer with families', () => {
+  // UC-2: the UC-1 "Weekend away" trip (Ann +25, Ben +25, Cat +30, Dan −50, Eve −30) with Families
+  // built under By family. A Family settles among itself, so as one party it pays or is paid once —
+  // and the server, not this screen, derives that plan and names who on the receiving side a
+  // payment goes to. The screen renders it as sent, exactly like the per-person plan.
+  const seat = (
+    id: string,
+    displayName: string,
+    personHue: number,
+    payId: string | null = null,
+  ): MemberView => ({
+    id,
+    displayName,
+    personHue,
+    claimed: true,
+    isYou: false,
+    payId,
+    payIdChangedRecently: false,
+  })
+  const ann = seat('m-ann', 'Ann', 1, 'ann@example.com')
+  const ben = seat('m-ben', 'Ben', 2)
+  const cat = seat('m-cat', 'Cat', 3, 'cat@example.com')
+  const dan = seat('m-dan', 'Dan', 4)
+  const eve = seat('m-eve', 'Eve', 5)
+  /** The same five people from one chair: only `isYou` moves. */
+  const rosterFor = (viewer: MemberView) =>
+    [ann, ben, cat, dan, eve].map((m) => ({ ...m, isYou: m.id === viewer.id }))
+  const party = (viewer: MemberView, ...people: MemberView[]): FamilyMemberView[] =>
+    people.map((m) => ({
+      id: m.id,
+      displayName: m.displayName,
+      personHue: m.personHue,
+      isYou: m.id === viewer.id,
+    }))
+  /** The per-person plan UC-1 hands the sheet — what the family plan must replace, not add to. */
+  const perPersonPlan = [
+    { fromMemberId: eve.id, toMemberId: cat.id, amountMinor: 3_000 },
+    { fromMemberId: dan.id, toMemberId: ann.id, amountMinor: 2_500 },
+    { fromMemberId: dan.id, toMemberId: ben.id, amountMinor: 2_500 },
+  ]
+  const claim = (from: MemberView, to: MemberView, amountMinor: number): PaybackView => ({
+    id: `p-${from.id}-${to.id}`,
+    itemId: null,
+    fromMemberId: from.id,
+    toMemberId: to.id,
+    amountMinor,
+    paidOn: '2026-10-04',
+    note: null,
+    status: 'PENDING',
+    proofObjectName: null,
+    rejectReason: null,
+    reviewedAt: null,
+    viewerCanDecide: false,
+    viewerCanUndo: false,
+  })
+
+  /** {Ann, Ben} built, from Dan's chair: the family is owed 50 as one party. */
+  const annBenFromDan: FamiliesView = {
+    families: [
+      { members: party(dan, ann, ben), netMinor: 5_000, counterparts: [] },
+      { members: party(dan, cat), netMinor: 3_000, counterparts: [] },
+      { members: party(dan, dan), netMinor: -5_000, counterparts: [] },
+      { members: party(dan, eve), netMinor: -3_000, counterparts: [] },
+    ],
+    transfers: [
+      {
+        from: party(dan, dan),
+        to: party(dan, ann, ben),
+        amountMinor: 5_000,
+        payToMemberId: ann.id,
+        pending: [],
+      },
+      { from: party(dan, eve), to: party(dan, cat), amountMinor: 3_000, payToMemberId: cat.id, pending: [] },
+    ],
+  }
+
+  function mountAs(viewer: MemberView, rows: SettlementRow[] = []) {
+    return mount(SettleUpSheet, {
+      props: {
+        open: true,
+        tripId: 't-1',
+        myMemberId: viewer.id,
+        youAreCreator: false,
+        rows,
+        members: rosterFor(viewer),
+        currencyCode: 'AUD',
+        symbol: '$',
+        allSquare: false,
+        transfers: perPersonPlan,
+      },
+      global: global(),
+    })
+  }
+
+  /** Builds one Family through the real builder on By family; the viewer's own toggle reads "You". */
+  async function buildFamily(sheet: ReturnType<typeof mount>, names: string[]) {
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await findByTestId(sheet, 'build-family').trigger('click')
+    for (const name of names) {
+      await findAllByTestId(sheet, 'person-toggle')
+        .find((r) => r.text().includes(name))!
+        .trigger('click')
+    }
+    await findByTestId(sheet, 'family-builder-add').trigger('click')
+    await flushPromises()
+  }
+
+  async function openPlan(sheet: ReturnType<typeof mount>) {
+    await findByTestId(sheet, 'mode-min-transfer').trigger('click')
+    await flushPromises()
+  }
+
+  it('UC-2: pays a built family once, to the PayID the server picked, in place of the per-person plan', async () => {
+    mocked.previewFamilies!.mockResolvedValue(annBenFromDan)
+    mocked.submitSettlement!.mockResolvedValue({})
+    const sheet = mountAs(dan)
+    await nextTick()
+    await buildFamily(sheet, ['Ann', 'Ben'])
+    mocked.previewFamilies!.mockClear()
+
+    await openPlan(sheet)
+
+    // Entering the plan with a family built asks for the partition again — never the per-person plan.
+    expect(mocked.previewFamilies).toHaveBeenCalledTimes(1)
+    expect(mocked.previewFamilies).toHaveBeenCalledWith('t-1', [[ann.id, ben.id]])
+    expect(findByTestId(sheet, 'transfer-families').text()).toBe('Using your families: Ann & Ben')
+    expect(findByTestId(sheet, 'transfer-count').text()).toBe('2 transfers settle everyone')
+
+    const lines = findAllByTestId(sheet, 'transfer-row')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]!.text()).toContain('1')
+    expect(lines[0]!.text()).toContain('You pay Ann & Ben')
+    expect(lines[0]!.text()).toContain('$50.00')
+    expect(lines[0]!.find(testId('payid-value')).text()).toBe('ann@example.com')
+    // Paying a Family, the PayID says whose it is — "Ann & Ben" alone would leave it a guess.
+    expect(lines[0]!.find(testId('transfer-payid')).text()).toContain("Ann's PayID")
+    expect(lines[1]!.text()).toContain('2')
+    expect(lines[1]!.text()).toContain('Eve pays Cat')
+    expect(lines[1]!.text()).toContain('$30.00')
+    expect(lines[1]!.find(testId('payid-value')).text()).toBe('cat@example.com')
+    // One person is unambiguous: the plain label, as on every per-person line.
+    expect(lines[1]!.find(testId('transfer-payid')).text()).not.toContain("Cat's PayID")
+
+    // Only Dan's own line carries Pay; it files the line's amount to the member the server named.
+    expect(findAllByTestId(sheet, 'transfer-pay')).toHaveLength(1)
+    await lines[0]!.find(testId('transfer-pay')).trigger('click')
+    expect(findByTestId(sheet, 'pay-amount').text()).toContain('50.00')
+    await findByTestId(sheet, 'pay-send').trigger('click')
+    await flushPromises()
+
+    expect(mocked.submitSettlement).toHaveBeenCalledWith('t-1', { toMemberId: ann.id, amountMinor: 5_000 })
+  })
+
+  it('hides Pay from the whole family while a claim on that line waits, saying who sent it', async () => {
+    // Eve's chair, with Dan and Eve built into one Family. Dan already filed the $30 to Cat, so Eve
+    // paying it too would be the family paying twice: the line is read-only for both of them.
+    const danEveFromEve: FamiliesView = {
+      families: [
+        { members: party(eve, dan, eve), netMinor: -8_000, counterparts: [] },
+        { members: party(eve, ann), netMinor: 2_500, counterparts: [] },
+        { members: party(eve, ben), netMinor: 2_500, counterparts: [] },
+        { members: party(eve, cat), netMinor: 3_000, counterparts: [] },
+      ],
+      transfers: [
+        {
+          from: party(eve, dan, eve),
+          to: party(eve, cat),
+          amountMinor: 3_000,
+          payToMemberId: cat.id,
+          pending: [claim(dan, cat, 3_000)],
+        },
+        {
+          from: party(eve, dan, eve),
+          to: party(eve, ann),
+          amountMinor: 2_500,
+          payToMemberId: ann.id,
+          pending: [claim(eve, ann, 2_500)],
+        },
+        {
+          from: party(eve, dan, eve),
+          to: party(eve, ben),
+          amountMinor: 2_500,
+          payToMemberId: ben.id,
+          pending: [],
+        },
+      ],
+    }
+    mocked.previewFamilies!.mockResolvedValue(danEveFromEve)
+    mocked.submitSettlement!.mockResolvedValue({})
+    const sheet = mountAs(eve)
+    await nextTick()
+    await buildFamily(sheet, ['Dan', 'You'])
+    await openPlan(sheet)
+
+    expect(findByTestId(sheet, 'transfer-families').text()).toBe('Using your families: You & Dan')
+    const lines = findAllByTestId(sheet, 'transfer-row')
+    expect(lines).toHaveLength(3)
+
+    // Dan's claim: named, with its amount, and nothing on the line to act on but copying the PayID.
+    expect(lines[0]!.text()).toContain('You & Dan pay Cat')
+    const dans = lines[0]!.find(testId('transfer-pending'))
+    expect(dans.text()).toContain('Dan sent this for confirmation')
+    expect(dans.text()).toContain('$30.00')
+    expect(lines[0]!.find(testId('transfer-pay')).exists()).toBe(false)
+    expect(lines[0]!.findAll('button').filter((b) => b.text() !== 'Copy')).toHaveLength(0)
+
+    // Eve's own claim reads as hers.
+    expect(lines[1]!.text()).toContain('You & Dan pay Ann')
+    expect(lines[1]!.find(testId('transfer-pending')).text()).toContain('Sent to Ann for confirmation')
+    expect(lines[1]!.find(testId('transfer-pending')).text()).toContain('$25.00')
+    expect(lines[1]!.find(testId('transfer-pay')).exists()).toBe(false)
+
+    // Nothing filed on the last line, so Eve — a member of the paying family — may pay it.
+    expect(lines[2]!.text()).toContain('You & Dan pay Ben')
+    expect(lines[2]!.find(testId('payid-none')).exists()).toBe(true)
+    expect(lines[2]!.find(testId('transfer-pending')).exists()).toBe(false)
+    expect(findAllByTestId(sheet, 'transfer-pay')).toHaveLength(1)
+    await lines[2]!.find(testId('transfer-pay')).trigger('click')
+    expect(findByTestId(sheet, 'pay-amount').text()).toContain('25.00')
+    await findByTestId(sheet, 'pay-send').trigger('click')
+    await flushPromises()
+    expect(mocked.submitSettlement).toHaveBeenCalledWith('t-1', { toMemberId: ben.id, amountMinor: 2_500 })
+  })
+
+  it('names the receiving family as "you" when the viewer is in it, and gives them no Pay', async () => {
+    // Ann's chair with {Ann, Ben} built: Dan pays the family, which reads as "Dan pays you & Ben".
+    const annBenFromAnn: FamiliesView = {
+      families: [],
+      transfers: [
+        {
+          from: party(ann, dan),
+          to: party(ann, ann, ben),
+          amountMinor: 5_000,
+          payToMemberId: ann.id,
+          pending: [],
+        },
+        {
+          from: party(ann, eve),
+          to: party(ann, cat),
+          amountMinor: 3_000,
+          payToMemberId: cat.id,
+          pending: [],
+        },
+      ],
+    }
+    mocked.previewFamilies!.mockResolvedValue(annBenFromAnn)
+    const sheet = mountAs(ann)
+    await nextTick()
+    await buildFamily(sheet, ['You', 'Ben'])
+    await openPlan(sheet)
+
+    const lines = findAllByTestId(sheet, 'transfer-row')
+    expect(lines[0]!.text()).toContain('Dan pays you & Ben')
+    expect(lines[1]!.text()).toContain('Eve pays Cat')
+    expect(findAllByTestId(sheet, 'transfer-pay')).toHaveLength(0)
+  })
+
+  it('says everyone is settled when the family plan is empty, counted on the family plan', async () => {
+    mocked.previewFamilies!.mockResolvedValue({ families: [], transfers: [] })
+    const sheet = mountAs(dan)
+    await nextTick()
+    await buildFamily(sheet, ['Ann', 'Ben'])
+    await openPlan(sheet)
+
+    // The per-person plan still has three lines — the family plan, which is empty, is the one shown.
+    expect(findByTestId(sheet, 'no-transfers').exists()).toBe(true)
+    expect(findAllByTestId(sheet, 'transfer-row')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'transfer-count')).toHaveLength(0)
+  })
+
+  it('with no family built, fetches nothing and shows the per-person plan as before', async () => {
+    const sheet = mountAs(eve)
+    await nextTick()
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await openPlan(sheet)
+
+    expect(mocked.previewFamilies).not.toHaveBeenCalled()
+    expect(findAllByTestId(sheet, 'transfer-families')).toHaveLength(0)
+    expect(findByTestId(sheet, 'transfer-count').text()).toBe('3 transfers settle everyone')
+    const lines = findAllByTestId(sheet, 'transfer-row')
+    expect(lines).toHaveLength(3)
+    expect(lines[0]!.text()).toContain('You pay Cat')
+    expect(lines[1]!.text()).toContain('Dan pays Ann')
+  })
+
+  it('refetches the family plan when balances move under it', async () => {
+    // Dan pays; the trip refetches and hands the sheet new rows. The plan must follow, picking up
+    // the claim he just filed — or it would keep offering Pay on a line already paid.
+    const paid: FamiliesView = {
+      ...annBenFromDan,
+      transfers: [
+        { ...annBenFromDan.transfers[0]!, pending: [claim(dan, ann, 5_000)] },
+        annBenFromDan.transfers[1]!,
+      ],
+    }
+    mocked.previewFamilies!.mockResolvedValueOnce(annBenFromDan).mockResolvedValueOnce(annBenFromDan)
+    mocked.previewFamilies!.mockResolvedValueOnce(paid)
+    const sheet = mountAs(dan)
+    await nextTick()
+    await buildFamily(sheet, ['Ann', 'Ben'])
+    await openPlan(sheet)
+    expect(findAllByTestId(sheet, 'transfer-pay')).toHaveLength(1)
+
+    await sheet.setProps({ rows: [] })
+    await flushPromises()
+
+    expect(mocked.previewFamilies).toHaveBeenCalledTimes(3)
+    expect(findAllByTestId(sheet, 'transfer-pay')).toHaveLength(0)
+    expect(findByTestId(sheet, 'transfer-pending').text()).toContain('Sent to Ann for confirmation')
+  })
+
+  it('shows a failed family plan in the alert, and no plan to pay from', async () => {
+    mocked
+      .previewFamilies!.mockResolvedValueOnce(annBenFromDan)
+      .mockRejectedValueOnce(new Error('Network unreachable'))
+    const sheet = mountAs(dan)
+    await nextTick()
+    await buildFamily(sheet, ['Ann', 'Ben'])
+    await openPlan(sheet)
+
+    expect(findByTestId(sheet, 'transfer-families').text()).toBe('Using your families: Ann & Ben')
+    expect(sheet.find('[role="alert"]').text()).toBe('Network unreachable')
+    // Never the per-person plan as a fallback: it ignores the family, so paying from it would be wrong.
+    expect(findAllByTestId(sheet, 'transfer-row')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'transfer-pay')).toHaveLength(0)
+  })
+
+  it('never emits changed from switching modes with families built, and reopening forgets them', async () => {
+    mocked.previewFamilies!.mockResolvedValue(annBenFromDan)
+    const sheet = mountAs(dan)
+    await nextTick()
+    await buildFamily(sheet, ['Ann', 'Ben'])
+    await openPlan(sheet)
+    await findByTestId(sheet, 'mode-by-person').trigger('click')
+    await openPlan(sheet)
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await flushPromises()
+
+    expect(sheet.emitted('changed')).toBeUndefined()
+    expect(mocked.submitSettlement).not.toHaveBeenCalled()
+    const calls = mocked.previewFamilies!.mock.calls.length
+
+    await sheet.setProps({ open: false })
+    await sheet.setProps({ open: true })
+    await nextTick()
+    expect(findByTestId(sheet, 'mode-by-person').attributes('aria-pressed')).toBe('true')
+
+    // The families went with the reopen, so the plan is the per-person one again, fetched from nowhere.
+    await openPlan(sheet)
+    expect(mocked.previewFamilies!.mock.calls.length).toBe(calls)
+    expect(findAllByTestId(sheet, 'transfer-families')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'transfer-row')).toHaveLength(3)
+  })
+
+  it('never names families the plan on screen was not computed for', async () => {
+    // A second family's build is still in flight when the viewer jumps to the plan. That jump
+    // re-fetches the partition actually committed, which supersedes the build's request — so the
+    // build must not commit on a response that was dropped, or the note would name two families
+    // over a plan computed for one.
+    let resolveBuild!: (value: FamiliesView) => void
+    mocked
+      .previewFamilies!.mockResolvedValue(annBenFromDan) // every fetch for the committed {Ann, Ben}
+      .mockResolvedValueOnce(annBenFromDan) // building {Ann, Ben}
+      .mockImplementationOnce(() => new Promise<FamiliesView>((resolve) => (resolveBuild = resolve)))
+    const sheet = mountAs(dan)
+    await nextTick()
+    await buildFamily(sheet, ['Ann', 'Ben'])
+    await buildFamily(sheet, ['Cat', 'Eve'])
+
+    await openPlan(sheet)
+    resolveBuild({ ...annBenFromDan, transfers: [] })
+    await flushPromises()
+
+    expect(findByTestId(sheet, 'transfer-families').text()).toBe('Using your families: Ann & Ben')
+    expect(findAllByTestId(sheet, 'transfer-row')).toHaveLength(2)
+
+    // The interrupted build is still open on By family, its selection intact, ready to add again.
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await flushPromises()
+    const catToggle = findAllByTestId(sheet, 'person-toggle').find((r) => r.text().includes('Cat'))!
+    expect(catToggle.attributes('aria-pressed')).toBe('true')
   })
 })
 

@@ -15,6 +15,7 @@ data class MeView(
     val displayName: String,
     val email: String,
     val photoUrl: String?,
+    val payId: String?,
     val friends: List<FriendView> = emptyList(),
 )
 
@@ -30,4 +31,5 @@ fun UserEntity.toMeView(): MeView = MeView(
     displayName = displayName,
     email = email,
     photoUrl = photoUrl,
+    payId = payId,
 )

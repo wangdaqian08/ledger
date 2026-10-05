@@ -30,4 +30,8 @@ class UserEntity(
     var photoUrl: String?,
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant = Instant.now(),
+    @Column(name = "pay_id")
+    var payId: String? = null,
+    @Column(name = "pay_id_updated_at")
+    var payIdUpdatedAt: Instant? = null,
 )

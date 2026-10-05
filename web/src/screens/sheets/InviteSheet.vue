@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import PayIdLine from '@/components/PayIdLine.vue'
 import PersonAvatar from '@/components/PersonAvatar.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import TallyBadge from '@/components/TallyBadge.vue'
@@ -10,6 +11,7 @@ import TallyIcon from '@/components/TallyIcon.vue'
 import TextField from '@/components/TextField.vue'
 import { api, type TripView } from '@/lib/api'
 import { currencySymbol, formatMinor } from '@/lib/money'
+import { useSession } from '@/stores/session'
 import { useTrips } from '@/stores/trips'
 
 /**
@@ -19,6 +21,11 @@ import { useTrips } from '@/stores/trips'
  *
  * Names are the roster's one hand-entered fact, so they are the one that gets typed wrong — the
  * creator can fix one in place. Renaming moves no number; nothing financial hangs off a name.
+ *
+ * Each person's PayID shows under their name. It belongs to the account, not the trip, so your own
+ * row is the only one with an editor — and it changes what every group you are in sees. Everyone
+ * else's is read-only with a Copy, badged for a week after it changes (sign-in is a bare name, so
+ * a fresh PayID is worth a second look before paying it). An unclaimed seat has no account yet.
  */
 const props = defineProps<{ open: boolean; trip: TripView }>()
 const emit = defineEmits<{ close: []; changed: [] }>()
@@ -26,14 +33,18 @@ const emit = defineEmits<{ close: []; changed: [] }>()
 const { t } = useI18n()
 const router = useRouter()
 const trips = useTrips()
+const session = useSession()
 
 const newName = ref('')
 const linkNote = ref('')
 const error = ref('')
 const busy = ref(false)
 const editingId = ref<string | null>(null)
-const activeAction = ref<'add' | null>(null)
+const activeAction = ref<'add' | 'payid' | null>(null)
 const editedName = ref('')
+const editingPayId = ref(false)
+const payIdDraft = ref('')
+const payIdError = ref('')
 
 watch(
   () => props.open,
@@ -43,8 +54,34 @@ watch(
     linkNote.value = ''
     error.value = ''
     editingId.value = null
+    editingPayId.value = false
+    payIdError.value = ''
   },
 )
+
+function startPayIdEdit(current: string | null) {
+  payIdDraft.value = current ?? ''
+  payIdError.value = ''
+  editingPayId.value = true
+}
+
+/** Blank clears it; the server trims too, but sending what will be stored keeps the two in step. */
+async function savePayId() {
+  if (busy.value) return
+  busy.value = true
+  activeAction.value = 'payid'
+  payIdError.value = ''
+  try {
+    session.me = await api.setPayId(payIdDraft.value.trim() || null)
+    editingPayId.value = false
+    emit('changed')
+  } catch (failure) {
+    payIdError.value = failure instanceof Error ? failure.message : String(failure)
+  } finally {
+    busy.value = false
+    activeAction.value = null
+  }
+}
 
 function startRename(member: { id: string; displayName: string }) {
   editingId.value = member.id
@@ -154,12 +191,12 @@ async function deleteTrip() {
   const outstanding = props.trip.unsettledMinor
   const question = outstanding
     ? t('invite.deleteConfirmOutstanding', {
-        name: props.trip.name,
-        amount: formatMinor(outstanding, {
-          currencyCode: props.trip.currencyCode,
-          symbol: currencySymbol(props.trip.currencyCode),
-        }),
-      })
+      name: props.trip.name,
+      amount: formatMinor(outstanding, {
+        currencyCode: props.trip.currencyCode,
+        symbol: currencySymbol(props.trip.currencyCode),
+      }),
+    })
     : t('invite.deleteConfirm', { name: props.trip.name })
   if (!confirm(question)) return
 
@@ -212,43 +249,123 @@ async function copyLink() {
         >
           <PersonAvatar :name="member.displayName" :hue="member.personHue" :size="36" />
 
-          <form
-            v-if="editingId === member.id"
-            class="invite__rename"
-            data-testid="rename-form"
-            @submit.prevent="saveRename"
-          >
-            <TextField v-model="editedName" test-id="rename-name" :disabled="busy" />
-            <TallyButton
-              type="submit"
-              variant="secondary"
-              size="sm"
-              data-testid="rename-save"
-              :disabled="!editedName.trim() || busy"
-            >
-              {{ t('common.save') }}
-            </TallyButton>
-            <TallyButton variant="ghost" size="sm" data-testid="rename-cancel" @click="editingId = null">
-              {{ t('common.cancel') }}
-            </TallyButton>
-          </form>
+          <div class="invite__body">
+            <div class="invite__head">
+              <form
+                v-if="editingId === member.id"
+                class="invite__rename"
+                data-testid="rename-form"
+                @submit.prevent="saveRename"
+              >
+                <TextField v-model="editedName" test-id="rename-name" :disabled="busy" />
+                <TallyButton
+                  type="submit"
+                  variant="secondary"
+                  size="sm"
+                  data-testid="rename-save"
+                  :disabled="!editedName.trim() || busy"
+                >
+                  {{ t('common.save') }}
+                </TallyButton>
+                <TallyButton variant="ghost" size="sm" data-testid="rename-cancel" @click="editingId = null">
+                  {{ t('common.cancel') }}
+                </TallyButton>
+              </form>
 
-          <template v-else>
-            <span class="invite__name">{{ member.isYou ? t('common.you') : member.displayName }}</span>
-            <button
-              v-if="trip.youAreCreator"
-              type="button"
-              class="invite__edit"
-              data-testid="rename-member"
-              :aria-label="t('invite.rename', { name: member.displayName })"
-              @click="startRename(member)"
-            >
-              <TallyIcon name="pencil" :size="16" />
-            </button>
-            <TallyBadge :tone="member.claimed ? 'settled' : 'pending'">
-              {{ member.claimed ? t('invite.claimed') : t('invite.unclaimed') }}
-            </TallyBadge>
-          </template>
+              <template v-else>
+                <span class="invite__name">{{ member.isYou ? t('common.you') : member.displayName }}</span>
+                <button
+                  v-if="trip.youAreCreator"
+                  type="button"
+                  class="invite__edit"
+                  data-testid="rename-member"
+                  :aria-label="t('invite.rename', { name: member.displayName })"
+                  @click="startRename(member)"
+                >
+                  <TallyIcon name="pencil" :size="16" />
+                </button>
+                <TallyBadge :tone="member.claimed ? 'settled' : 'pending'">
+                  {{ member.claimed ? t('invite.claimed') : t('invite.unclaimed') }}
+                </TallyBadge>
+              </template>
+            </div>
+
+            <template v-if="member.isYou">
+              <form
+                v-if="editingPayId"
+                class="invite__payid-form"
+                data-testid="payid-form"
+                @submit.prevent="savePayId"
+              >
+                <TextField
+                  v-model="payIdDraft"
+                  test-id="payid-input"
+                  :label="t('payId.label')"
+                  :placeholder="t('payId.placeholder')"
+                  :error="payIdError || undefined"
+                  :disabled="busy"
+                />
+                <div class="invite__payid-actions">
+                  <TallyButton
+                    type="submit"
+                    variant="secondary"
+                    size="sm"
+                    data-testid="payid-save"
+                    :loading="activeAction === 'payid'"
+                    :disabled="busy"
+                    @click="savePayId"
+                  >
+                    {{ t('common.save') }}
+                  </TallyButton>
+                  <TallyButton
+                    variant="ghost"
+                    size="sm"
+                    data-testid="payid-cancel"
+                    @click="editingPayId = false"
+                  >
+                    {{ t('common.cancel') }}
+                  </TallyButton>
+                </div>
+              </form>
+              <PayIdLine
+                v-else-if="member.payId"
+                :pay-id="member.payId"
+                :recently-changed="false"
+                :owner-name="member.displayName"
+                :copyable="false"
+              >
+                <button
+                  type="button"
+                  class="invite__edit"
+                  data-testid="payid-edit"
+                  :aria-label="t('payId.edit')"
+                  @click="startPayIdEdit(member.payId)"
+                >
+                  <TallyIcon name="pencil" :size="16" />
+                </button>
+              </PayIdLine>
+              <TallyButton
+                v-else
+                class="invite__payid-add"
+                variant="secondary"
+                size="sm"
+                data-testid="payid-add"
+                @click="startPayIdEdit(null)"
+              >
+                {{ t('payId.add') }}
+              </TallyButton>
+              <p class="invite__hint" data-testid="payid-hint">{{ t('payId.hint') }}</p>
+            </template>
+            <PayIdLine
+              v-else-if="member.claimed"
+              :pay-id="member.payId"
+              :recently-changed="member.payIdChangedRecently"
+              :owner-name="member.displayName"
+            />
+            <span v-else class="invite__payid-none" data-testid="payid-unclaimed">
+               {{ t('payId.noneYet') }}
+             </span>
+          </div>
         </div>
       </section>
 
@@ -374,8 +491,44 @@ async function copyLink() {
 
 .invite__member {
   display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.invite__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* The name line keeps the avatar's height, so a short roster row still reads as one line. */
+.invite__head {
+  display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-height: 36px;
+}
+
+.invite__payid-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.invite__payid-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.invite__payid-add {
+  align-self: flex-start;
+}
+
+.invite__payid-none {
+  font-size: var(--text-caption);
+  color: var(--text-muted);
 }
 
 .invite__name {

@@ -4,6 +4,8 @@ import app.ledger.server.invite.InvalidInviteToken
 import app.ledger.server.invite.InviteTokens
 import app.ledger.server.invite.IssuedInvite
 import app.ledger.server.item.toView
+import app.ledger.server.user.UserDirectory
+import app.ledger.server.user.UserEntity
 import app.ledger.server.user.UserRepository
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.dao.OptimisticLockingFailureException
@@ -21,6 +23,7 @@ class TripService(
     private val trips: TripRepository,
     private val members: TripMemberRepository,
     private val users: UserRepository,
+    private val directory: UserDirectory,
     private val inviteTokens: InviteTokens,
     private val snapshots: TripSnapshots,
     private val access: TripAccess,
@@ -79,7 +82,8 @@ class TripService(
         if (visible.isEmpty()) return TripsView(emptyList(), emptyList(), 0, deleted)
 
         val loaded = snapshots.loadAll(visible.map { it.id })
-        val views = visible.mapNotNull { trip -> loaded[trip.id]?.let { trip.toView(it, actor) } }
+        val accounts = accountsBehind(loaded.values)
+        val views = visible.mapNotNull { trip -> loaded[trip.id]?.let { trip.toView(it, actor, accounts, directory) } }
 
         return TripsView(
             trips = views,
@@ -118,7 +122,8 @@ class TripService(
         } catch (race: DataIntegrityViolationException) {
             throw ResponseStatusException(HttpStatus.CONFLICT, "Somebody on this trip already has that name", race)
         }
-        return saved.toMemberView(actor)
+        // A seat that was only just added has nobody behind it, so no PayID to look up.
+        return saved.toMemberView(actor, account = null, directory)
     }
 
     /**
@@ -149,7 +154,7 @@ class TripService(
         } catch (race: DataIntegrityViolationException) {
             throw ResponseStatusException(HttpStatus.CONFLICT, "Somebody on this trip already has that name", race)
         }
-        return member.toMemberView(actor)
+        return member.toMemberView(actor, member.userId?.let { users.findById(it).orElse(null) }, directory)
     }
 
     /** Trip creator only: the share link is how the roster gets filled, so it follows the roster rule. */
@@ -380,11 +385,28 @@ class TripService(
 
     private fun view(trip: TripEntity, actor: UUID): TripView {
         members.flush()
-        return trip.toView(snapshots.load(trip.id), actor)
+        val snapshot = snapshots.load(trip.id)
+        return trip.toView(snapshot, actor, accountsBehind(listOf(snapshot)), directory)
+    }
+
+    /**
+     * The accounts behind every claimed seat across [loaded], in one query however many trips and
+     * members that is — a PayID per member fetched one at a time is the N+1 [TripSnapshots] exists
+     * to avoid, arriving through the roster instead of the items.
+     */
+    private fun accountsBehind(loaded: Collection<TripSnapshot>): Map<UUID, UserEntity> {
+        val userIds = loaded.flatMap { snapshot -> snapshot.roster.mapNotNull { it.userId } }.toSet()
+        if (userIds.isEmpty()) return emptyMap()
+        return users.findAllById(userIds).associateBy { it.id }
     }
 }
 
-private fun TripEntity.toView(snapshot: TripSnapshot, actor: UUID): TripView {
+private fun TripEntity.toView(
+    snapshot: TripSnapshot,
+    actor: UUID,
+    accounts: Map<UUID, UserEntity>,
+    directory: UserDirectory,
+): TripView {
     val you = snapshot.memberFor(actor)
     return TripView(
         id = id,
@@ -394,7 +416,7 @@ private fun TripEntity.toView(snapshot: TripSnapshot, actor: UUID): TripView {
         currencyCode = currencyCode,
         startsOn = startsOn,
         endsOn = endsOn,
-        members = snapshot.roster.map { it.toMemberView(actor) },
+        members = snapshot.roster.map { it.toMemberView(actor, it.userId?.let(accounts::get), directory) },
         items = snapshot.items.map { snapshot.toView(it, actor) },
         yourNetMinor = you?.let { snapshot.netFor(it.id) } ?: 0L,
         unsettledMinor = snapshot.roster.sumOf { member -> maxOf(0L, snapshot.netFor(member.id)) },
@@ -410,12 +432,14 @@ private fun TripEntity.toView(snapshot: TripSnapshot, actor: UUID): TripView {
     )
 }
 
-private fun TripMemberEntity.toMemberView(actor: UUID) = MemberView(
+private fun TripMemberEntity.toMemberView(actor: UUID, account: UserEntity?, directory: UserDirectory) = MemberView(
     id = id,
     displayName = displayName,
     personHue = personHue,
     claimed = userId != null,
     isYou = userId == actor,
+    payId = account?.payId,
+    payIdChangedRecently = account != null && directory.payIdChangedRecently(account),
 )
 
 private fun TripEntity.toDeletedView(purgesAfter: Duration) = DeletedTripView(
