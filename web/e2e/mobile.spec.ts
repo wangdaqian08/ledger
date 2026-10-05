@@ -132,7 +132,7 @@ test('"How it adds up" fits the phone, at its widest: Settled column and five-fi
   await sheet
     .getByTestId('breakdown-toggle')
     .locator('svg')
-    .evaluate((icon:SVGElement) => {
+    .evaluate((icon: SVGElement) => {
       icon.style.transition = 'none'
       icon.style.transform = 'rotate(45deg)'
     })
