@@ -129,6 +129,13 @@ test('"How it adds up" fits the phone, at its widest: Settled column and five-fi
   await table.scrollIntoViewIfNeeded()
   await expectNoSidewaysScroll(page, 'how it adds up, expanded')
 
+  await sheet
+    .getByTestId('breakdown-toggle')
+    .locator('svg')
+    .evaluate((icon:SVGElement) => {
+      icon.style.transition = 'none'
+      icon.style.transform = 'rotate(45deg)'
+    })
   // Necessary, not sufficient: the sheet's body scrolls, so a table too wide for it would scroll
   // sideways *inside the sheet* — which the check above deliberately forgives as a scroller. So the
   // table answers for itself: no box from it up to the sheet may scroll sideways, and no figure may
