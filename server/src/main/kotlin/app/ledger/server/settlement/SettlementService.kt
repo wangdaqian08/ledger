@@ -1,13 +1,18 @@
 package app.ledger.server.settlement
 
+import app.ledger.engine.Family
 import app.ledger.engine.MemberId
+import app.ledger.engine.familyTransfers
 import app.ledger.server.payback.PaybackEntity
 import app.ledger.server.payback.PaybackRepository
 import app.ledger.server.payback.PaybackStatusName
 import app.ledger.server.payback.PaybackView
 import app.ledger.server.payback.toView
 import app.ledger.server.trip.TripAccess
+import app.ledger.server.trip.TripMemberEntity
+import app.ledger.server.trip.TripSnapshot
 import app.ledger.server.trip.TripSnapshots
+import app.ledger.server.user.UserRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -20,6 +25,7 @@ class SettlementService(
     private val paybacks: PaybackRepository,
     private val snapshots: TripSnapshots,
     private val access: TripAccess,
+    private val users: UserRepository,
 ) {
     /** Your position with every other person on the trip, one row each. */
     @Transactional(readOnly = true)
@@ -65,10 +71,51 @@ class SettlementService(
                 )
             }
 
+        val yourNetMinor = snapshot.netFor(you.id)
         return SettlementView(
             rows = rows,
-            yourNetMinor = snapshot.netFor(you.id),
-            allSquare = rows.all { it.owedMinor == 0L },
+            yourNetMinor = yourNetMinor,
+            // Your net, not your rows. Paying by the fewest-transfers list routes money past the
+            // person it was originally owed to — Eve pays Cat what she owed Ben — so rows can cancel
+            // without ever reaching zero. Waiting for every row would never call that trip square.
+            allSquare = yourNetMinor == 0L,
+            transfers = snapshot.transfers(::TransferView),
+            breakdown = breakdown(snapshot, you.id),
+        )
+    }
+
+    /**
+     * "How it adds up" (§3), one row per person in roster order. Every figure is the engine's,
+     * totals included: the browser renders the table and never sums it, because a client-side total
+     * that disagreed would defeat the reason the table exists — letting a person check the maths.
+     */
+    private fun breakdown(snapshot: TripSnapshot, you: UUID): BreakdownView {
+        val breakdown = snapshot.breakdown()
+        val figuresOf = breakdown.rows.associateBy { it.member }
+        return BreakdownView(
+            rows = snapshot.roster.map { member ->
+                val figures = figuresOf.getValue(MemberId(member.id.toString()))
+                BreakdownRowView(
+                    memberId = member.id,
+                    displayName = member.displayName,
+                    personHue = member.personHue,
+                    isYou = member.id == you,
+                    paidMinor = figures.frontedMinor,
+                    shareMinor = figures.shareMinor,
+                    settledMinor = figures.settledMinor,
+                    netMinor = figures.netMinor,
+                    transfersByPerson = figures.bilateralCount,
+                    transfersFewest = figures.planCount,
+                )
+            },
+            totals = BreakdownTotalsView(
+                paidMinor = breakdown.frontedMinor,
+                shareMinor = breakdown.shareMinor,
+                settledMinor = breakdown.settledMinor,
+                netMinor = breakdown.netMinor,
+                transfersByPerson = breakdown.bilateralPairs,
+                transfersFewest = breakdown.planTransfers,
+            ),
         )
     }
 
@@ -116,9 +163,15 @@ class SettlementService(
      * A nudge to somebody who owes you. Changes no balance and writes no payback (§7a).
      *
      * **It does not yet deliver anything.** Push notifications are explicitly out of phase 1 (§9),
-     * so this validates that the nudge makes sense — they are on the trip, and they really do owe
-     * you — and then returns. The endpoint exists so the button can be wired and the rule lives
-     * somewhere; sending is the part still missing, and no caller should be told otherwise.
+     * so this validates that the nudge makes sense — they are on the trip, they really do owe you,
+     * and you are not square overall — and then returns. The endpoint exists so the button can be
+     * wired and the rule lives somewhere; sending is the part still missing, and no caller should be
+     * told otherwise.
+     *
+     * Square overall wins over a row. With a net of zero, whatever one person's row says they owe
+     * you is cancelled by what you owe somebody else — the chain where Alice owes Bob and Bob owes
+     * Carol, or a trip paid by the fewest-transfers list. Chasing it would collect money that is
+     * not, in the end, yours; and it is the same rule that hides the Remind button (`allSquare`).
      */
     @Transactional(readOnly = true)
     fun remind(tripId: UUID, command: Remind, actor: UUID) {
@@ -135,6 +188,12 @@ class SettlementService(
         if (snapshot.owesBetween(them.id, you.id) <= 0) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "They do not owe you anything")
         }
+        if (snapshot.netFor(you.id) == 0L) {
+            throw ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "You're square overall — there is nothing to remind them of",
+            )
+        }
     }
 
     /**
@@ -142,10 +201,14 @@ class SettlementService(
      * else as an automatic one-person Family. Pre-validates every condition explicitly, the same
      * division of labour as [app.ledger.server.item.ItemService]'s own roster validation, so the
      * engine's own `require()`s are unreachable in practice.
+     *
+     * Beside the cards, the fewest-transfers plan with each Family as one party (§7a). It is read off
+     * the partition's own nets, which came from the snapshot's cached settlement, so the whole
+     * request still pays for one `settle()`.
      */
     @Transactional(readOnly = true)
     fun families(tripId: UUID, command: PreviewFamilies, actor: UUID): FamiliesView {
-        access.visibleTrip(tripId, actor)
+        val trip = access.visibleTrip(tripId, actor)
         val snapshot = snapshots.load(tripId)
         val you = snapshot.memberFor(actor)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
@@ -181,19 +244,51 @@ class SettlementService(
             )
         }
 
-        fun membersOf(family: app.ledger.engine.Family): List<FamilyMemberView> =
-            snapshot.roster
-                .filter { MemberId(it.id.toString()) in family.members }
-                .map { FamilyMemberView(it.id, it.displayName, it.personHue, isYou = it.id == you.id) }
+        fun rosterOf(family: Family): List<TripMemberEntity> =
+            snapshot.roster.filter { MemberId(it.id.toString()) in family.members }
+
+        fun membersOf(family: Family): List<FamilyMemberView> =
+            rosterOf(family).map { FamilyMemberView(it.id, it.displayName, it.personHue, isYou = it.id == you.id) }
+
+        val partition = snapshot.families(explicit)
+        val plan = familyTransfers(partition)
+
+        // Who has a PayID, for every account behind the roster in one query — a lookup per line, or
+        // per member, would be the N+1 the snapshot exists to avoid. Skipped when nobody pays anybody.
+        val accounts = snapshot.roster.mapNotNull { it.userId }.toSet()
+        val withPayId: Set<UUID> = if (plan.isEmpty() || accounts.isEmpty()) {
+            emptySet()
+        } else {
+            users.findAllById(accounts).filter { !it.payId.isNullOrBlank() }.mapTo(mutableSetOf()) { it.id }
+        }
+        val userIdOf = snapshot.roster.associate { it.id to it.userId }
+        val pendingSettlements = snapshot.paybacks.filter {
+            it.itemId == null && it.status == PaybackStatusName.PENDING
+        }
 
         return FamiliesView(
-            snapshot.families(explicit).map { balance ->
+            families = partition.map { balance ->
                 FamilyView(
                     members = membersOf(balance.family),
                     netMinor = balance.netMinor,
                     counterparts = balance.betweenFamilies.map { (other, owed) ->
                         FamilyCounterpartView(membersOf(other), owed)
                     },
+                )
+            },
+            transfers = plan.map { line ->
+                val payers = rosterOf(line.from).map { it.id }.toSet()
+                val payees = rosterOf(line.to)
+                val payeeIds = payees.map { it.id }.toSet()
+                FamilyTransferView(
+                    from = membersOf(line.from),
+                    to = membersOf(line.to),
+                    amountMinor = line.amountMinor,
+                    // Roster order on both counts: the first with a PayID, else simply the first.
+                    payToMemberId = (payees.firstOrNull { it.userId in withPayId } ?: payees.first()).id,
+                    pending = pendingSettlements
+                        .filter { it.fromMemberId in payers && it.toMemberId in payeeIds }
+                        .map { it.toView(actor, trip.createdByUserId) { member -> userIdOf[member] } },
                 )
             },
         )

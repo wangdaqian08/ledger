@@ -376,8 +376,24 @@ describe('FamilyBuilder', () => {
   // Only the *unassigned* candidates ever reach this component — SettleUpSheet excludes anyone
   // already placed in a built Family structurally, before this component ever mounts.
   const candidates: MemberView[] = [
-    { id: 'm-c', displayName: 'Cara', personHue: 3, claimed: true, isYou: false },
-    { id: 'm-d', displayName: 'Dana', personHue: 4, claimed: true, isYou: false },
+    {
+      id: 'm-c',
+      displayName: 'Cara',
+      personHue: 3,
+      claimed: true,
+      isYou: false,
+      payId: null,
+      payIdChangedRecently: false,
+    },
+    {
+      id: 'm-d',
+      displayName: 'Dana',
+      personHue: 4,
+      claimed: true,
+      isYou: false,
+      payId: null,
+      payIdChangedRecently: false,
+    },
   ]
 
   it('commits only the ticked ids, in candidate order', async () => {

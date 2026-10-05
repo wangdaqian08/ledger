@@ -91,3 +91,94 @@ test('the pay form fits the phone', async ({ page }) => {
   await expect(sheet.getByTestId('pay-amount')).toContainText('25.00')
   await expectNoSidewaysScroll(page, 'pay form open')
 })
+
+test('"How it adds up" fits the phone, at its widest: Settled column and five-figure amounts', async ({
+  page,
+}) => {
+  await signIn(page, uniquePerson('Sums'))
+  await createTrip(page, 'Sums lab')
+  await addMembers(page, ['Friend Number Ten'])
+
+  // The friend fronts a five-figure bill split evenly — $6,172.83 each, no odd cent — so the money
+  // columns carry the widest figures a friends' trip is likely to see.
+  await page.getByTestId('add-expense').click()
+  await typeAmount(page, '1234566')
+  await page.getByTestId('expense-title').fill('Chalet')
+  await page.getByTestId('next-step').click()
+  await page.getByTestId('split-all').click()
+  await page.getByTestId('payer-chip').filter({ hasText: 'Friend Number Ten' }).click()
+  await page.getByTestId('save-expense').click()
+  await expect(page.getByTestId('expense-row').filter({ hasText: 'Chalet' })).toBeVisible()
+
+  // The viewer pays them back and, as the creator, confirms it for a friend who has never signed in
+  // and so cannot (§3) — which puts something in Settled and grows the table its fourth money column.
+  await page.getByTestId('settle-up').click()
+  const sheet = page.getByTestId('sheet-panel')
+  await sheet.getByTestId('row-pay').click()
+  await expect(sheet.getByTestId('pay-amount')).toContainText('6,172.83')
+  await sheet.getByTestId('pay-send').click()
+  await sheet.getByTestId('pending-claim').getByTestId('pending-approve').click()
+  await expect(sheet.getByTestId('settled-claim')).toBeVisible()
+
+  await sheet.getByTestId('breakdown-toggle').click()
+  const table = sheet.getByTestId('breakdown')
+  await expect(table).toBeVisible()
+  await expect(table.getByTestId('breakdown-head-settled')).toBeVisible()
+  await expect(table.getByTestId('breakdown-row')).toHaveCount(2)
+  await expect(table.getByTestId('breakdown-total').getByTestId('breakdown-paid')).toHaveText('$12,345.66')
+  await table.scrollIntoViewIfNeeded()
+  await expectNoSidewaysScroll(page, 'how it adds up, expanded')
+
+  // Necessary, not sufficient: the sheet's body scrolls, so a table too wide for it would scroll
+  // sideways *inside the sheet* — which the check above deliberately forgives as a scroller. So the
+  // table answers for itself: no box from it up to the sheet may scroll sideways, and no figure may
+  // spill out of its own column over the next one.
+  const spill = await table.evaluate((root) => {
+    const sideways: string[] = []
+    for (let node: Element | null = root; node; node = node.parentElement) {
+      if (node.scrollWidth > node.clientWidth + 1) sideways.push(`${node.tagName}.${node.className}`)
+      if (node.getAttribute('data-testid') === 'sheet-panel') break
+    }
+    const columns = ['paid', 'share', 'settled', 'balance', 'transfers']
+    const cells = root.querySelectorAll(columns.map((c) => `[data-testid="breakdown-${c}"]`).join(','))
+    const spilling = Array.from(cells)
+      .filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
+      .map((cell) => `${cell.getAttribute('data-testid')}: ${cell.textContent?.trim()}`)
+    return { sideways, spilling, cells: cells.length }
+  })
+  // Two people and the totals, five figures each: proof the selectors found the table at all.
+  expect(spill.cells).toBe(15)
+  expect(spill.sideways, 'nothing from the table up to the sheet may scroll sideways').toEqual([])
+  expect(spill.spilling, 'every figure must fit its own column').toEqual([])
+})
+
+test('a long PayID wraps inside the phone, on the roster and in the transfer plan', async ({ page }) => {
+  await signIn(page, uniquePerson('Wrap'))
+  await createTrip(page, 'Wrap lab')
+  await addMembers(page, ['Friend Number Ten'])
+
+  // The viewer fronts a bill, so the plan has the friend paying them — their own PayID on show.
+  await page.getByTestId('add-expense').click()
+  await typeAmount(page, '5000')
+  await page.getByTestId('expense-title').fill('Mine')
+  await page.getByTestId('next-step').click()
+  await page.getByTestId('split-all').click()
+  await page.getByTestId('save-expense').click()
+  await expect(page.getByTestId('expense-row').filter({ hasText: 'Mine' })).toBeVisible()
+
+  // No spaces and no hyphens: nothing for the browser to break on but overflow-wrap itself.
+  const longPayId = `${'x'.repeat(120)}@example.com`
+  await page.getByTestId('appbar-action').click()
+  await page.getByTestId('payid-add').click()
+  await page.getByTestId('payid-input').fill(longPayId)
+  await page.getByTestId('payid-save').click()
+  await expect(page.getByTestId('payid-value')).toHaveText(longPayId)
+  await expectNoSidewaysScroll(page, 'roster with a long PayID')
+  await page.getByTestId('sheet-close').click()
+
+  await page.getByTestId('settle-up').click()
+  await page.getByTestId('mode-min-transfer').click()
+  await expect(page.getByTestId('transfer-row')).toHaveCount(1)
+  await expect(page.getByTestId('transfer-row').getByTestId('payid-value')).toHaveText(longPayId)
+  await expectNoSidewaysScroll(page, 'transfer plan with a long PayID')
+})

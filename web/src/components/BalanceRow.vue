@@ -29,9 +29,18 @@ withDefaults(
     reminded?: boolean
     /** All-square rows are sunk to the bottom of Who-owes-who and faded — present, not prominent. */
     muted?: boolean
+    actions?: boolean
     divider?: boolean
   }>(),
-  { currencyCode: 'AUD', symbol: '$', pending: false, reminded: false, muted: false, divider: true },
+  {
+    currencyCode: 'AUD',
+    symbol: '$',
+    pending: false,
+    reminded: false,
+    muted: false,
+    actions: true,
+    divider: true,
+  },
 )
 
 defineEmits<{ pay: []; remind: [] }>()
@@ -67,7 +76,7 @@ const { t } = useI18n()
       />
 
       <TallyButton
-        v-if="owedMinor > 0 && !pending"
+        v-if="actions && owedMinor > 0 && !pending"
         size="sm"
         variant="secondary"
         :disabled="reminded"
@@ -77,7 +86,7 @@ const { t } = useI18n()
         {{ reminded ? t('settle.reminded') : t('settle.remind') }}
       </TallyButton>
       <TallyButton
-        v-else-if="owedMinor < 0 && !pending"
+        v-else-if="actions && owedMinor < 0 && !pending"
         size="sm"
         data-testid="row-pay"
         @click="$emit('pay')"

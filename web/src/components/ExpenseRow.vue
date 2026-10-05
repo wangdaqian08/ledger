@@ -37,7 +37,7 @@ const props = withDefaults(
     paidBy?: string
     paidByYou?: boolean
     spentOn?: string
-    yourShareMinor: number
+    amountMinor: number
     allSquare?: boolean
     currencyCode?: string
     symbol?: string
@@ -90,16 +90,14 @@ const subtitle = () => [paidLabel(), props.spentOn].filter(Boolean).join(' · ')
 
     <span class="row__trailing">
       <AmountText
-        :amount-minor="Math.abs(yourShareMinor)"
+        :amount-minor="amountMinor"
         :currency-code="currencyCode"
         :symbol="symbol"
         :tone="allSquare ? 'settled' : 'neutral'"
         :show-sign="false"
       />
       <span class="row__caption">
-        {{
-          allSquare ? t('trip.settledCaption') : paidByYou ? t('trip.frontedCaption') : t('trip.shareCaption')
-        }}
+        {{ allSquare ? t('trip.settledCaption') : t('trip.totalCaption') }}
       </span>
     </span>
   </button>

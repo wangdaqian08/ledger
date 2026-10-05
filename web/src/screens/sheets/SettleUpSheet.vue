@@ -1,21 +1,27 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AmountKeypadField from '@/components/AmountKeypadField.vue'
 import AmountText from '@/components/AmountText.vue'
 import BalanceRow from '@/components/BalanceRow.vue'
 import FamilyBalanceCard from '@/components/FamilyBalanceCard.vue'
 import FamilyBuilder from '@/components/FamilyBuilder.vue'
+import PayIdLine from '@/components/PayIdLine.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import TallyButton from '@/components/TallyButton.vue'
+import TallyIcon from '@/components/TallyIcon.vue'
 import TextField from '@/components/TextField.vue'
 import {
   api,
+  type BreakdownView,
   type FamiliesView,
+  type FamilyMemberView,
+  type FamilyTransferView,
   type FamilyView,
   type MemberView,
   type PaybackView,
   type SettlementRow,
+  type TransferView,
 } from '@/lib/api'
 
 /**
@@ -28,31 +34,63 @@ import {
  * Also hosts the Family mode toggle (§7b): an ephemeral, viewer-built partition of the whole trip,
  * shown as one card per Family — explicit or auto-singleton — each with one bilateral row per
  * *other* Family. Nothing about it persists; it resets whenever this sheet reopens.
+ *
+ * And "By minimum transfer": the whole trip's fewest-transfers plan, exactly as the server derived
+ * and ordered it — numbered, each line with where to send the money (the recipient's PayID). Only
+ * your own transfers carry Pay, because a settlement is always filed by the person paying; it is
+ * the same PENDING claim as Pay on a row, so approving it stays on the By person strip (§7a).
+ * Paying by transfers settles nets, not pairs, which is why "square" means your net is 0: the rows
+ * can then still read non-zero while cancelling out, and they fade with nothing left to act on.
+ *
+ * With Families built, the plan honours them: a Family settles among itself, so as one party it
+ * pays or gets paid once rather than each member squaring up separately. They can be built under
+ * "By family" or right here — one partition, two views of it — and the plan's Undo takes back the
+ * most recent one, since the plan has no per-Family card to undo from. That plan comes back with
+ * the Family preview, already ordered, with the member a payment on each line goes to chosen by
+ * the server. Building nothing leaves the per-person plan exactly as it was, and the Families are
+ * still ephemeral — nothing is saved, and they reset with the rest of the sheet.
+ * Any claim already filed on a family line hides Pay from every member of the paying Family, because
+ * a second member paying the same line would be the Family paying twice.
+ *
+ * Under every mode, folded away until asked for, "How it adds up": the server's per-person
+ * breakdown — paid, share, settled, balance, transfers by person → fewest — and its totals, so
+ * anybody can check the arithmetic by hand. Rendered as sent; no column is ever summed here.
  */
-const props = defineProps<{
-  open: boolean
-  tripId: string
-  myMemberId: string
-  youAreCreator: boolean
-  rows: SettlementRow[]
-  /** When opened from a who-owes row's Pay, the person to jump straight into paying. */
-  focusMemberId?: string | null
-  currencyCode: string
-  symbol: string
-  members: MemberView[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    tripId: string
+    myMemberId: string
+    youAreCreator: boolean
+    rows: SettlementRow[]
+    /** A person to jump straight into paying on open. Nothing passes one today: the trip screen's
+     *  who-owes card that did is gone, and its Settle up button opens on nobody. */
+    focusMemberId?: string | null
+    currencyCode: string
+    symbol: string
+    members: MemberView[]
+    /** The server's verdict that the viewer's overall net is 0 — never re-derived from the rows. */
+    allSquare?: boolean
+    /** The trip's fewest-transfers plan, in the server's order. */
+    transfers?: TransferView[]
+    /** "How it adds up", as the server derived it. Absent from an older server: no section then. */
+    breakdown?: BreakdownView | null
+  }>(),
+  { focusMemberId: null, allSquare: false, transfers: () => [], breakdown: null },
+)
 const emit = defineEmits<{ close: []; changed: [] }>()
 
 const { t } = useI18n()
 
-// Same order as the who-owes card: real debts first, all-square people sunk and faded. Two surfaces
-// showing the same people in different orders reads as the list having changed under you.
+// Real debts first, all-square people sunk and faded, so a $0 row never sits above money that still
+// needs acting on.
 const orderedRows = computed(() => [
   ...props.rows.filter((r) => r.owedMinor !== 0),
   ...props.rows.filter((r) => r.owedMinor === 0),
 ])
 
-const paying = ref<SettlementRow | null>(null)
+/** Whose pay form is unfolded, by member id — a By person row's or a transfer's recipient. */
+const paying = ref<string | null>(null)
 const amountMinor = ref(0)
 const error = ref('')
 const busy = ref(false)
@@ -70,16 +108,18 @@ watch(
     reminded.value = null
     rejecting.value = null
     rejectReason.value = ''
-    // Family mode is entirely ephemeral (§7b): every reopen starts back on "By person" with
-    // nothing built, the same way the rest of this sheet's state resets.
-    familyMode.value = false
+    // Every mode is a view, and Family mode is entirely ephemeral (§7b): every reopen starts back
+    // on "By person" with nothing built, the same way the rest of this sheet's state resets.
+    mode.value = 'person'
     builtFamilies.value = []
-    buildingFamily.value = false
+    buildingOn.value = null
     familiesView.value = null
     familiesError.value = ''
     familyTicks.value = {}
-    // Opened from a specific row's Pay: unfold that person's amount form straight away.
-    if (props.focusMemberId) {
+    breakdownOpen.value = false
+    // Opened from a specific row's Pay: unfold that person's amount form straight away — unless
+    // the viewer is square overall, where the rows cancel out and there is nothing to pay.
+    if (props.focusMemberId && !props.allSquare) {
       const row = props.rows.find((r) => r.memberId === props.focusMemberId)
       if (row) startPay(row)
     }
@@ -104,11 +144,17 @@ const declinedOf = (row: SettlementRow): PaybackView[] => {
 }
 
 function startPay(row: SettlementRow) {
-  paying.value = row
+  paying.value = row.memberId
   // Positive owedMinor is "you owe them" — the amount the Pay button pre-fills.
   amountMinor.value = Math.max(0, row.owedMinor)
   error.value = ''
 }
+
+/** Square overall while some row is not: those rows cancel out, so none of them offers an action. */
+const squareOverall = computed(() => props.allSquare && props.rows.some((r) => r.owedMinor !== 0))
+
+const memberById = (memberId: string) => props.members.find((m) => m.id === memberId)
+const memberName = (memberId: string) => memberById(memberId)?.displayName ?? '?'
 
 async function act(action: () => Promise<unknown>, tag: string | null = null) {
   if (busy.value) return
@@ -127,12 +173,9 @@ async function act(action: () => Promise<unknown>, tag: string | null = null) {
 }
 
 async function pay() {
-  const row = paying.value
-  if (!row || amountMinor.value <= 0) return
-  await act(
-    () => api.submitSettlement(props.tripId, { toMemberId: row.memberId, amountMinor: amountMinor.value }),
-    'pay',
-  )
+  const toMemberId = paying.value
+  if (!toMemberId || amountMinor.value <= 0) return
+  await act(() => api.submitSettlement(props.tripId, { toMemberId, amountMinor: amountMinor.value }), 'pay')
   if (!error.value) paying.value = null
 }
 
@@ -147,6 +190,7 @@ async function undoClaim(claim: PaybackView) {
   if (claim.status === 'APPROVED' && !confirm(t('settle.undoConfirm'))) return
   await act(() => api.undoPayback(claim.id))
 }
+
 const approveClaim = (paybackId: string) => act(() => api.approvePayback(paybackId))
 
 async function rejectClaim(paybackId: string) {
@@ -158,12 +202,64 @@ async function rejectClaim(paybackId: string) {
   }
 }
 
+// ---- Modes. Each is a view of the same trip; switching is never a change worth announcing. ----
+
+type Mode = 'person' | 'family' | 'transfers'
+const mode = ref<Mode>('person')
+
+function setMode(next: Mode) {
+  if (mode.value === next) return
+  mode.value = next
+  // A half-filled pay form belongs to the view it was opened in, not to the next one.
+  paying.value = null
+  error.value = ''
+}
+
+// ---- By minimum transfer: the server's plan, rendered as sent. ----
+
+/** "You pay Cat" / "Dan pays you" / "Dan pays Ben" — the viewer is always "you", grammatically. */
+function transferSentence(transfer: TransferView): string {
+  if (transfer.fromMemberId === props.myMemberId) {
+    return t('settle.transferYouPay', { to: memberName(transfer.toMemberId) })
+  }
+  if (transfer.toMemberId === props.myMemberId) {
+    return t('settle.transferPaysYou', { from: memberName(transfer.fromMemberId) })
+  }
+  return t('settle.transferPays', {
+    from: memberName(transfer.fromMemberId),
+    to: memberName(transfer.toMemberId),
+  })
+}
+
+/**
+ * A claim already waiting on this transfer, if the viewer is one end of it: one they sent (so Pay
+ * would be a second payment), or one sent to them (which they decide on the By person strip).
+ * Only the viewer's own pairs are in `rows`, so a transfer between two others never has one here.
+ */
+function pendingOnTransfer(transfer: TransferView): { claim: PaybackView; sentByYou: boolean } | null {
+  const mine = transfer.fromMemberId === props.myMemberId
+  if (!mine && transfer.toMemberId !== props.myMemberId) return null
+  const other = mine ? transfer.toMemberId : transfer.fromMemberId
+  const row = props.rows.find((r) => r.memberId === other)
+  const claim = row ? pendingOf(row).find((p) => p.fromMemberId === transfer.fromMemberId) : undefined
+  return claim ? { claim, sentByYou: mine } : null
+}
+
+function startTransferPay(transfer: TransferView) {
+  paying.value = transfer.toMemberId
+  amountMinor.value = transfer.amountMinor
+  error.value = ''
+}
+
 // ---- Family mode (§7b): an ephemeral, viewer-built partition of the whole trip. ----
 
-const familyMode = ref(false)
+const familyMode = computed(() => mode.value === 'family')
 /** Committed explicit Families, in build order — member ids only, never persisted. */
 const builtFamilies = ref<string[][]>([])
-const buildingFamily = ref(false)
+/** The tab the builder was opened from, if any. Both tabs build into the one partition, but a
+ *  half-built family belongs to the view it was started in, like a half-filled pay form: the other
+ *  tab keeps showing its own content rather than somebody else's builder. */
+const buildingOn = ref<Mode | null>(null)
 const familiesView = ref<FamiliesView | null>(null)
 const familiesError = ref('')
 
@@ -183,9 +279,10 @@ const unassignedMembers = computed(() => {
  *  synced it on every tick and, empirically, that made the builder remount on every tick too — far
  *  more disruptive than the rejection case this exists for. Reset where a *new* build session begins. */
 const familyTicks = ref<Record<string, boolean>>({})
+
 function startBuildingFamily() {
   familyTicks.value = {}
-  buildingFamily.value = true
+  buildingOn.value = mode.value
 }
 
 /** Order-independent identity for a set of member ids, so a Family can be matched back to what
@@ -193,7 +290,9 @@ function startBuildingFamily() {
 function familyKey(ids: string[]): string {
   return [...ids].sort().join(',')
 }
+
 const builtKeys = computed(() => new Set(builtFamilies.value.map(familyKey)))
+
 /** Whether this returned Family is one the viewer explicitly built, not an automatic singleton. */
 function isBuilt(entry: FamilyView): boolean {
   return builtKeys.value.has(familyKey(entry.members.map((m) => m.id)))
@@ -209,8 +308,11 @@ let familiesRequestSeq = 0
 
 /** Defaults to the committed partition; `onFamilyBuilt` passes a candidate that is not committed
  *  yet, so it can be previewed without `builtFamilies` — and therefore `unassignedMembers` and the
- *  builder's `candidates` prop — ever reflecting a build the server has not accepted. */
-async function refreshFamilies(preview?: string[][]) {
+ *  builder's `candidates` prop — ever reflecting a build the server has not accepted.
+ *
+ *  Resolves true only when this call's own answer was applied: false when it failed, and false when
+ *  a newer call overtook it, since a dropped answer says nothing about what this call asked for. */
+async function refreshFamilies(preview?: string[][]): Promise<boolean> {
   const families = preview ?? builtFamilies.value
   const seq = ++familiesRequestSeq
   // Nothing built is not "everyone is their own Family" — it's nothing to show at all. Fetching
@@ -220,31 +322,38 @@ async function refreshFamilies(preview?: string[][]) {
   if (families.length === 0) {
     familiesView.value = null
     familiesError.value = ''
-    return
+    return true
   }
   familiesError.value = ''
   try {
     const result = await api.previewFamilies(props.tripId, families)
     // Only the most-recently-issued call may still write: an older one resolving after a newer
     // one has already answered is exactly the stale response this guard exists to drop.
-    if (seq === familiesRequestSeq) familiesView.value = result
+    if (seq !== familiesRequestSeq) return false
+    familiesView.value = result
+    return true
   } catch (failure) {
     if (seq === familiesRequestSeq) {
       familiesError.value = failure instanceof Error ? failure.message : String(failure)
     }
+    return false
   }
 }
 
-// Family mode is a pure read with no side effect to announce, so it is deliberately never routed
-// through act() — act() emits 'changed', which would trigger a full trip refetch on every toggle.
-watch(familyMode, (on) => {
-  if (on) refreshFamilies()
+/** "By minimum transfer" with Families built: its plan is the preview's, not the `transfers` prop. */
+const familyPlanMode = computed(() => mode.value === 'transfers' && builtFamilies.value.length > 0)
+
+// Both views of the partition are a pure read with no side effect to announce, so they are
+// deliberately never routed through act() — act() emits 'changed', which would trigger a full trip
+// refetch on every toggle.
+watch(mode, () => {
+  if (familyMode.value || familyPlanMode.value) refreshFamilies()
 })
-// Balances can move under the sheet (Pay, approve, undo) while Family mode stays open.
+// Balances can move under the sheet (Pay, approve, undo) while either view stays open.
 watch(
   () => props.rows,
   () => {
-    if (familyMode.value) refreshFamilies()
+    if (familyMode.value || familyPlanMode.value) refreshFamilies()
   },
 )
 
@@ -255,12 +364,13 @@ async function onFamilyBuilt(memberIds: string[]) {
   familyTicks.value = Object.fromEntries(memberIds.map((id) => [id, true]))
   // Preview the candidate partition without touching `builtFamilies`: a selection covering
   // everyone left is refused by the server (§7b needs 2+ families), and committing it before that
-  // is confirmed would leave nothing to undo and nowhere to fix it from. Only commit on success.
+  // is confirmed would leave nothing to undo and nowhere to fix it from. Only commit on this
+  // preview's own answer — not one a newer fetch overtook (switching to the plan mid-build, say),
+  // which would leave `builtFamilies` naming a partition `familiesView` was never computed for.
   const candidate = [...builtFamilies.value, memberIds]
-  await refreshFamilies(candidate)
-  if (!familiesError.value) {
+  if (await refreshFamilies(candidate)) {
     builtFamilies.value = candidate
-    buildingFamily.value = false
+    buildingOn.value = null
   }
 }
 
@@ -269,6 +379,90 @@ async function disband(entry: FamilyView) {
   builtFamilies.value = builtFamilies.value.filter((family) => familyKey(family) !== key)
   await refreshFamilies()
 }
+
+/** The plan's Undo takes back the most recent build — the plan has no card per Family to pick from. */
+async function undoLastFamily() {
+  builtFamilies.value = builtFamilies.value.slice(0, -1)
+  await refreshFamilies()
+}
+
+// ---- By minimum transfer with Families: the server's family plan, rendered as sent. ----
+
+/** The family plan once it has answered. Null while it loads or after it failed — and never the
+ *  per-person plan in its place, which ignores the Families and so would be wrong to pay from. */
+const familyPlan = computed<FamilyTransferView[] | null>(() =>
+  familiesView.value && !familiesError.value ? familiesView.value.transfers : null,
+)
+/** How many transfers the plan on screen has; null while there is no plan yet to count. */
+const planSize = computed<number | null>(() =>
+  familyPlanMode.value ? (familyPlan.value?.length ?? null) : props.transfers.length,
+)
+
+/** Folds names pairwise through a "{a} … {b}" message, so each language owns its separator. */
+function joinWith(key: string, parts: string[]): string {
+  return parts.slice(1).reduce((a, b) => t(key, { a, b }), parts[0] ?? '')
+}
+
+/** A party by name, the viewer first: "You & Dan" leading a sentence, "you & Ben" after a verb. */
+function partyLabel(people: Pick<FamilyMemberView, 'id' | 'displayName'>[], subject: boolean): string {
+  const others = people.filter((m) => m.id !== props.myMemberId).map((m) => m.displayName)
+  if (others.length === people.length) return joinWith('settle.partyJoin', others)
+  return joinWith('settle.partyJoin', [subject ? t('common.you') : t('settle.partyYouObject'), ...others])
+}
+
+/** "Using your families: Ann & Ben · You & Dan" — what the viewer built, in the order they built it. */
+const familiesNote = computed(() =>
+  t('settle.transferFamilies', {
+    families: joinWith(
+      'settle.familiesJoin',
+      builtFamilies.value.map((ids) =>
+        partyLabel(
+          ids.map((id) => ({ id, displayName: memberName(id) })),
+          true,
+        ),
+      ),
+    ),
+  }),
+)
+
+/** "Dan pays Ann & Ben" / "You & Cat pay Ann" / "Dan pays you & Ben": the verb agrees with what the
+ *  reader sees — "pays" only for a single person who is not the viewer. */
+function familyTransferSentence(transfer: FamilyTransferView): string {
+  const single = transfer.from.length === 1 && transfer.from[0]?.id !== props.myMemberId
+  return t(single ? 'settle.transferPays' : 'settle.transferPayMany', {
+    from: partyLabel(transfer.from, true),
+    to: partyLabel(transfer.to, false),
+  })
+}
+
+const familyLineKey = (transfer: FamilyTransferView) =>
+  `${transfer.from.map((m) => m.id).join(',')}>${transfer.to.map((m) => m.id).join(',')}`
+/** Whether the viewer is in the paying party — a settlement is always filed by somebody paying. */
+const youPayOn = (transfer: FamilyTransferView) => transfer.from.some((m) => m.id === props.myMemberId)
+
+function startFamilyTransferPay(transfer: FamilyTransferView) {
+  paying.value = transfer.payToMemberId
+  amountMinor.value = transfer.amountMinor
+  error.value = ''
+}
+
+// ---- How it adds up: the server's breakdown, rendered as sent. ----
+
+/** Folded by default, and folded again on every reopen with the rest of the sheet's state. */
+const breakdownOpen = ref(false)
+const breakdownId = useId()
+
+/** Settled is a column only once something has been settled — a comparison, never a sum. */
+const showSettled = computed(
+  () =>
+    !!props.breakdown &&
+    (props.breakdown.totals.settledMinor !== 0 || props.breakdown.rows.some((r) => r.settledMinor !== 0)),
+)
+/** Paid, share, [settled], balance: the numbers line's column count, which the grid is cut to. */
+const breakdownColumns = computed(() => (showSettled.value ? 4 : 3))
+
+/** A balance's colour, from its sign alone — the same three tones as every other balance here. */
+const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'owed' : 'owe')
 </script>
 
 <template>
@@ -279,9 +473,9 @@ async function disband(entry: FamilyView) {
           type="button"
           class="settle__mode-btn"
           data-testid="mode-by-person"
-          :class="{ 'settle__mode-btn--on': !familyMode }"
-          :aria-pressed="!familyMode"
-          @click="familyMode = false"
+          :class="{ 'settle__mode-btn--on': mode === 'person' }"
+          :aria-pressed="mode === 'person'"
+          @click="setMode('person')"
         >
           {{ t('settle.byPerson') }}
         </button>
@@ -289,22 +483,36 @@ async function disband(entry: FamilyView) {
           type="button"
           class="settle__mode-btn"
           data-testid="mode-by-family"
-          :class="{ 'settle__mode-btn--on': familyMode }"
-          :aria-pressed="familyMode"
-          @click="familyMode = true"
+          :class="{ 'settle__mode-btn--on': mode === 'family' }"
+          :aria-pressed="mode === 'family'"
+          @click="setMode('family')"
         >
           {{ t('settle.byFamily') }}
         </button>
+        <button
+          type="button"
+          class="settle__mode-btn"
+          data-testid="mode-min-transfer"
+          :class="{ 'settle__mode-btn--on': mode === 'transfers' }"
+          :aria-pressed="mode === 'transfers'"
+          @click="setMode('transfers')"
+        >
+          {{ t('settle.byMinTransfer') }}
+        </button>
       </div>
 
-      <template v-if="!familyMode">
+      <template v-if="mode === 'person'">
+        <p v-if="squareOverall" class="settle__square" data-testid="square-overall">
+          {{ t('settle.squareOverall') }}
+        </p>
         <div v-for="(row, index) in orderedRows" :key="row.memberId" class="settle__entry">
           <!-- The API row says "positive = you owe them"; BalanceRow speaks the viewer's frame. -->
           <BalanceRow
             :display-name="row.displayName"
             :person-hue="row.personHue"
             :owed-minor="-row.owedMinor"
-            :muted="row.owedMinor === 0"
+            :muted="squareOverall || row.owedMinor === 0"
+            :actions="!squareOverall"
             :currency-code="currencyCode"
             :symbol="symbol"
             :pending="pendingOf(row).length > 0"
@@ -447,11 +655,17 @@ async function disband(entry: FamilyView) {
           </div>
 
           <form
-            v-if="paying?.memberId === row.memberId"
+            v-if="paying === row.memberId"
             class="settle__pay"
             data-testid="pay-form"
             @submit.prevent="pay"
           >
+            <!-- Where the money goes, right where the amount is entered. -->
+            <PayIdLine
+              :pay-id="memberById(row.memberId)?.payId ?? null"
+              :recently-changed="memberById(row.memberId)?.payIdChangedRecently ?? false"
+              :owner-name="row.displayName"
+            />
             <AmountKeypadField
               v-model="amountMinor"
               test-id="pay-amount"
@@ -475,14 +689,251 @@ async function disband(entry: FamilyView) {
         <p v-if="error" class="settle__error" role="alert">{{ error }}</p>
       </template>
 
-      <template v-else>
+      <template v-else-if="mode === 'transfers'">
+        <!-- The same builder as By family, into the same partition, standing in for the plan while
+             people are picked: Pay under a half-built family would pay from a plan about to change. -->
         <FamilyBuilder
-          v-if="buildingFamily"
+          v-if="buildingOn === 'transfers'"
           :initial-ticked="familyTicks"
           :candidates="unassignedMembers"
           :must-leave-one-out="builtFamilies.length === 0"
           @built="onFamilyBuilt"
-          @cancel="buildingFamily = false"
+          @cancel="buildingOn = null"
+        />
+        <template v-else>
+          <div v-if="familyPlanMode" class="settle__transfer-families-head">
+            <p class="settle__transfer-families" data-testid="transfer-families">
+              {{ familiesNote }}
+            </p>
+            <TallyButton
+              variant="ghost"
+              size="sm"
+              data-testid="transfer-families-undo"
+              @click="undoLastFamily"
+            >
+              {{ t('common.undo') }}
+            </TallyButton>
+          </div>
+          <p v-if="planSize === 0" class="settle__family-empty" data-testid="no-transfers">
+            {{ t('settle.noTransfers') }}
+          </p>
+          <template v-else-if="planSize !== null">
+            <p class="settle__transfer-count" data-testid="transfer-count">
+              {{
+                planSize === 1
+                  ? t('settle.transferCountOne', { count: planSize })
+                  : t('settle.transferCount', { count: planSize })
+              }}
+            </p>
+            <!-- Each side a Family or a lone person, rendered as the server sent it. -->
+            <ol v-if="familyPlanMode" class="settle__transfers">
+              <li
+                v-for="(transfer, index) in familyPlan ?? []"
+                :key="familyLineKey(transfer)"
+                class="settle__transfer"
+                data-testid="transfer-row"
+              >
+                <div class="settle__transfer-head">
+                  <span class="settle__transfer-index">{{ index + 1 }}</span>
+                  <span class="settle__transfer-text">{{ familyTransferSentence(transfer) }}</span>
+                  <AmountText
+                    :amount-minor="transfer.amountMinor"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </div>
+
+                <!-- Whoever the server picked to receive this line's payment. -->
+                <PayIdLine
+                  class="settle__transfer-payid"
+                  test-id="transfer-payid"
+                  :pay-id="memberById(transfer.payToMemberId)?.payId ?? null"
+                  :recently-changed="memberById(transfer.payToMemberId)?.payIdChangedRecently ?? false"
+                  :owner-name="memberName(transfer.payToMemberId)"
+                  :show-owner="transfer.to.length > 1"
+                />
+
+                <!-- Already claimed by anyone in the paying Family: read-only, and Pay hidden from every
+                   one of them — a second member paying this line would be the Family paying twice. -->
+                <template v-if="transfer.pending.length > 0">
+                  <div
+                    v-for="claim in transfer.pending"
+                    :key="claim.id"
+                    class="settle__pending settle__transfer-note"
+                    data-testid="transfer-pending"
+                  >
+                    <div class="settle__pending-head">
+                      <span class="settle__pending-text">
+                        {{
+                          claim.fromMemberId === myMemberId
+                            ? t('settle.sentForConfirmation', { name: memberName(claim.toMemberId) })
+                            : t('settle.familySentForConfirmation', { name: memberName(claim.fromMemberId) })
+                        }}
+                      </span>
+                      <AmountText
+                        :amount-minor="claim.amountMinor"
+                        size="sm"
+                        :currency-code="currencyCode"
+                        :symbol="symbol"
+                      />
+                    </div>
+                  </div>
+                </template>
+
+                <template v-else-if="youPayOn(transfer)">
+                  <form
+                    v-if="paying === transfer.payToMemberId"
+                    class="settle__pay"
+                    data-testid="pay-form"
+                    @submit.prevent="pay"
+                  >
+                    <AmountKeypadField
+                      v-model="amountMinor"
+                      test-id="pay-amount"
+                      :currency-code="currencyCode"
+                      :symbol="symbol"
+                    />
+                    <TallyButton
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      data-testid="pay-send"
+                      :loading="pendingTag === 'pay'"
+                      :disabled="amountMinor <= 0"
+                      @click="pay"
+                    >
+                      {{ t('settle.pay') }}
+                    </TallyButton>
+                  </form>
+                  <TallyButton
+                    v-else
+                    class="settle__transfer-pay"
+                    size="sm"
+                    data-testid="transfer-pay"
+                    @click="startFamilyTransferPay(transfer)"
+                  >
+                    {{ t('settle.pay') }}
+                  </TallyButton>
+                </template>
+              </li>
+            </ol>
+            <ol v-else class="settle__transfers">
+              <li
+                v-for="(transfer, index) in transfers"
+                :key="`${transfer.fromMemberId}-${transfer.toMemberId}`"
+                class="settle__transfer"
+                data-testid="transfer-row"
+              >
+                <div class="settle__transfer-head">
+                  <span class="settle__transfer-index">{{ index + 1 }}</span>
+                  <span class="settle__transfer-text">{{ transferSentence(transfer) }}</span>
+                  <AmountText
+                    :amount-minor="transfer.amountMinor"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </div>
+
+                <PayIdLine
+                  class="settle__transfer-payid"
+                  test-id="transfer-payid"
+                  :pay-id="memberById(transfer.toMemberId)?.payId ?? null"
+                  :recently-changed="memberById(transfer.toMemberId)?.payIdChangedRecently ?? false"
+                  :owner-name="memberName(transfer.toMemberId)"
+                />
+
+                <!-- Already claimed: read-only here. Withdrawing or deciding it is the By person
+                   strip's job, so a settlement keeps exactly one place it is acted on (§7a). -->
+                <div
+                  v-if="pendingOnTransfer(transfer)"
+                  class="settle__pending settle__transfer-note"
+                  data-testid="transfer-pending"
+                >
+                  <div class="settle__pending-head">
+                    <span class="settle__pending-text">
+                      {{
+                        pendingOnTransfer(transfer)!.sentByYou
+                          ? t('settle.sentForConfirmation', { name: memberName(transfer.toMemberId) })
+                          : t('settle.awaitingYou', { name: memberName(transfer.fromMemberId) })
+                      }}
+                    </span>
+                    <AmountText
+                      :amount-minor="pendingOnTransfer(transfer)!.claim.amountMinor"
+                      size="sm"
+                      :currency-code="currencyCode"
+                      :symbol="symbol"
+                    />
+                  </div>
+                </div>
+
+                <template v-else-if="transfer.fromMemberId === myMemberId">
+                  <form
+                    v-if="paying === transfer.toMemberId"
+                    class="settle__pay"
+                    data-testid="pay-form"
+                    @submit.prevent="pay"
+                  >
+                    <AmountKeypadField
+                      v-model="amountMinor"
+                      test-id="pay-amount"
+                      :currency-code="currencyCode"
+                      :symbol="symbol"
+                    />
+                    <TallyButton
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      data-testid="pay-send"
+                      :loading="pendingTag === 'pay'"
+                      :disabled="amountMinor <= 0"
+                      @click="pay"
+                    >
+                      {{ t('settle.pay') }}
+                    </TallyButton>
+                  </form>
+                  <TallyButton
+                    v-else
+                    class="settle__transfer-pay"
+                    size="sm"
+                    data-testid="transfer-pay"
+                    @click="startTransferPay(transfer)"
+                  >
+                    {{ t('settle.pay') }}
+                  </TallyButton>
+                </template>
+              </li>
+            </ol>
+          </template>
+
+          <TallyButton
+            v-if="unassignedMembers.length >= 2"
+            variant="secondary"
+            full-width
+            data-testid="build-family"
+            @click="startBuildingFamily"
+          >
+            {{ t('settle.buildFamily') }}
+          </TallyButton>
+        </template>
+
+        <p
+          v-if="(familyPlanMode || buildingOn === 'transfers') && familiesError"
+          class="settle__error"
+          role="alert"
+        >
+          {{ familiesError }}
+        </p>
+        <p v-if="error" class="settle__error" role="alert">{{ error }}</p>
+      </template>
+
+      <template v-else>
+        <FamilyBuilder
+          v-if="buildingOn === 'family'"
+          :initial-ticked="familyTicks"
+          :candidates="unassignedMembers"
+          :must-leave-one-out="builtFamilies.length === 0"
+          @built="onFamilyBuilt"
+          @cancel="buildingOn = null"
         />
         <template v-else>
           <p v-if="builtFamilies.length === 0" class="settle__family-empty" data-testid="no-families-yet">
@@ -515,9 +966,165 @@ async function disband(entry: FamilyView) {
         <p v-if="familiesError" class="settle__error" role="alert">{{ familiesError }}</p>
       </template>
 
-      <TallyButton variant="secondary" full-width data-testid="settle-done" @click="emit('close')">{{
-        t('common.done')
-      }}</TallyButton>
+      <!-- How it adds up: under every mode, folded until asked for. Every figure is the server's — the
+           totals line is its totals, never the columns summed here. -->
+      <section v-if="breakdown" class="settle__sums">
+        <button
+          type="button"
+          class="settle__sums-toggle"
+          data-testid="breakdown-toggle"
+          :aria-expanded="breakdownOpen"
+          :aria-controls="breakdownId"
+          @click="breakdownOpen = !breakdownOpen"
+        >
+          <span class="settle__sums-label">{{ t('breakdown.toggle') }}</span>
+          <TallyIcon
+            name="chevron-right"
+            :size="16"
+            class="settle__sums-chevron"
+            :class="{ 'settle__sums-chevron--open': breakdownOpen }"
+          />
+        </button>
+
+        <!-- Something for aria-controls to point at whether or not the table is up. -->
+        <div :id="breakdownId" class="settle__sums-panel">
+          <div v-if="breakdownOpen" class="sums" data-testid="breakdown">
+            <!-- Each person is two lines on one grid: name and transfers, then the money columns. Six
+                 columns side by side do not fit 390px with real amounts; four under a name do. -->
+            <div
+              class="sums__table"
+              role="table"
+              :aria-label="t('breakdown.toggle')"
+              :style="{ '--sums-cols': breakdownColumns }"
+            >
+              <div class="sums__line sums__line--head" role="row">
+                <span class="sums__name" role="columnheader">{{ t('breakdown.person') }}</span>
+                <span class="sums__num" role="columnheader">{{ t('breakdown.paid') }}</span>
+                <span class="sums__num" role="columnheader">{{ t('breakdown.share') }}</span>
+                <span
+                  v-if="showSettled"
+                  class="sums__num"
+                  role="columnheader"
+                  data-testid="breakdown-head-settled"
+                  >{{ t('breakdown.settled') }}</span
+                >
+                <span class="sums__num" role="columnheader">{{ t('breakdown.balance') }}</span>
+                <span class="sums__transfers" role="columnheader">{{ t('breakdown.transfers') }}</span>
+              </div>
+
+              <div
+                v-for="row in breakdown.rows"
+                :key="row.memberId"
+                class="sums__line"
+                role="row"
+                data-testid="breakdown-row"
+              >
+                <span
+                  class="sums__name"
+                  role="rowheader"
+                  :title="row.displayName"
+                  data-testid="breakdown-name"
+                  >{{ row.isYou ? t('common.you') : row.displayName }}</span
+                >
+                <span class="sums__num" role="cell" data-testid="breakdown-paid">
+                  <AmountText
+                    :amount-minor="row.paidMinor"
+                    size="xs"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
+                <span class="sums__num" role="cell" data-testid="breakdown-share">
+                  <AmountText
+                    :amount-minor="row.shareMinor"
+                    size="xs"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
+                <span v-if="showSettled" class="sums__num" role="cell" data-testid="breakdown-settled">
+                  <AmountText
+                    :amount-minor="row.settledMinor"
+                    size="xs"
+                    :show-sign="row.settledMinor !== 0"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
+                <span class="sums__num" role="cell" data-testid="breakdown-balance">
+                  <AmountText
+                    :amount-minor="row.netMinor"
+                    size="xs"
+                    :tone="balanceTone(row.netMinor)"
+                    :show-sign="row.netMinor !== 0"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
+                <span class="sums__transfers" role="cell" data-testid="breakdown-transfers">{{
+                  t('breakdown.transferPair', {
+                    byPerson: row.transfersByPerson,
+                    fewest: row.transfersFewest,
+                  })
+                }}</span>
+              </div>
+
+              <div class="sums__line sums__line--total" role="row" data-testid="breakdown-total">
+                <span class="sums__name" role="rowheader" data-testid="breakdown-name">{{
+                  t('breakdown.total')
+                }}</span>
+                <span class="sums__num" role="cell" data-testid="breakdown-paid">
+                  <AmountText
+                    :amount-minor="breakdown.totals.paidMinor"
+                    size="xs"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
+                <span class="sums__num" role="cell" data-testid="breakdown-share">
+                  <AmountText
+                    :amount-minor="breakdown.totals.shareMinor"
+                    size="xs"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
+                <span v-if="showSettled" class="sums__num" role="cell" data-testid="breakdown-settled">
+                  <AmountText
+                    :amount-minor="breakdown.totals.settledMinor"
+                    size="xs"
+                    :show-sign="breakdown.totals.settledMinor !== 0"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
+                <span class="sums__num" role="cell" data-testid="breakdown-balance">
+                  <AmountText
+                    :amount-minor="breakdown.totals.netMinor"
+                    size="xs"
+                    :tone="balanceTone(breakdown.totals.netMinor)"
+                    :show-sign="breakdown.totals.netMinor !== 0"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </span>
+                <span class="sums__transfers" role="cell" data-testid="breakdown-transfers">{{
+                  t('breakdown.transferPair', {
+                    byPerson: breakdown.totals.transfersByPerson,
+                    fewest: breakdown.totals.transfersFewest,
+                  })
+                }}</span>
+              </div>
+            </div>
+
+            <p class="sums__legend" data-testid="breakdown-legend">{{ t('breakdown.legend') }}</p>
+          </div>
+        </div>
+      </section>
+
+      <TallyButton variant="secondary" full-width data-testid="settle-done" @click="emit('close')"
+        >{{ t('common.done') }}
+      </TallyButton>
     </div>
   </SheetPanel>
 </template>
@@ -537,6 +1144,8 @@ async function disband(entry: FamilyView) {
 
 .settle__mode {
   display: flex;
+  /* Three pills do not fit one 390px line in every language; the last wraps rather than poking out. */
+  flex-wrap: wrap;
   gap: var(--space-1);
 }
 
@@ -569,6 +1178,91 @@ async function disband(entry: FamilyView) {
   color: var(--text-muted);
   text-align: center;
   padding: var(--space-4) 0;
+}
+
+.settle__square {
+  font-size: var(--text-caption);
+  color: var(--text-muted);
+}
+
+.settle__transfer-count {
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  color: var(--ink-2);
+}
+
+.settle__transfer-families-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.settle__transfer-families {
+  min-width: 0;
+  font-size: var(--text-caption);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.settle__transfers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settle__transfer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1.5px solid var(--hairline);
+}
+
+.settle__transfer:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.settle__transfer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settle__transfer-index {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-circle);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-bold);
+  color: var(--ink);
+}
+
+.settle__transfer-text {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--weight-semibold);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* Indented under the sentence, past the number disc, so each line reads as one unit. */
+.settle__transfer-payid,
+.settle__transfer-note,
+.settle__transfer-pay {
+  margin-left: calc(24px + var(--space-2));
+}
+
+.settle__transfer-pay {
+  align-self: flex-start;
 }
 
 .settle__pending {
@@ -667,5 +1361,134 @@ async function disband(entry: FamilyView) {
 .settle__error {
   color: var(--coral);
   font-size: var(--text-caption);
+}
+
+/* ---- How it adds up ---- */
+
+.settle__sums {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1.5px solid var(--hairline);
+}
+
+.settle__sums-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* The same uppercase micro-label as the comment fold, so it reads as a section, not a stray control. */
+.settle__sums-label {
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* icons.ts has no chevron-down: the shared chevron-right, turned a quarter each way (as CommentField). */
+.settle__sums-chevron {
+  transition: transform var(--dur-fast) var(--ease-out);
+  transform: rotate(90deg);
+  color: var(--ink-2);
+}
+
+.settle__sums-chevron--open {
+  transform: rotate(-90deg);
+}
+
+/* An anchor for aria-controls and nothing else: its children lay out as if it were not there. */
+.settle__sums-panel {
+  display: contents;
+}
+
+.sums {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/*
+ * One grid per line, cut into as many equal columns as there are money figures (3, or 4 with
+ * Settled). Line one is the name across all but the last column, transfers in the last; line two is
+ * the money, one figure a column. minmax(0, 1fr) keeps every column inside the sheet: nothing here
+ * may push the page — or the sheet — sideways at 390px. Four columns there are ~83px each, which is
+ * why the figures are AmountText's dense `xs`: "−$6,172.83" fits with room to spare even in the
+ * monospace fallback, not only once the webfont has arrived.
+ */
+.sums__line {
+  display: grid;
+  grid-template-columns: repeat(var(--sums-cols), minmax(0, 1fr));
+  column-gap: var(--space-2);
+  row-gap: 2px;
+  padding: var(--space-2) 0;
+  border-bottom: 1.5px solid var(--hairline);
+}
+
+.sums__line--head {
+  padding-top: 0;
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* The totals read as the sum line of a ledger: a firmer rule above, nothing below. */
+.sums__line--total {
+  border-top: 1.5px solid var(--ink);
+  border-bottom: none;
+}
+
+.sums__name {
+  grid-row: 1;
+  grid-column: 1 / -2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sums__line:not(.sums__line--head) .sums__name {
+  font-size: var(--text-caption);
+  font-weight: var(--weight-bold);
+  color: var(--ink);
+}
+
+.sums__transfers {
+  grid-row: 1;
+  grid-column: -2 / -1;
+  min-width: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.sums__line:not(.sums__line--head) .sums__transfers {
+  font-family: var(--font-money);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.sums__num {
+  grid-row: 2;
+  min-width: 0;
+  text-align: right;
+}
+
+.sums__legend {
+  font-size: var(--text-caption);
+  color: var(--text-muted);
+  overflow-wrap: break-word;
 }
 </style>

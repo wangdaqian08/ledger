@@ -1,5 +1,6 @@
 package app.ledger.server.trip
 
+import app.ledger.engine.Breakdown
 import app.ledger.engine.FamilyBalance
 import app.ledger.engine.Item
 import app.ledger.engine.ItemId
@@ -9,6 +10,7 @@ import app.ledger.engine.Payback
 import app.ledger.engine.PaybackStatus
 import app.ledger.engine.SplitRule
 import app.ledger.engine.Trip
+import app.ledger.engine.breakdown
 import app.ledger.engine.itemState
 import app.ledger.engine.owesBetween
 import app.ledger.engine.partitionIntoFamilies
@@ -71,6 +73,24 @@ class TripSnapshot(
 
     fun netFor(memberId: UUID): Long = settlement.net(MemberId(memberId.toString()))
 
+    /**
+     * The whole trip's fewest-transfers list — the Settle-up screen's "By minimum transfer" mode
+     * (§7a) — in the engine's order, each handed to [view] by member id. Read off the settlement
+     * [netFor] already computed, so a screen asking for both pays for one `settle()`, not two.
+     *
+     * Takes the view's constructor rather than returning one: the view type is the settlement
+     * feature's, and this package handing out engine `MemberId`s would leak the translation it
+     * exists to own.
+     */
+    fun <T> transfers(view: (fromMemberId: UUID, toMemberId: UUID, amountMinor: Long) -> T): List<T> =
+        settlement.transfers.map { view(UUID.fromString(it.from.value), UUID.fromString(it.to.value), it.amountMinor) }
+
+    /**
+     * "How it adds up" (§3), rows in roster order. Built on the settlement [netFor] and [transfers]
+     * already use, so the Settle-up screen's one request still pays for one `settle()`.
+     */
+    fun breakdown(): Breakdown = breakdown(engineTrip, settlement)
+
     /** Every person's portion of one item, in the same order as its people list. */
     fun sharesOf(item: ItemEntity): Map<UUID, Long> {
         val shares = shares(
@@ -97,16 +117,20 @@ class TripSnapshot(
     fun paybacksFor(item: ItemEntity): List<PaybackEntity> = paybacks.filter { it.itemId == item.id }
 
     /**
-     * What [a] owes [b], netted both ways — one Settle-up row (§7a). Positive means [a] owes [b].
+     * What [a] owes [b], netted both ways — one By person row (§7a). Positive means [a] owes [b].
      *
-     * Not the minimised transfer set: `settle()` computes those and they are property-tested, but
-     * they pair up people who are not party to each other's rows, which is not what this screen
-     * shows.
+     * Not the minimised transfer set: that is [transfers], which pairs up people who are not party
+     * to each other's rows — Eve paying Cat what she owed Ben — and is the screen's other mode.
      */
     fun owesBetween(a: UUID, b: UUID): Long =
         // Qualified: this method's own name would otherwise shadow the engine function it calls.
         owesBetween(engineTrip, MemberId(a.toString()), MemberId(b.toString()))
 
+    /**
+     * The completed partition (§7b), built on the settlement [netFor] already computed. Both the
+     * Family cards and the plan between Families (`familyTransfers`, which reads only these nets)
+     * come from this one result, so a Families request pays for one `settle()` and one partition.
+     */
     fun families(explicitFamilies: List<Set<UUID>>): List<FamilyBalance> = partitionIntoFamilies(
         engineTrip,
         explicitFamilies.map { it.mapTo(mutableSetOf()) { id -> MemberId(id.toString()) } },

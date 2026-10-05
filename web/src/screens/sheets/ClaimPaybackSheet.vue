@@ -2,10 +2,11 @@
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AmountKeypadField from '@/components/AmountKeypadField.vue'
+import PayIdLine from '@/components/PayIdLine.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TextField from '@/components/TextField.vue'
-import { api } from '@/lib/api'
+import { api, type MemberView } from '@/lib/api'
 import { todayLocal } from '@/lib/dates'
 
 /**
@@ -14,15 +15,19 @@ import { todayLocal } from '@/lib/dates'
  * It is a request, not an act (§7a): nothing here moves a balance until the person owed agrees.
  * The screenshot slot arrives with build order step 7 (Cloud Storage), not here.
  */
-const props = defineProps<{
-  open: boolean
-  itemId: string | null
-  toName: string
-  prefillMinor: number
-  fromMemberId: string
-  currencyCode: string
-  symbol: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    itemId: string | null
+    toName: string
+    prefillMinor: number
+    fromMemberId: string
+    currencyCode: string
+    symbol: string
+    recipient?: MemberView | null
+  }>(),
+  { recipient: null },
+)
 const emit = defineEmits<{ close: []; saved: [] }>()
 
 const { t } = useI18n()
@@ -67,6 +72,12 @@ async function send() {
 <template>
   <SheetPanel :open="open" :title="t('claim.title')" @close="emit('close')">
     <form class="claim" @submit.prevent="send">
+      <PayIdLine
+        v-if="recipient"
+        :pay-id="recipient.payId"
+        :recently-changed="recipient.payIdChangedRecently"
+        :owner-name="toName"
+      />
       <label class="claim__label">{{ t('claim.amount') }}</label>
       <AmountKeypadField
         v-model="amountMinor"

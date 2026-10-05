@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AmountText from '@/components/AmountText.vue'
 import AppBar from '@/components/AppBar.vue'
-import BalanceRow from '@/components/BalanceRow.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ExpenseRow from '@/components/ExpenseRow.vue'
 import TallyBadge from '@/components/TallyBadge.vue'
@@ -30,10 +29,15 @@ import { currencySymbol } from '@/lib/money'
 import { useTrips } from '@/stores/trips'
 
 /**
- * Screen 3 — the group. Hero position, who owes who, and the expense feed grouped by day; the
- * add / detail / claim / settle-up sheets all open over this screen and hand back a `changed`
- * event, on which everything is re-fetched — every number here is derived on read by the server,
- * and the one thing this screen must never do is adjust one locally.
+ * Screen 3 — the group. Hero position and the expense feed grouped by day; the add / detail /
+ * claim / settle-up sheets all open over this screen and hand back a `changed` event, on which
+ * everything is re-fetched — every number here is derived on read by the server, and the one thing
+ * this screen must never do is adjust one locally.
+ *
+ * There is no who-owes-who card (removed 2026-10, spec §3): the hero says where you stand, and the
+ * per-person rows with their Pay and Remind live in Settle up → By person. Once people pay along
+ * the fewest-transfers plan those rows can cancel without zeroing, and repeating them here read as
+ * debts nobody had.
  */
 const props = defineProps<{ tripId: string }>()
 
@@ -48,17 +52,18 @@ const filter = ref<'all' | 'unsettled' | 'youPaid'>('all')
 
 const addOpen = ref(false)
 const settleOpen = ref(false)
-// When Settle-up is opened from a specific who-owes row, this is the person to jump straight to.
-const settleFocusMemberId = ref<string | null>(null)
 const inviteOpen = ref(false)
 const detailItemId = ref<string | null>(null)
 const editItem = ref<ItemView | null>(null)
 const claim = ref<{ itemId: string; toName: string; prefillMinor: number } | null>(null)
+// Whoever paid the bill being paid back — the claim's recipient, and so whose PayID the sheet shows.
+const claimRecipient = computed(() => {
+  const payerId = trip.value?.items.find((item) => item.id === claim.value?.itemId)?.payerMemberId
+  return trip.value?.members.find((m) => m.id === payerId) ?? null
+})
 
 const symbol = computed(() => currencySymbol(trip.value?.currencyCode ?? 'AUD'))
 const me = computed(() => trip.value?.members.find((m) => m.isYou) ?? null)
-const remindedMemberId = ref<string | null>(null)
-const remindError = ref('')
 const loadError = ref<'notFound' | 'other' | null>(null)
 
 const heroTone = computed(() => {
@@ -87,17 +92,6 @@ const days = computed(() => {
     else groups.push({ day: item.spentOn, items: [item] })
   }
   return groups
-})
-
-/**
- * Who-owes-who, ordered for the eye: the people you actually owe or are owed lead, and everyone
- * you're square with sinks to the bottom (rendered faded). Nobody is dropped — a $0 row still says
- * "all square" — but the balances that need acting on are never buried among zeros, including the
- * case where your net is zero because two opposite debts cancel out.
- */
-const owesRows = computed(() => {
-  const rows = settlement.value?.rows ?? []
-  return [...rows.filter((row) => row.owedMinor !== 0), ...rows.filter((row) => row.owedMinor === 0)]
 })
 
 function dayLabel(isoDate: string): string {
@@ -141,24 +135,6 @@ function openDetail(itemId: string) {
   detailItemId.value = itemId
 }
 
-/** Pay on a row opens Settle-up already on that person, rather than making them find it again. */
-function openSettleFor(memberId: string | null) {
-  settleFocusMemberId.value = memberId
-  settleOpen.value = true
-}
-
-async function remind(memberId: string) {
-  remindError.value = ''
-  try {
-    await api.remind(props.tripId, memberId)
-    remindedMemberId.value = memberId
-  } catch (failure) {
-    // The debt may have cleared in another tab; whatever the reason, say so rather than letting the
-    // promise reject silently and the button do nothing.
-    remindError.value = failure instanceof ApiError ? failure.message : t('trip.remindFailed')
-  }
-}
-
 function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
   detailItemId.value = null
   claim.value = { itemId, toName, prefillMinor }
@@ -194,7 +170,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
               :symbol="symbol"
             />
           </div>
-          <TallyButton variant="primary" size="sm" data-testid="settle-up" @click="openSettleFor(null)">
+          <TallyButton variant="primary" size="sm" data-testid="settle-up" @click="settleOpen = true">
             {{ t('trip.settleUp') }}
           </TallyButton>
         </div>
@@ -233,28 +209,6 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
             </dd>
           </div>
         </dl>
-      </TallyCard>
-
-      <TallyCard v-if="owesRows.length > 0" class="trip__owes" data-testid="who-owes">
-        <h2 class="trip__section-title">{{ t('trip.whoOwesWho') }}</h2>
-        <!-- Real debts first, all-square people sunk and faded. The API row is "positive = you owe
-             them"; BalanceRow speaks the viewer's frame, so the sign flips exactly once, here. -->
-        <BalanceRow
-          v-for="(row, index) in owesRows"
-          :key="row.memberId"
-          :display-name="row.displayName"
-          :person-hue="row.personHue"
-          :owed-minor="-row.owedMinor"
-          :muted="row.owedMinor === 0"
-          :currency-code="trip.currencyCode"
-          :symbol="symbol"
-          :pending="row.pending.length > 0"
-          :reminded="remindedMemberId === row.memberId"
-          :divider="index < owesRows.length - 1"
-          @pay="openSettleFor(row.memberId)"
-          @remind="remind(row.memberId)"
-        />
-        <p v-if="remindError" class="trip__remind-error" role="alert">{{ remindError }}</p>
       </TallyCard>
 
       <section class="trip__expenses">
@@ -299,8 +253,6 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
           :body="t('trip.emptyBody')"
         />
 
-        <!-- ExpenseRow's amount is the viewer's signed delta on the bill — the demo's own
-             convention: the payer gets amount − share back, everybody else owes their share. -->
         <div v-for="group in days" :key="group.day" class="trip__day" data-testid="expense-day">
           <h3 class="trip__day-label">{{ dayLabel(group.day) }}</h3>
           <TallyCard>
@@ -311,9 +263,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
               :category-key="categoryKey(item.categoryId)"
               :paid-by="memberName(item.payerMemberId)"
               :paid-by-you="item.payerMemberId === me?.id"
-              :your-share-minor="
-                item.payerMemberId === me?.id ? item.amountMinor - item.yourShareMinor : -item.yourShareMinor
-              "
+              :amount-minor="item.amountMinor"
               :all-square="item.state === 'ALL_SQUARE'"
               :currency-code="trip.currencyCode"
               :symbol="symbol"
@@ -396,6 +346,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       :item-id="claim?.itemId ?? null"
       :to-name="claim?.toName ?? ''"
       :prefill-minor="claim?.prefillMinor ?? 0"
+      :recipient="claimRecipient"
       :from-member-id="me.id"
       :currency-code="trip.currencyCode"
       :symbol="symbol"
@@ -410,10 +361,12 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       :my-member-id="me.id"
       :you-are-creator="trip.youAreCreator"
       :rows="settlement.rows"
-      :focus-member-id="settleFocusMemberId"
       :currency-code="trip.currencyCode"
       :symbol="symbol"
       :members="trip.members"
+      :all-square="settlement.allSquare"
+      :transfers="settlement.transfers ?? []"
+      :breakdown="settlement.breakdown ?? null"
       @close="settleOpen = false"
       @changed="refresh"
     />
@@ -440,12 +393,8 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
   overflow-wrap: anywhere;
 }
 
-.trip__hero,
-.trip__owes {
-  margin: 0 var(--gutter-screen);
-}
-
 .trip__hero {
+  margin: 0 var(--gutter-screen);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -494,12 +443,6 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
   letter-spacing: var(--ls-heading-sm);
   color: var(--ink);
   margin-bottom: var(--space-2);
-}
-
-.trip__remind-error {
-  margin-top: var(--space-2);
-  color: var(--coral);
-  font-size: var(--text-caption);
 }
 
 .trip__missing {

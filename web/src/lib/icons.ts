@@ -25,6 +25,8 @@ export const ICON_INNER: Record<string, string> = {
   // Also vendored from lucide-icons/lucide (ISC) — the receipt-photo button.
   camera:
     '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path><circle cx="12" cy="13" r="3"></circle>',
+  // Also vendored from lucide-icons/lucide (ISC) — the Copy button beside a PayID.
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>',
   minus: '<path d="M5 12h14"></path>',
   users:
     '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><path d="M16 3.128a4 4 0 0 1 0 7.744"></path><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><circle cx="9" cy="7" r="4"></circle>',
@@ -109,4 +111,5 @@ export const ICON_NAMES: readonly string[] = [
   'battery-full',
   'lock',
   'rotate-cw',
+  'copy',
 ]

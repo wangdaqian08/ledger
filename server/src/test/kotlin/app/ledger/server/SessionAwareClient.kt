@@ -54,6 +54,8 @@ class SessionAwareClient(baseUrl: String) {
 
     fun patch(path: String, body: Any): ResponseEntity<String> = exchange(HttpMethod.PATCH, path, body)
 
+    fun put(path: String, body: Any): ResponseEntity<String> = exchange(HttpMethod.PUT, path, body)
+
     fun delete(path: String): ResponseEntity<String> = exchange(HttpMethod.DELETE, path, null)
 
     fun cookie(name: String): String? = cookies[name]

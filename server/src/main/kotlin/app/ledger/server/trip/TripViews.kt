@@ -23,6 +23,8 @@ data class MemberView(
      */
     @get:JsonProperty("isYou")
     val isYou: Boolean,
+    val payId: String?,
+    val payIdChangedRecently: Boolean,
 )
 
 data class TripView(

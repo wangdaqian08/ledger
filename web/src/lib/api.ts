@@ -40,6 +40,7 @@ export class ApiError extends Error {
 
 /** Called on any 401 so the router can hand the person to the sign-in screen. */
 let onUnauthorized: (() => void) | null = null
+
 export function handleUnauthorized(handler: () => void) {
   onUnauthorized = handler
 }
@@ -88,6 +89,8 @@ export interface MemberView {
   personHue: number
   claimed: boolean
   isYou: boolean
+  payId: string | null
+  payIdChangedRecently: boolean
 }
 
 export interface SplitView {
@@ -225,10 +228,45 @@ export interface SettlementRow {
   rejected: PaybackView[]
 }
 
+export interface TransferView {
+  fromMemberId: string
+  toMemberId: string
+  amountMinor: number
+}
+
 export interface SettlementView {
   rows: SettlementRow[]
   yourNetMinor: number
   allSquare: boolean
+  transfers: TransferView[]
+  breakdown?: BreakdownView
+}
+
+export interface BreakdownRow {
+  memberId: string
+  displayName: string
+  personHue: number
+  isYou: boolean
+  paidMinor: number
+  shareMinor: number
+  settledMinor: number
+  netMinor: number
+  transfersByPerson: number
+  transfersFewest: number
+}
+
+export interface BreakdownTotals {
+  paidMinor: number
+  shareMinor: number
+  settledMinor: number
+  netMinor: number
+  transfersByPerson: number
+  transfersFewest: number
+}
+
+export interface BreakdownView {
+  rows: BreakdownRow[]
+  totals: BreakdownTotals
 }
 
 /** Minimal member fields for display — same shape as the roster's own MemberView, id/name/hue only. */
@@ -254,8 +292,17 @@ export interface FamilyView {
   counterparts: FamilyCounterpartView[]
 }
 
+export interface FamilyTransferView {
+  from: FamilyMemberView[]
+  to: FamilyMemberView[]
+  amountMinor: number
+  payToMemberId: string
+  pending: PaybackView[]
+}
+
 export interface FamiliesView {
   families: FamilyView[]
+  transfers: FamilyTransferView[]
 }
 
 export interface CategoryView {
@@ -273,6 +320,7 @@ export interface MeView {
   displayName: string
   email: string
   photoUrl: string | null
+  payId: string | null
   friends: { id: string; displayName: string; photoUrl: string | null; sharedTripCount: number }[]
 }
 
@@ -325,6 +373,8 @@ export const api = {
   signIn: (idToken: string) => request<MeView>('POST', '/api/auth/session', { idToken }),
   signOut: () => request<void>('DELETE', '/api/auth/session'),
   me: () => request<MeView>('GET', '/api/me'),
+
+  setPayId: (payId: string | null) => request<MeView>('PUT', '/api/me/pay-id', { payId }),
 
   trips: () => request<TripsView>('GET', '/api/trips'),
   createTrip: (body: { name: string; icon: string; hue: number; currencyCode: string }) =>

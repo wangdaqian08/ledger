@@ -103,6 +103,36 @@ the expense. The creator ends the trip: new expenses are refused, settling conti
 photo stays readable — that window is what it exists for. Fourteen days after the end, the sweep
 deletes the image, and only the image: every number on the expense survives.
 
+**S8 · Weekend away — fewest transfers.** Five members in roster order Ann, Ben, Cat, Dan, Eve.
+Every split is even, so no spare cent and no tie-break is involved:
+
+| expense | paid by | shared by | each |
+|---|---|---|---|
+| Breakfast $60 | Ann | Ann, Ben, Dan | $20 |
+| Taxi $60 | Ben | Ben, Cat, Dan, Eve | $15 |
+| Lunch $60 | Cat | Ann, Cat, Dan, Eve | $15 |
+
+ ```
+ nets             Ann +$25   Ben +$25   Cat +$30   Dan −$50   Eve −$30
+ bilateral rows   8 non-zero pairs (Ben→Ann 20, Ann→Cat 15, Dan→Ann 20, Cat→Ben 15,
+                  Dan→Ben 15, Eve→Ben 15, Dan→Cat 15, Eve→Cat 15)
+ fewest transfers 3:  Eve → Cat $30  (an exact match, paired first)
+                      Dan → Ann $25
+                      Dan → Ben $25
+ ```
+
+Plain greedy (largest against largest, no exact pass) needs 4 here: Dan → Cat $30, Dan → Ann $20,
+Eve → Ann $5, Eve → Ben $25. Paying the three as trip-level settlements moves nothing while they
+are pending; once approved, every net is 0 and no transfer remains — yet bilateral rows remain
+(Eve owes Ben $15 while Cat owes Eve $15), each person's still summing to −net = 0. That is the
+case §7a's "square overall" exists for.
+
+**S9 · Families settle as one party.** Ann pays $400 for Ann, Ben, Cat and Dan ($100 each); the
+viewer builds the Family {Ben, Cat}. "By minimum transfer" then reads: Ben & Cat pay Ann $200, Dan
+pays Ann $100 — two lines, the Family paying once. On S8's trip, the Family {Ann, Ben} (+$50)
+turns three transfers into two: Dan pays Ann & Ben $50 (an exact match, to Ann's PayID — the first
+member with one), Eve pays Cat $30.
+ 
 ---
 
 ## 3. Decisions
@@ -119,10 +149,14 @@ deletes the image, and only the image: every number on the expense survives.
 | Rejection | Reject with a reason → avatar turns coral → claimant edits and resubmits. |
 | Item state | `ALL_SQUARE` when every sharer's approved paybacks ≥ their share. Card greys out, sinks down. |
 | Final settlement | **Recorded.** Tapping Pay sends a request to the person owed; it sits pending until they approve. Display-only is no longer possible — a pending approval is state. |
-| Settle-up rows | **Bilateral.** One row per person: what you owe them, or they owe you. Not a globally minimised transfer set. |
-| Settle-up Families | **Ephemeral, built one at a time.** A viewer partitions the whole trip into Families; anyone left out becomes their own one-person Family automatically. A Family's card shows its own net plus one bilateral row per *other* Family — never per individual, never minimised. Nothing persists; the partition resets when the sheet reopens. See §7b. |
+| Settle-up rows | **Bilateral by default, fewest transfers on request.** "By person" shows one row per person: what you owe them, or they owe you. "By minimum transfer" shows the whole trip's fewest-transfers plan — who pays whom, how much, to which PayID (§7a). |
+| Square | **Your overall net is 0.** Not "every row is zero": once somebody pays along the fewest-transfers plan, bilateral rows can cancel each other without reaching zero, and telling a person they still owe when their net is 0 would be the lie this app exists to avoid. |
+| Trip screen | **No "Who owes who" card** (removed 2026-10). The hero says where you stand; the per-person rows, Pay and Remind live in Settle up → By person. Once people pay by the fewest-transfers plan those rows can cancel without zeroing, and a card repeating them on the trip screen read as debts nobody had. |
+| Checking the maths | **"How it adds up", in Settle up.** Per person: paid, share, settled so far, balance — `paid − share + settled = balance` — and transfers by person → fewest; a totals row where paid = shares = group spend and balances sum to $0. Every figure is the engine's, so a person can check it by hand against the CSV export. |
+| PayID | **One per person, on their account, set only by them.** Every member of a trip they are on can see it and copy it. Shown exactly as typed — never validated, never used to send anything. Others see an "updated recently" badge for 7 days after a change (§9). |
+| Settle-up Families | **Ephemeral, built one at a time.** A viewer partitions the whole trip into Families; anyone left out becomes their own one-person Family automatically. A Family's card shows its own net plus one bilateral row per *other* Family — never per individual, never minimised. The same partition carries into "By minimum transfer", where each Family is one party in the fewest-transfers plan (§7a). Nothing persists; the partition resets when the sheet reopens. See §7b. |
 | Undo | **Either side, any time**, before or after approval. The row returns to unpaid. |
-| Remind | A nudge to someone who owes you. Changes no balance. |
+| Remind | A nudge to someone who owes you. Changes no balance. Refused while your own net is 0 — square overall, there is nothing to chase (§7a). |
 | Recalculation | Live everywhere, plus a dedicated Settle up screen. |
 | Edit rights | Item payer + trip creator. Everyone else views and claims. |
 | Receipts | **One photo per expense**, attached by its payer or the creator, viewable by any member. The image is evidence, not input: no OCR, and no number is ever read out of it. The client downscales and re-encodes before upload (privacy: EXIF, including GPS, is stripped by the re-encode). |
@@ -144,12 +178,12 @@ deletes the image, and only the image: every number on the expense survives.
 Gradle multi-project. The important move: **the rules live in a module with no Spring and no
 database**, so the scenarios above run in milliseconds.
 
-```
-ledger/
-├── engine/     pure Kotlin. Split + settle + item state. Zero dependencies. Fully tested.
-├── server/     Spring Boot 4, Kotlin, REST, Flyway, Postgres, Google auth, GCS uploads.
-└── web/        Vue 3 + TS + Vite SPA, on the Tally design system. Packaged into the server jar.
-```
+ ```
+ ledger/
+ ├── engine/     pure Kotlin. Split + settle + item state. Zero dependencies. Fully tested.
+ ├── server/     Spring Boot 4, Kotlin, REST, Flyway, Postgres, Google auth, GCS uploads.
+ └── web/        Vue 3 + TS + Vite SPA, on the Tally design system. Packaged into the server jar.
+ ```
 
 **Stack:** Spring Boot 4.x · Kotlin 2.2+ · **Java 25 LTS** · Gradle 9 · Postgres (Cloud SQL) ·
 Flyway · Vue 3 + TypeScript + Pinia + Vue Router + Vue I18n.
@@ -177,15 +211,15 @@ Same-origin, cookie posture and derive-on-read are unchanged. The CSRF cookie is
 
 ### `engine` — the whole business rule set
 
-```kotlin
-// All money is Long minor units. No Double, no BigDecimal, anywhere.
-sealed interface SplitRule { Equal; Weighted(Map<MemberId, Int>); Exact(Map<MemberId, Long>) }
-
-fun shares(totalMinor: Long, members: List<MemberId>, rule: SplitRule, salt: Long): Map<MemberId, Long>
-fun settle(trip: Trip): Settlement                  // net per member + suggested transfers
-fun Trip.itemState(itemId: ItemId): ItemState       // OPEN | ALL_SQUARE
-fun owesBetween(trip: Trip, a: MemberId, b: MemberId): Long   // the Settle-up rows
-```
+ ```kotlin
+ // All money is Long minor units. No Double, no BigDecimal, anywhere.
+ sealed interface SplitRule { Equal; Weighted(Map<MemberId, Int>); Exact(Map<MemberId, Long>) }
+ 
+ fun shares(totalMinor: Long, members: List<MemberId>, rule: SplitRule, salt: Long): Map<MemberId, Long>
+ fun settle(trip: Trip): Settlement                  // net per member + fewest transfers
+ fun Trip.itemState(itemId: ItemId): ItemState       // OPEN | ALL_SQUARE
+ fun owesBetween(trip: Trip, a: MemberId, b: MemberId): Long   // the Settle-up rows
+ ```
 
 **Rounding — largest remainder.** Floor every share, then hand the leftover cents to the largest
 fractional parts. Parts sum to the total exactly, by construction. Ties break on position
@@ -194,15 +228,22 @@ rotated by
 come from `java.util.Currency.getInstance(code).defaultFractionDigits`, so JPY (0 decimals) works
 without a special case.
 
-**Suggested transfers.** Greedy: largest creditor against largest debtor, repeat. At most `n − 1`
-transfers; typically 3–4 instead of 13.
+**Suggested transfers — fewest transfers.** First pair every debtor whose debt exactly matches a
+creditor's credit (one transfer settles both). Then, repeatedly, the largest remaining debtor pays
+the largest remaining creditor — both re-chosen after every step. Ties break on roster order, so
+the plan is deterministic. At most one transfer fewer than there are people with a non-zero
+balance; typically 3–4 instead of 13. Not guaranteed to be the absolute minimum in every case
+(that problem is NP-hard); S8 is the case where the exact pass beats plain greedy. A test-only
+oracle finds the true minimum by exhaustive search on small trips and holds the plan to it: never
+below it, equal to it whenever what is left after exact pairs has no smaller zero-sum group, and
+the known gap pinned — nets +40, +30, +30 against −60, −20, −20 take 5 transfers here, 4 at best.
 
 ### Patterns, and why each one is here
 
 Chosen because this product's shape demands them, not for their own sake.
 
 | Pattern | Where | Why this product needs it |
-|---|---|---|
+ |---|---|---|
 | **Ports & adapters** | `engine` is the domain core; `server` holds the REST adapter in and the JPA adapter out | The rules are the risky part. Keeping them free of Spring and SQL is what lets 2,000 random trips be verified in under a second. |
 | **Read model / projection** | `TripView`, `OverviewView`, `ActivityView`, `SettlementView` | Every screen is a different projection of the same ledger. No number is ever stored — `owed`, `net` and `ALL_SQUARE` are all derived, so a corrected people list can never leave a stale total behind. This is the single most important consequence of the design. |
 | **Command objects** | `CreateItem`, `PatchItemPeople`, `ApprovePayback` … | The write side is small and each command has exactly one authorisation rule. Keeps permission checks in one obvious place per operation rather than scattered through controllers. |
@@ -218,19 +259,19 @@ would add indirection without removing any real problem.
 
 Auth sits behind one seam so dev never needs real Google credentials:
 
-```kotlin
-interface IdentityProvider { fun verify(token: String): ExternalIdentity }
-class GoogleIdentityProvider  // verifies the Google ID token (OIDC)
-class MockIdentityProvider    // @Profile("dev") — log in as any name, no network
-```
+ ```kotlin
+ interface IdentityProvider { fun verify(token: String): ExternalIdentity }
+ class GoogleIdentityProvider  // verifies the Google ID token (OIDC)
+ class MockIdentityProvider    // @Profile("dev") — log in as any name, no network
+ ```
 
 Receipt images sit behind the same kind of seam — nothing above it knows where bytes live:
 
-```kotlin
-interface ReceiptStorage { fun put(...); fun fetch(...); fun delete(...) }
-class GcsReceiptStorage    // @Profile("gcs-receipts") — a Cloud Storage bucket, ADC credentials
-class LocalReceiptStorage  // @Profile("dev") — plain files, no bucket, no network
-```
+ ```kotlin
+ interface ReceiptStorage { fun put(...); fun fetch(...); fun delete(...) }
+ class GcsReceiptStorage    // @Profile("gcs-receipts") — a Cloud Storage bucket, ADC credentials
+ class LocalReceiptStorage  // @Profile("dev") — plain files, no bucket, no network
+ ```
 
 A profile set with neither adapter refuses to start, exactly like a profile without an identity
 provider. Tests run the same contract against both — the GCS adapter against fake-gcs-server in
@@ -246,86 +287,93 @@ trip, and the balances would still sum to zero while being nonsense. The token i
 therefore cannot be withdrawn before it expires — rotating the signing secret invalidates every
 outstanding link at once, and is the only revocation there is. That is why validity is measured in
 days.
-
+ 
 ---
 
 ## 5. Data model (Flyway `V1__init.sql`)
 
-```sql
-users(id, provider, subject, email, display_name, photo_url, created_at)
-    unique(provider, subject)
-
-trips(id, name, icon, hue, currency_code, created_by_user_id,
-      starts_on, ends_on, created_at, closed_at, hidden_at, deleted_at)
-                                           -- icon: a Lucide slug (plane, house, coffee)
-                                           -- hue:  1..8, the disc colour on GroupCard
-                                           -- closed_at: when the creator ended the trip; null
-                                           -- while live. V4 renamed V1's never-read archived_at
-                                           -- sketch to this. Starts the receipt retention clock.
-                                           -- hidden_at: creator tidied an ended trip off every
-                                           -- member's list. A CHECK forbids it while closed_at
-                                           -- is null, so "hidden" can only ever mean "finished
-                                           -- and put away", never "disappeared mid-trip".
-                                           -- deleted_at: soft delete, for everyone. Filtered out
-                                           -- of every read path; purged 30 days later.
-
-trip_members(id, trip_id, display_name, person_hue, user_id NULL, created_at)
-    unique(trip_id, display_name)          -- user_id NULL until claimed
-                                           -- person_hue 1..8, round-robin, never changes
-
-categories(id, trip_id NULL, key, name_en, name_zh, icon, hue, sort_order)
-                                           -- trip_id NULL = built-in; non-null = user-added
-
-items(id, trip_id, title, category_id, amount_minor BIGINT, payer_member_id,
-      spent_on, note, created_by_user_id, created_at, updated_at, version BIGINT)
-                                           -- amount_minor is bounded on input (≤ 1e12): every
-                                           -- balance is a sum into a Long, so an unbounded amount
-                                           -- could wrap the sum past Long.MAX and break the two
-                                           -- invariants under a 200.
-                                           -- note is the comment somebody adds while recording the
-                                           -- spend, bounded on input twice: 100 words, under a
-                                           -- 1200-character backstop. Two limits because Chinese
-                                           -- writes without spaces, so a paragraph of it counts as
-                                           -- one word — the word count bounds English, the
-                                           -- character cap bounds everything else. The counting
-                                           -- rule (trim, split on any run of whitespace, drop the
-                                           -- empties) is shared verbatim with the browser, so its
-                                           -- live counter and the server's refusal cannot disagree
-                                           -- about the same text. Empty clears it; the same limits
-                                           -- apply to a patch, or they are two requests away from
-                                           -- being no limits at all.  
-                                           -- version: optimistic lock. Two edits from the same
-                                           -- starting state cannot both land — the second gets a
-                                           -- 409, not a silent overwrite of the first's people list.
-
-items ... + split_rule                     -- EQUAL | WEIGHTED | EXACT
-
-item_shares(trip_id, item_id, member_id, weight NULL, exact_amount_minor NULL)
-                                           -- PK(item_id, member_id). The people list.
-                                           -- weight is set for WEIGHTED, exact_amount_minor
-                                           -- for EXACT; both null for EQUAL. Shares are
-                                           -- still derived, never stored.
-                                           -- weight ≥ 0: zero is legal (on the bill for the
-                                           -- record, owing nothing), matching the engine and the
-                                           -- browser's split port. Only a negative is refused.
-                                           -- trip_id is here so both foreign keys can be
-                                           -- composite — see "Trip scoping" below.
-
-item_receipts(trip_id, item_id, object_name, content_type, size_bytes,
-              uploaded_by_user_id, uploaded_at)
-                                           -- PK(item_id): one receipt photo per expense. The
-                                           -- bytes live behind ReceiptStorage; this row is the
-                                           -- pointer — deleted with its expense, and by the
-                                           -- 14-day sweep after the trip ends (V4).
-
-paybacks(id, trip_id, item_id NULL, from_member_id, to_member_id,
-         amount_minor BIGINT, paid_on, proof_object_name NULL, note, status,
-         created_by_user_id, created_at,
-         reviewed_by_user_id NULL, reviewed_at NULL, reject_reason NULL)
-                                           -- item_id NULL = a trip-level settlement from
-                                           -- the Settle-up screen. Same table, same state
-                                           -- machine, same approval rule. See section 7a.
-```
+ ```sql
+ users(id, provider, subject, email, display_name, photo_url, created_at,
+       pay_id NULL, pay_id_updated_at NULL)
+     unique(provider, subject)              -- pay_id (V7): where this person wants to be paid,
+                                            -- as typed, 1..256 chars. On users, not trip_members:
+                                            -- one person, one PayID across every trip, and a seat
+                                            -- nobody has claimed has no owner to set one. Sign-in
+                                            -- never overwrites it. pay_id_updated_at moves only
+                                            -- when the value changes — it drives the 7-day
+                                            -- "updated recently" badge (§9).
+ 
+ trips(id, name, icon, hue, currency_code, created_by_user_id,
+       starts_on, ends_on, created_at, closed_at, hidden_at, deleted_at)
+                                            -- icon: a Lucide slug (plane, house, coffee)
+                                            -- hue:  1..8, the disc colour on GroupCard
+                                            -- closed_at: when the creator ended the trip; null
+                                            -- while live. V4 renamed V1's never-read archived_at
+                                            -- sketch to this. Starts the receipt retention clock.
+                                            -- hidden_at: creator tidied an ended trip off every
+                                            -- member's list. A CHECK forbids it while closed_at
+                                            -- is null, so "hidden" can only ever mean "finished
+                                            -- and put away", never "disappeared mid-trip".
+                                            -- deleted_at: soft delete, for everyone. Filtered out
+                                            -- of every read path; purged 30 days later.
+ 
+ trip_members(id, trip_id, display_name, person_hue, user_id NULL, created_at)
+     unique(trip_id, display_name)          -- user_id NULL until claimed
+                                            -- person_hue 1..8, round-robin, never changes
+ 
+ categories(id, trip_id NULL, key, name_en, name_zh, icon, hue, sort_order)
+                                            -- trip_id NULL = built-in; non-null = user-added
+ 
+ items(id, trip_id, title, category_id, amount_minor BIGINT, payer_member_id,
+       spent_on, note, created_by_user_id, created_at, updated_at, version BIGINT)
+                                            -- amount_minor is bounded on input (≤ 1e12): every
+                                            -- balance is a sum into a Long, so an unbounded amount
+                                            -- could wrap the sum past Long.MAX and break the two
+                                            -- invariants under a 200.
+                                            -- note is the comment somebody adds while recording the
+                                            -- spend, bounded on input twice: 100 words, under a
+                                            -- 1200-character backstop. Two limits because Chinese
+                                            -- writes without spaces, so a paragraph of it counts as
+                                            -- one word — the word count bounds English, the
+                                            -- character cap bounds everything else. The counting
+                                            -- rule (trim, split on any run of whitespace, drop the
+                                            -- empties) is shared verbatim with the browser, so its
+                                            -- live counter and the server's refusal cannot disagree
+                                            -- about the same text. Empty clears it; the same limits
+                                            -- apply to a patch, or they are two requests away from
+                                            -- being no limits at all.  
+                                            -- version: optimistic lock. Two edits from the same
+                                            -- starting state cannot both land — the second gets a
+                                            -- 409, not a silent overwrite of the first's people list.
+ 
+ items ... + split_rule                     -- EQUAL | WEIGHTED | EXACT
+ 
+ item_shares(trip_id, item_id, member_id, weight NULL, exact_amount_minor NULL)
+                                            -- PK(item_id, member_id). The people list.
+                                            -- weight is set for WEIGHTED, exact_amount_minor
+                                            -- for EXACT; both null for EQUAL. Shares are
+                                            -- still derived, never stored.
+                                            -- weight ≥ 0: zero is legal (on the bill for the
+                                            -- record, owing nothing), matching the engine and the
+                                            -- browser's split port. Only a negative is refused.
+                                            -- trip_id is here so both foreign keys can be
+                                            -- composite — see "Trip scoping" below.
+ 
+ item_receipts(trip_id, item_id, object_name, content_type, size_bytes,
+               uploaded_by_user_id, uploaded_at)
+                                            -- PK(item_id): one receipt photo per expense. The
+                                            -- bytes live behind ReceiptStorage; this row is the
+                                            -- pointer — deleted with its expense, and by the
+                                            -- 14-day sweep after the trip ends (V4).
+ 
+ paybacks(id, trip_id, item_id NULL, from_member_id, to_member_id,
+          amount_minor BIGINT, paid_on, proof_object_name NULL, note, status,
+          created_by_user_id, created_at,
+          reviewed_by_user_id NULL, reviewed_at NULL, reject_reason NULL)
+                                            -- item_id NULL = a trip-level settlement from
+                                            -- the Settle-up screen. Same table, same state
+                                            -- machine, same approval rule. See section 7a.
+ ```
 
 No separate settlements table: a settlement **is** a payback with no item. One record type,
 one state machine, one approval rule — and no way for an item repayment and a trip-level
@@ -368,7 +416,8 @@ hue from the person ramp. Custom categories are scoped to their trip. **No emoji
 | delete or restore a trip | trip creator — the only right that reaches everyone else's list |
 | submit a payback claim | the claiming member |
 | approve / reject a payback | item payer + trip creator |
-| view everything | any trip member — receipts included, and still after the trip ends |
+| set or clear a PayID | its owner only — the endpoint takes no user id, so there is nobody else's to name |
+| view everything | any trip member — receipts and co-members' PayIDs included, and still after the trip ends |
 
 ---
 
@@ -383,22 +432,24 @@ hue from the person ramp. Custom categories are scoped to their trip. **No emoji
 |---|---|---|
 | `GroupsHome` | every group's name, icon, hue, member avatars, your net; overall net **per currency** (never summed across currencies — ¥ added to $ is a meaningless figure); count settled. Live groups first, then a **Completed** section holding the ended ones, with hidden trips behind a "Show put away" toggle inside it; a **Recently deleted** section appears for the creator only while something is restorable, each row carrying the date it purges | `GET /api/trips` |
 | `OverallScreen` | net **per person across all groups**, and which groups each debt came from; total spent; what you fronted | `GET /api/overview` |
-| `GroupDetail` | balance hero, three stats, who-owes-who rows, members, currency, start date, expenses grouped by day, filters | `GET /api/trips/{id}` |
+| `GroupDetail` | balance hero, three stats, members, currency, start date, expenses grouped by day, filters (who-owes-who rows moved to `SettleUpSheet`, 2026-10) | `GET /api/trips/{id}` |
 | `ExpenseDetailSheet` | title, category, date, total, your share, payer, per-person splits, note | *(in the trip payload — see below)* |
 | `ExpenseDetailSheet` — approval | who has paid the payer back, each one's status, proof thumbnails | `GET /api/items/{id}` |
 | `Activity` | every expense across **all** groups, newest first, tagged with its group | `GET /api/activity` |
 | `You` | your name, email, avatar; friends with a shared-group count; currency; sign out | `GET /api/me` |
 | `AddExpenseSheet` | member list, category list, then save | `GET /api/trips/{id}/categories`, `POST /api/trips/{id}/items` |
-| `SettleUpSheet` | who owes who, and the shortest way to clear it | `GET /api/trips/{id}/settlement` |
+| `SettleUpSheet` | who owes who, the shortest way to clear it, and how it adds up | `GET /api/trips/{id}/settlement` |
 | `AppBar` invite action | a shareable link | `POST /api/trips/{id}/invite` |
 
 ### The endpoints
 
-```
-POST   /api/auth/session            { idToken }  → sets HttpOnly cookie
-DELETE /api/auth/session            sign out — "You" screen
-DELETE /api/auth/sessions           sign out everywhere — every device, not just this one
-GET    /api/me                      profile + friends + shared-group counts
+ ```
+ POST   /api/auth/session            { idToken }  → sets HttpOnly cookie
+ DELETE /api/auth/session            sign out — "You" screen
+ DELETE /api/auth/sessions           sign out everywhere — every device, not just this one
+ GET    /api/me                      profile + friends + shared-group counts
+ PUT    /api/me/pay-id               { payId } — your own PayID; trimmed, blank clears, ≤ 256
+
 
 GET    /api/trips                   every group: icon, hue, members, your net
 POST   /api/trips                   "New group" chip on GroupsHome
@@ -437,17 +488,21 @@ POST   /api/paybacks/{id}/approve
 POST   /api/paybacks/{id}/reject    { reason }
 PATCH  /api/paybacks/{id}           claimant corrects a rejected claim → back to PENDING
 
-GET    /api/trips/{id}/settlement   bilateral rows: your position with each person
-POST   /api/trips/{id}/settlements  { toMemberId, amountMinor } — the Pay button
-POST   /api/trips/{id}/families     { families: [{memberIds}] } — partitions the trip into
-                                     Families for the Settle-up screen; ephemeral, nothing
-                                     persists (§7b)
-POST   /api/paybacks/{id}/undo      either side, before or after approval
-POST   /api/trips/{id}/remind       { memberId } — a nudge; changes no balance
-GET    /api/trips/{id}/expenses.csv the outward spend as a downloadable file — expenses only
-GET    /api/overview                OverallScreen — cross-group, one call
-GET    /api/activity                Activity tab — cross-group feed
-```
+ GET    /api/trips/{id}/settlement   bilateral rows: your position with each person; the
+                                     trip's fewest-transfers plan; allSquare = your net is 0;
+                                     breakdown — the per-person "How it adds up" table + totals
+ POST   /api/trips/{id}/settlements  { toMemberId, amountMinor } — the Pay button
+ POST   /api/trips/{id}/families     { families: [{memberIds}] } — partitions the trip into
+                                      Families for the Settle-up screen; ephemeral, nothing
+                                      persists (§7b). Also returns the fewest-transfers plan
+                                      between those Families, each line with payToMemberId and
+                                      any claim already pending on it (§7a)
+ POST   /api/paybacks/{id}/undo      either side, before or after approval
+ POST   /api/trips/{id}/remind       { memberId } — a nudge; changes no balance
+ GET    /api/trips/{id}/expenses.csv the outward spend as a downloadable file — expenses only
+ GET    /api/overview                OverallScreen — cross-group, one call
+ GET    /api/activity                Activity tab — cross-group feed
+ ```
 
 ### Added, because the demo needs them
 
@@ -498,6 +553,21 @@ GET    /api/activity                Activity tab — cross-group feed
   The spend *time of day* is not captured by the app, so the export carries the spend date plus
   the row's write timestamp rather than inventing one.
 
+- **`transfers` on `GET /api/trips/{id}/settlement`, and `PUT /api/me/pay-id`** — added by request
+  (2026-10), adopting a split-app PRD's "fewest transfers" plan and per-person PayID. `transfers`
+  is the whole trip's plan, `[{ fromMemberId, toMemberId, amountMinor }]` in display order, derived
+  on read like every other number; paying one is the existing `POST /settlements`, so only the
+  sender's own lines can be acted on. `MemberView` gains `payId` and `payIdChangedRecently` (the
+  7-day rule is decided on the server, beside the clock, not in each browser), `MeView` gains
+  `payId`. The PayID write is a `PUT` of one field on *your* account, not a patch of a profile:
+  there is no other field it could be confused with, and null is a real value (cleared).
+
+- **`breakdown` on `GET /api/trips/{id}/settlement`** — added by request (2026-10): "is there a way
+  to validate the calculation?". One row per person — paid, share, settled, balance, transfers by
+  person and by the fewest plan — plus totals the server derives (paid = shares = group spend,
+  balances and settlements each sum to 0, non-zero pairs, plan size). Shipped so a person can
+  check the arithmetic, which is why no column is ever summed or recomputed in the browser.
+
 ### Removed, because nothing needs them
 
 - **`DELETE /api/trips/{id}/members/{memberId}`** — no screen removes a member. S3 (someone
@@ -510,7 +580,7 @@ GET    /api/activity                Activity tab — cross-group feed
 no second request — matching the demo, where tapping a row shows the sheet instantly. Paybacks
 are *not* in that payload: they are unbounded per item and only the detail sheet's approval
 section uses them, so they come from `GET /api/items/{id}` when the sheet opens.
-
+ 
 ---
 
 ## 7. Frontend — the Tally design system
@@ -561,15 +631,25 @@ deliberately naive and must not be copied.
    running.
 2. **Trips** — `GroupCard` tiles with member `AvatarStack`, overall balance hero.
 3. **Trip home** — balance hero, items grouped by calendar day as `ExpenseRow`s, raised `+`.
+   Each `ExpenseRow`'s figure is the **bill total** the payer paid, captioned `total` (`settled`
+   once square). It was once the viewer's stake — "you fronted" / "your share" — which read as a
+   debt and answered a question nobody had asked of a list of bills; your share is on the detail
+   sheet, and what you owe is the hero and Settle up.
 4. **Add item** — `Keypad` amount → `CategoryPicker` → who paid → `PersonToggleRow`
    (nobody ticked, `All` chip). Live "$71.43 each" as you tick.
 5. **Item detail** — `Sheet`: total, who fronted it, the avatar row where each avatar carries
    its own badge, per-person share rows, payback list with screenshot thumbnails,
    approve/reject for the payer. `SettledBanner` when `ALL_SQUARE`.
-6. **Claim payback** — `Sheet`: amount pre-filled with what you owe, date, optional screenshot.
-7. **Settle up** — `BalanceRow` list (mint owed / coral owes), then the shortest who-pays-who.
+6. **Claim payback** — `Sheet`: the payer's PayID with Copy (badged if it changed recently, or
+   "(no PayID provided)") — you send the money first and file this after, so where to send it
+   comes first — then amount pre-filled with what you owe, date, optional screenshot. Every Pay
+   in the app lands on the recipient's PayID the same way (§7a).
+7. **Settle up** — `BalanceRow` list (mint owed / coral owes), then the shortest who-pays-who
+   under "By minimum transfer" (§7a), each line carrying the recipient's PayID and a Copy button.
+   The roster sheet ("People & settings") shows every member's PayID with Copy, and your own with
+   an edit pencil.
 
----
+ ---
 
 ## 7a. The Settle-up screen
 
@@ -578,22 +658,22 @@ Three of its behaviours contradicted the earlier design; this section is the res
 
 ### Rows are bilateral
 
-One row per person — what you owe them, or they owe you — not a globally minimised transfer
-set. `settle()` already emits transfers between arbitrary pairs (`Fei → Cara`) that the viewer
-is not party to and which have no row on this screen.
+"By person" — the default — is one row per person: what you owe them, or they owe you. The
+minimised plan lives beside it under "By minimum transfer" (below), never mixed into these rows:
+it contains transfers between arbitrary pairs (`Fei → Cara`) that the viewer is not party to.
 
-```
-owesBetween(A, B) =   Σ A's share of items B paid for
-                    − Σ approved paybacks A → B
-                    − Σ B's share of items A paid for
-                    + Σ approved paybacks B → A
-```
+ ```
+ owesBetween(A, B) =   Σ A's share of items B paid for
+                     − Σ approved paybacks A → B
+                     − Σ B's share of items A paid for
+                     + Σ approved paybacks B → A
+ ```
 
 Positive means A owes B. This is consistent with the existing net by construction:
 
-```
-Σ over all B of owesBetween(A, B)  ==  −net(A)
-```
+ ```
+ Σ over all B of owesBetween(A, B)  ==  −net(A)
+ ```
 
 which is why the screenshot's three rows (−39.10, −46.00, +42.30) add up to the −42.80 on the
 group's hero card. That identity is a property test, not a comment.
@@ -609,43 +689,77 @@ to a ghost would stall forever (§5). The confirmation itself lives on the Settl
 trip-level settlement has no bill, so the recipient approves, rejects, or the claimant withdraws it
 there, never on an item sheet.
 
-```
-  tap Pay  →  PENDING          "Sent to Mei for confirmation"   counts as unpaid
-  Mei approves  →  APPROVED    green tick                        counts as paid
-  Mei rejects   →  REJECTED    with a reason                     counts as unpaid
-  either side undoes  →  gone  row returns to unpaid             any time, either state
-```
+ ```
+   tap Pay  →  PENDING          "Sent to Mei for confirmation"   counts as unpaid
+   Mei approves  →  APPROVED    green tick                        counts as paid
+   Mei rejects   →  REJECTED    with a reason                     counts as unpaid
+   either side undoes  →  gone  row returns to unpaid             any time, either state
+ ```
 
 **Undo is available to both parties, before and after approval.** A settled trip can therefore
 un-settle; that is the accepted cost of never trapping someone in a wrong record.
 
 **Remind** nudges someone who owes you. It changes no balance and writes no payback.
 
-**"Done for now"** just closes the sheet. The group reaches all-square when every row is
-approved — it is a derived state, never a button.
+**"Done for now"** just closes the sheet. All-square is a derived state, never a button: you are
+square when your net is 0.
+
+### By minimum transfer
+
+Added 2026-10 by request, adopting a split-app PRD's "fewest transfers" (FR-08/09). A third mode
+beside "By person" and "By family" shows the whole trip's plan from `settle()` (§4): a count — "3
+transfers settle everyone" — and a numbered list, "Eve pays Cat $30.00", each line followed by the
+recipient's PayID and a Copy button, or "(no PayID provided)". Nothing to move reads "Everyone is
+settled. No transfers needed." S8 is the worked example.
+
+- **Only your own lines have Pay.** It files the same trip-level settlement as a row's Pay —
+  `POST /settlements`, PENDING until the recipient (or the creator) approves, on the By person
+  strip where every trip-level confirmation already lives. While your claim to that person is
+  pending the line says so instead of offering Pay twice. Lines between two other people are
+  read-only; nobody can pay on somebody else's behalf.
+- **Pending moves nothing here either.** The plan is computed from approved money only, so a line
+  stays until its payment is approved, then the plan recomputes.
+
+**Why "square" is your net, not every row.** Paying along the plan cuts across bilateral debts: in
+S8 Eve pays Cat $30, though $15 of Eve's debt was to Ben and Cat owed Ben $15. Once approved, Eve's
+net is 0 while her rows read "you owe Ben $15" and "Cat owes you $15" — still true as history, and
+still summing to −net, but cancelling. Calling her "not square" would invite a second payment. So
+`allSquare` is `yourNetMinor == 0`, and while you are square with rows still non-zero, By person
+says "You're square overall — these cancel out", fades the rows, and
+offer no Pay or Remind (the server refuses a remind from somebody whose net is 0 as well).
+**With Families.** Families the viewer has built under "By family" (§7b) carry into this mode:
+each Family is one party, so the plan is computed on Family nets — same algorithm, ties in
+partition order — and a Family pays or is paid once ("Ben & Cat pay Ann $200"). Members of a
+Family settle among themselves, which is the whole point of building one. A line *to* a Family is
+paid to its first member (roster order) with a PayID, or its first member if none has one — the
+server names that person, as `payToMemberId`. Any member of the paying Family may press Pay;
+once one has, the claim is on the line for all of them ("Dan sent this for confirmation") and Pay
+disappears, so a Family cannot pay one line twice. Still ephemeral: close the sheet and the plan
+is per person again. Each person's own hero and rows remain personal — a Family that has paid as
+one leaves its members' individual balances to be squared among themselves.
 
 ### What this costs the engine
 
 `Payback` currently hangs off `Item` and is implicitly *to* that item's payer. A trip-level
 settlement has no item, so it needs an explicit recipient. The change:
 
-```kotlin
-// Paybacks move up to Trip and carry both ends plus an optional item.
-data class Payback(
-    val from: MemberId,
-    val to: MemberId,
-    val amountMinor: Long,
-    val status: PaybackStatus,
-    val itemId: ItemId? = null,   // null = a trip-level settlement
-)
-
-fun owesBetween(trip: Trip, a: MemberId, b: MemberId): Long
-```
+ ```kotlin
+ // Paybacks move up to Trip and carry both ends plus an optional item.
+ data class Payback(
+     val from: MemberId,
+     val to: MemberId,
+     val amountMinor: Long,
+     val status: PaybackStatus,
+     val itemId: ItemId? = null,   // null = a trip-level settlement
+ )
+ 
+ fun owesBetween(trip: Trip, a: MemberId, b: MemberId): Long
+ ```
 
 `itemState` then takes the trip's paybacks filtered to that item rather than reading them off
 `Item` directly. `settle()` is unaffected in shape — a settlement adds to the sender's paid-out
 and the recipient's received-back exactly as an item payback does, so `Σ net == 0` still holds.
-
+ 
 ---
 
 ## 7b. Families on the Settle-up screen
@@ -663,35 +777,36 @@ never placed into an explicit Family automatically becomes their own one-person 
 result is always a **complete partition** of the trip — every member in exactly one Family. Every
 Family is shown at once, explicit and automatic together.
 
-```
-5 people: A, B, C, D, E
-build {A,B}, then {C,D}   →   3 Families shown: {A,B}, {C,D}, {E}
-build {A,B} only          →   4 Families shown: {A,B}, {C}, {D}, {E}
-build nothing             →   5 Families shown: {A}, {B}, {C}, {D}, {E}  (same figures as §7a today)
-```
+ ```
+ 5 people: A, B, C, D, E
+ build {A,B}, then {C,D}   →   3 Families shown: {A,B}, {C,D}, {E}
+ build {A,B} only          →   4 Families shown: {A,B}, {C}, {D}, {E}
+ build nothing             →   5 Families shown: {A}, {B}, {C}, {D}, {E}  (same figures as §7a today)
+ ```
 
 A Family's card shows its own net, plus one bilateral row per **other Family** in the partition —
 never per individual. With Families `{A,B}`, `{C,D}`, `{E}`, the `{A,B}` card shows 2 rows, not 3.
 
 ### Bilateral, not minimised — same rule as §7a, one level up
 
-```
-owesBetween(FamilyX, FamilyY) = Σ over m in FamilyX, n in FamilyY of owesBetween(m, n)
-```
+ ```
+ owesBetween(FamilyX, FamilyY) = Σ over m in FamilyX, n in FamilyY of owesBetween(m, n)
+ ```
 
 Positive means FamilyX owes FamilyY. This is consistent with each Family's own net by construction,
 the direct Family-level analogue of §7a's own identity:
 
-```
-Σ over Y ≠ X of owesBetween(FamilyX, Y)  ==  −netOf(FamilyX)
-```
+ ```
+ Σ over Y ≠ X of owesBetween(FamilyX, Y)  ==  −netOf(FamilyX)
+ ```
 
 which follows from two identities §7a already proves: `owesBetween(a,b) == −owesBetween(b,a)` and
 `Σ owesBetween(A,B) == −net(A)`. Telescoping the second identity over every member of `FamilyX`
 splits into a sum over outsiders (which becomes the left-hand side above) plus a sum over every
 ordered pair *within* `FamilyX` — and that inner sum cancels to exactly zero by the first identity,
 since it pairs every `owesBetween(x,y)` with its negation `owesBetween(y,x)`. Never `settle()`'s
-minimised transfer set — consistent with §7a's rows, and with §9.
+minimised transfer set — consistent with §7a's By person rows. The minimised plan between Families
+lives in "By minimum transfer", which reuses this same partition (§7a).
 
 ### Validation
 
@@ -708,7 +823,7 @@ built is re-derived from scratch on every call from whatever the current request
 the moment the Settle-up sheet is reopened. This is the engine's first "net a cluster of people"
 primitive — `Family`, `FamilyBalance`, and `partitionIntoFamilies` — built entirely on `settle` and
 `owesBetween`, adding no new stored concept anywhere.
-
+ 
 ---
 
 ## 8. Build order
@@ -718,7 +833,7 @@ Each step ends with something runnable and tested.
 1. **Spec** — this document. ✔
 2. **`engine`** — `shares`, `settle`, `itemState`, and S1–S6 as tests. No Spring yet.
    *This is where the app is proven correct.* ✔
-2a. **`engine` — bilateral balances.** ✔ `Payback` moved onto `Trip` with an explicit recipient
+   2a. **`engine` — bilateral balances.** ✔ `Payback` moved onto `Trip` with an explicit recipient
    and an optional item; `owesBetween` added and property-tested to sum to `−net` across 500
    random trips. Required by the Settle-up screen (§7a).
 3. **`server` skeleton** — Spring Boot 4 + Flyway + Postgres via Testcontainers, `/api/me`,
@@ -755,6 +870,18 @@ Each step ends with something runnable and tested.
    net and its position with each other Family; a Families toggle on `SettleUpSheet`. Ephemeral —
    nothing here is persisted (§7b).
 
+6c. **Fewest transfers, PayID, bill totals.** Added 2026-10 by request. `suggestTransfers` gains 
+   the exact-match pass and re-selects largest-against-largest every step (§4), S8 as its
+   acceptance test; the plan rides on `GET /settlement` as `transfers`, cleared-every-net asserted
+   over HTTP as well as property-tested; "square" becomes your net (§7a). `users.pay_id` (V7),
+   `PUT /api/me/pay-id`, PayIDs on `MemberView` with the 7-day badge. Expense rows show the bill
+   total (§7, screen 3). Then, by request, Families carry into the transfers mode: `familyTransfers`
+   in the engine (the same algorithm over Family nets, S9 its acceptance test, the per-Family
+   clearing property alongside), its plan on `POST /families` (§7a). Then the trip screen's
+   who-owes card was removed, and Settle up gained "How it adds up" — `breakdown` in the engine,
+   property-tested to tie out — with a test-only oracle that computes the true minimum by
+   exhaustive search and pins where the plan falls short of it (§4).
+
 7. **Screenshot upload** — Cloud Storage. *Receipts on expenses shipped 2026-08:* the
    `ReceiptStorage` seam (local disk on `dev`, a free-tier GCS bucket on `gcs-receipts`,
    fake-gcs-server in tests), multipart upload behind the expense's own edit rights, a
@@ -775,13 +902,14 @@ Each step ends with something runnable and tested.
    share link's landing page, roster additions from the invite sheet, and fixing a bill's people
    list from its detail sheet — so the hotel case is performable end to end, which the first
    build of this step had quietly left impossible.
-9a. **End-to-end suite.** ✔ Playwright drives the built app against the seeded backend (real
+9a.**End-to-end suite.** ✔ Playwright drives the built app against the seeded backend (real
    Postgres, real HTTP): the hotel case through the glass, preview-equals-landed with the odd
    cent, the §7a round trip across two real browsers (pending moves nothing → reject with a
    reason → try again → approve → undo un-settles), double-save idempotency, the share link
    bounced through sign-in with its fragment intact, and a 中文 browser getting the whole app in
    Chinese. `Σ rows == hero` is asserted off the screen after every mutation — invariant 2 at
-   the last boundary there is.
+   the last boundary there is (read from Settle up → By person since the trip screen's who-owes
+   card was removed, 2026-10).
 10. **Google Sign-In** — swap in `GoogleIdentityProvider` behind the same seam. Note: the interim
     deployment signs people in by name under the `name-signin` profile (`provider = "name"` in
     `users`); Google identities will be new rows, and linking them is part of this step.
@@ -797,10 +925,15 @@ Each step ends with something runnable and tested.
 
 - **Multi-payer items.** One payer per item is how the group actually works.
 - **Refunds** (hotel refunds part of a deposit). Would be a negative-amount item.
-- **Globally minimised transfers.** `settle()` computes them and they are still property-tested,
-  but no screen shows them — Settle-up is bilateral (§7a), including between Families (§7b). Kept
-  in the engine because it is the honest answer to "what is the least money that needs to move",
-  and costs nothing to retain.
+- **Paying through a PayID.** A PayID is a label to copy into your bank app. Ledger never
+  validates one (a phone number, email, ABN or organisation id are all legitimate) and never
+  initiates a payment.
+- **Protecting a PayID from impersonation.** Under the interim `name-signin` profile anyone can
+  sign in as any name (§8 step 10), so somebody could replace a friend's PayID with their own and
+  receive the money meant for them. Accepted for a friends-scale deployment, like name sign-in
+  itself; the one mitigation is that everyone else sees an "updated recently" badge on a PayID for
+  7 days after it changes, so a swap is visible before anyone pays it. Real identity (Google, step
+  10) is the actual fix.
 - **The demo's one-tap "mark everyone settled".** Replaced by the two-party approval, which was
   specified later and in more detail. The demo predates that requirement.
 - **"Jack isn't on 5 items" prompts.** Roster editing is manual by choice; noted as a future
@@ -812,20 +945,20 @@ Each step ends with something runnable and tested.
   really do owe you — and then does nothing. The endpoint exists so the button can be wired and the
   rule has a home. Nobody should be told it sent anything.
 
----
+ ---
 
 ## 10. Verification
 
-```bash
-./gradlew :engine:test      # S1–S6. Must pass before any UI exists.
-./gradlew :server:test      # Testcontainers Postgres. Permissions + approval state machine.
-./gradlew :server:bootTestRun   # dev+demo profiles: mock login, seeded 14-person trip
-docker compose up -d && \
-  ./gradlew :server:bootRun --args='--spring.profiles.active=dev'
-                            # the same app, empty, on a Postgres that keeps its data
-npm --prefix web run test   # Vitest on stores and computed shares
-npm --prefix web run e2e    # Playwright: full approval round-trip
-```
+ ```bash
+ ./gradlew :engine:test      # S1–S6 and S8. Must pass before any UI exists.
+ ./gradlew :server:test      # Testcontainers Postgres. Permissions + approval state machine.
+ ./gradlew :server:bootTestRun   # dev+demo profiles: mock login, seeded 14-person trip
+ docker compose up -d && \
+   ./gradlew :server:bootRun --args='--spring.profiles.active=dev'
+                             # the same app, empty, on a Postgres that keeps its data
+ npm --prefix web run test   # Vitest on stores and computed shares
+ npm --prefix web run e2e    # Playwright: full approval round-trip
+ ```
 
 **End-to-end manual check — the scenario that justifies the app:**
 

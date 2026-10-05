@@ -15,37 +15,51 @@ import type { FamilyCounterpartView, FamilyMemberView } from '@/lib/api'
 import { findAllByTestId, findByTestId } from './testids'
 
 describe('ExpenseRow', () => {
-  const base = { title: 'Hotel', yourShareMinor: -14286, categoryKey: 'stay' }
+  const base = { title: 'Hotel', amountMinor: 42_858, categoryKey: 'stay' }
 
-  it('shows your stake in the bill in whole cents, framed as a share not a debt', () => {
-    // Somebody else paid, so this is your fixed share of the bill — never worded "you owe", which
-    // made a person who had already paid it back read it as money still outstanding. Magnitude only.
-    const row = mount(ExpenseRow, { props: base })
-    expect(row.text()).toContain('$142.86')
-    expect(row.text()).toContain('your share')
+  it('shows the bill total in whole cents when somebody else paid, captioned as the total', () => {
+    // The trailing figure is what the payer actually paid — the number on the receipt — not the
+    // viewer's stake in it. Your share lives on the item's detail sheet; live debts are the hero's.
+    const row = mount(ExpenseRow, { props: { ...base, paidBy: 'Bob' } })
+    expect(row.text()).toContain('$428.58')
+    expect(row.text()).toContain('total')
+    expect(row.text()).toContain('Bob paid')
+    expect(row.text()).not.toContain('your share')
     expect(row.text()).not.toContain('you owe')
   })
 
-  it('calls the payer\'s stake what they fronted, not what they "get"', () => {
-    const row = mount(ExpenseRow, { props: { ...base, yourShareMinor: 37_500, paidByYou: true } })
-    expect(row.text()).toContain('$375.00')
-    expect(row.text()).toContain('you fronted')
+  it('shows the same bill total when you paid, never what you fronted for the others', () => {
+    const row = mount(ExpenseRow, { props: { ...base, paidByYou: true } })
+    expect(row.text()).toContain('$428.58')
+    expect(row.text()).toContain('total')
+    expect(row.text()).toContain('You paid')
+    expect(row.text()).not.toContain('you fronted')
     expect(row.text()).not.toContain('you get')
   })
 
-  it('reads settled from the item state, not from the share being zero', () => {
-    // An item is square when every sharer's approved paybacks cover their portion. Somebody whose
-    // own share happens to be nil is a different thing entirely, and must not read as settled.
+  it('reads settled from the item state, and only from it', () => {
+    // An item is square when every sharer's approved paybacks cover their portion — the server's
+    // derived state. The row never decides that itself from any figure it happens to hold.
     const square = mount(ExpenseRow, { props: { ...base, allSquare: true } })
     expect(square.text()).toContain('settled')
+    expect(square.text()).toContain('$428.58')
+    expect(square.text()).not.toContain('total')
 
-    const zeroShare = mount(ExpenseRow, { props: { ...base, yourShareMinor: 0 } })
-    expect(zeroShare.text()).not.toContain('settled')
+    const open = mount(ExpenseRow, { props: base })
+    expect(open.text()).not.toContain('settled')
   })
 
   it('falls back to the other category rather than rendering nothing', () => {
     const row = mount(ExpenseRow, { props: { ...base, categoryKey: 'nonsense' } })
     expect(row.findComponent(TallyIcon).props('name')).toBe('circle-dashed')
+  })
+})
+
+describe('TallyIcon', () => {
+  it('draws the vendored copy glyph, not the dashed placeholder', () => {
+    const icon = mount(TallyIcon, { props: { name: 'copy' } })
+    expect(icon.find('g').exists()).toBe(true)
+    expect(icon.find('circle[stroke-dasharray]').exists()).toBe(false)
   })
 })
 
@@ -80,6 +94,18 @@ describe('BalanceRow', () => {
     const pending = mount(BalanceRow, { props: { ...base, owedMinor: -3910, pending: true } })
     expect(pending.text()).toContain('Waiting for confirmation')
     expect(pending.findAll('button')).toHaveLength(0)
+  })
+
+  it('offers neither Pay nor Remind when actions are switched off, but keeps the direction', () => {
+    // Square overall (net 0) with rows that cancel out: the rows stay as truthful history, but
+    // paying one of them would just create a new debt the other way, so no action is offered.
+    const youOwe = mount(BalanceRow, { props: { ...base, owedMinor: -3910, actions: false } })
+    expect(youOwe.text()).toContain('You owe')
+    expect(youOwe.findAll('button')).toHaveLength(0)
+
+    const theyOwe = mount(BalanceRow, { props: { ...base, owedMinor: 4230, actions: false } })
+    expect(theyOwe.text()).toContain('Owes you')
+    expect(theyOwe.findAll('button')).toHaveLength(0)
   })
 
   it('keeps a long name whole for hover and readers, even when the row has to clip it', () => {

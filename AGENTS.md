@@ -35,6 +35,20 @@ work today and hide the rule the moment anything here had to reason about a pend
 phase 1 (§9), so it validates that the nudge makes sense and returns. Do not make it "work" by
 inventing a channel, and do not let any response imply something was sent.
 
+**Square means your net is 0, not that every row is.** "By minimum transfer" (§7a) pays across
+bilateral debts — in S8 Eve pays Cat for money she partly owed Ben — so once those payments are
+approved a person's rows can cancel each other without any reaching zero. `allSquare` is therefore
+`yourNetMinor == 0`, the UI fades cancelling rows behind "square overall" with no Pay or Remind,
+and the server refuses a remind from somebody square. Do not "fix" it back to `rows.all { == 0 }`:
+that tells a person who owes nothing to pay again.
+
+**A PayID is its owner's, shown and never used.** It lives on `users` (one person, one PayID across
+trips; an unclaimed seat has none), only `PUT /api/me/pay-id` writes it and that takes no user id.
+It is displayed exactly as typed — never format-validated, never used to initiate a payment.
+Because `name-signin` lets anyone sign in as any name, a PayID swap is the one impersonation with
+money on the end of it; `payIdChangedRecently` (7 days, decided server-side with the `Clock`)
+puts a badge on it for everyone else, and sign-in must never touch `pay_id` or its timestamp.
+
 **Approval is the person owed, or the trip's creator.** Never the person paying. §3 and §7a once
 said "only the person owed" while §5 added the creator; that was settled in favour of §5, and all
 three now say so. The creator being able to settle a debt between two other people is the accepted
@@ -141,6 +155,18 @@ If a change breaks either of these, the change is wrong — not the test.
 Both are property-tested over hundreds of randomly generated trips, not just examples. When you
 add a rule, add the property, not only the case that prompted it.
 
+The fewest-transfers plan is held the same way: for every member, Σ received − Σ sent over
+`transfers` equals their `netMinor`, every amount is positive, nobody both sends and receives, and
+there are at most (non-zero balances − 1) lines. Property-tested over random trips in the engine
+and asserted over HTTP from every seat in `SettlementApiTest`; S8 pins the exact plan. The Family
+plan (`familyTransfers`, on `POST /families`) holds the same four properties per Family, and with
+no explicit Families it must equal the per-person plan exactly — one algorithm, never two; S9 pins it.
+
+"How it adds up" (`breakdown`) is held the same way, because it exists so a person can check the
+maths: per row `fronted − share + settled == net`, Σ fronted == Σ share == group spend, Σ settled
+== 0, and the transfer counts agree with both plans. The browser renders its totals, never sums
+the rows — a client-side total that disagreed would defeat the table's whole purpose.
+
 ## Layout
 
 ```
@@ -239,7 +265,7 @@ there, and `web` never will be.
 ## Verifying
 
 ```bash
-./gradlew :engine:test    # 64 tests, about a second
+./gradlew :engine:test    # 113 tests, about a second
 ./gradlew :server:test    # real Postgres via Testcontainers — needs a running Docker daemon
 ./gradlew spotlessCheck   # Kotlin formatting
 ./gradlew spotlessApply   # fix Kotlin formatting
