@@ -93,8 +93,8 @@ test('the pay form fits the phone', async ({ page }) => {
 })
 
 test('"How it adds up" fits the phone, at its widest: Settled column and five-figure amounts', async ({
-                                                                                                        page,
-                                                                                                      }) => {
+  page,
+}) => {
   await signIn(page, uniquePerson('Sums'))
   await createTrip(page, 'Sums lab')
   await addMembers(page, ['Friend Number Ten'])

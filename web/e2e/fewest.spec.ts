@@ -60,8 +60,8 @@ async function setOwnPayId(page: Page, payId: string) {
 }
 
 test('UC-1 weekend away: three numbered transfers, each with the PayID to send it to', async ({
-                                                                                                browser,
-                                                                                              }) => {
+  browser,
+}) => {
   const ann = await phone(browser, true)
   await signIn(ann, uniquePerson('Ann'))
   const tripUrl = await createTrip(ann, 'Weekend away')
@@ -142,8 +142,8 @@ test('UC-1 weekend away: three numbered transfers, each with the PayID to send i
 })
 
 test('UC-2 with Ann and Ben built into one family: the plan pays the family once, at its PayID', async ({
-                                                                                                          browser,
-                                                                                                        }) => {
+  browser,
+}) => {
   const ann = await phone(browser)
   await signIn(ann, uniquePerson('Ann'))
   await createTrip(ann, 'Weekend families')
@@ -183,8 +183,8 @@ test('UC-2 with Ann and Ben built into one family: the plan pays the family once
 })
 
 test('paying the one suggested transfer squares everyone, and the rows that cancel stay as history', async ({
-                                                                                                              browser,
-                                                                                                            }) => {
+  browser,
+}) => {
   const alice = await phone(browser, true)
   await signIn(alice, uniquePerson('Alice'))
   const tripUrl = await createTrip(alice, 'Chain')

@@ -12,7 +12,7 @@ export default {
     cancel: '取消',
     close: '关闭',
     copy: '复制',
-    copied:'已复制',
+    copied: '已复制',
     done: '暂时完成',
     save: '保存',
     settled: '已结清',

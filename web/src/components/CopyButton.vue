@@ -40,13 +40,13 @@ onBeforeUnmount(() => clearTimeout(reset))
 </script>
 
 <template>
-   <span class="copy">
-     <TallyButton size="sm" variant="secondary" :data-testid="testId" :aria-label="label" @click="copy">
-       <TallyIcon :name="copied ? 'check' : 'copy'" :size="14" aria-hidden="true" />
-       {{ copied ? t('common.copied') : t('common.copy') }}
-     </TallyButton>
-     <span class="copy__status" aria-live="polite">{{ copied ? t('common.copied') : '' }}</span>
-   </span>
+  <span class="copy">
+    <TallyButton size="sm" variant="secondary" :data-testid="testId" :aria-label="label" @click="copy">
+      <TallyIcon :name="copied ? 'check' : 'copy'" :size="14" aria-hidden="true" />
+      {{ copied ? t('common.copied') : t('common.copy') }}
+    </TallyButton>
+    <span class="copy__status" aria-live="polite">{{ copied ? t('common.copied') : '' }}</span>
+  </span>
 </template>
 
 <style scoped>

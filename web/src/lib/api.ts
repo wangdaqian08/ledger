@@ -370,11 +370,11 @@ export interface PatchItemBody {
 // ---- Calls, one per endpoint the seven screens use. ----
 
 export const api = {
-  signIn: (idToken: string) => request<MeView>('POST', '/api/auth/session', {idToken}),
+  signIn: (idToken: string) => request<MeView>('POST', '/api/auth/session', { idToken }),
   signOut: () => request<void>('DELETE', '/api/auth/session'),
   me: () => request<MeView>('GET', '/api/me'),
 
-  setPayId: (payId: string | null) => request<MeView>('PUT', '/api/me/pay-id', {payId}),
+  setPayId: (payId: string | null) => request<MeView>('PUT', '/api/me/pay-id', { payId }),
 
   trips: () => request<TripsView>('GET', '/api/trips'),
   createTrip: (body: { name: string; icon: string; hue: number; currencyCode: string }) =>
@@ -386,13 +386,13 @@ export const api = {
   deleteTrip: (tripId: string) => request<void>('DELETE', `/api/trips/${tripId}`),
   restoreTrip: (tripId: string) => request<TripView>('POST', `/api/trips/${tripId}/restore`, {}),
   claimable: (tripId: string, token: string) =>
-    request<ClaimableView>('POST', `/api/trips/${tripId}/claimable`, {token}),
+    request<ClaimableView>('POST', `/api/trips/${tripId}/claimable`, { token }),
   claim: (tripId: string, token: string, memberId: string) =>
-    request<TripView>('POST', `/api/trips/${tripId}/claim`, {token, memberId}),
+    request<TripView>('POST', `/api/trips/${tripId}/claim`, { token, memberId }),
   addMember: (tripId: string, displayName: string) =>
-    request<MemberView>('POST', `/api/trips/${tripId}/members`, {displayName}),
+    request<MemberView>('POST', `/api/trips/${tripId}/members`, { displayName }),
   renameMember: (tripId: string, memberId: string, displayName: string) =>
-    request<MemberView>('PATCH', `/api/trips/${tripId}/members/${memberId}`, {displayName}),
+    request<MemberView>('PATCH', `/api/trips/${tripId}/members/${memberId}`, { displayName }),
   closeTrip: (tripId: string) => request<TripView>('POST', `/api/trips/${tripId}/close`, {}),
   reopenTrip: (tripId: string) => request<TripView>('POST', `/api/trips/${tripId}/reopen`, {}),
 
@@ -420,14 +420,14 @@ export const api = {
   approvePayback: (paybackId: string) =>
     request<PaybackView>('POST', `/api/paybacks/${paybackId}/approve`, {}),
   rejectPayback: (paybackId: string, reason: string) =>
-    request<PaybackView>('POST', `/api/paybacks/${paybackId}/reject`, {reason}),
+    request<PaybackView>('POST', `/api/paybacks/${paybackId}/reject`, { reason }),
   undoPayback: (paybackId: string) => request<void>('POST', `/api/paybacks/${paybackId}/undo`, {}),
 
   settlement: (tripId: string) => request<SettlementView>('GET', `/api/trips/${tripId}/settlement`),
   submitSettlement: (tripId: string, body: { toMemberId: string; amountMinor: number }) =>
     request<PaybackView>('POST', `/api/trips/${tripId}/settlements`, body),
   remind: (tripId: string, memberId: string) =>
-    request<void>('POST', `/api/trips/${tripId}/remind`, {memberId}),
+    request<void>('POST', `/api/trips/${tripId}/remind`, { memberId }),
 
   /**
    * A read shaped as a POST (matching `claimable`): previews the whole trip partitioned into
@@ -436,6 +436,6 @@ export const api = {
    */
   previewFamilies: (tripId: string, families: string[][]) =>
     request<FamiliesView>('POST', `/api/trips/${tripId}/families`, {
-      families: families.map((memberIds) => ({memberIds})),
+      families: families.map((memberIds) => ({ memberIds })),
     }),
 }

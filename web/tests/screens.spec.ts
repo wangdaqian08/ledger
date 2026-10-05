@@ -1695,7 +1695,7 @@ describe('JoinScreen', () => {
       email: 'jack@ledger.test',
       photoUrl: null,
       friends: [],
-      payId: null
+      payId: null,
     }
     session.checked = true
     await router.push('/join/t-1#token=tok-abc')
@@ -2027,37 +2027,37 @@ describe('SettleUpSheet square overall', () => {
   })
 
   it("speaks the viewer's frame: an API +6000 is 'You owe', with Pay", async () => {
-  const sheet = mountSquare({
-    rows: [{ ...cancellingRows()[0]!, owedMinor: 6_000, settled: [] }],
-    allSquare: false,
+    const sheet = mountSquare({
+      rows: [{ ...cancellingRows()[0]!, owedMinor: 6_000, settled: [] }],
+      allSquare: false,
+    })
+    await nextTick()
+
+    const row = sheet.findComponent({ name: 'BalanceRow' })
+    expect(row.props('owedMinor')).toBe(-6_000)
+    expect(row.text()).toContain('You owe')
+    expect(row.find(testId('row-pay')).exists()).toBe(true)
   })
-  await nextTick()
 
-  const row = sheet.findComponent({ name: 'BalanceRow' })
-  expect(row.props('owedMinor')).toBe(-6_000)
-  expect(row.text()).toContain('You owe')
-  expect(row.find(testId('row-pay')).exists()).toBe(true)
-})
+  it('sinks all-square people below real debts, and fades them', async () => {
+    // You're square with Bob but owe Cara. Cara must lead; Bob is kept for reassurance but sunk to
+    // the bottom and muted, so a $0 row never sits above money that still needs acting on.
+    const [bobRow, caraRow] = cancellingRows()
+    const sheet = mountSquare({
+      rows: [
+        { ...bobRow!, owedMinor: 0, settled: [] },
+        { ...caraRow!, owedMinor: 6_000, pending: [] },
+      ],
+      allSquare: false,
+    })
+    await nextTick()
 
-it('sinks all-square people below real debts, and fades them', async () => {
-  // You're square with Bob but owe Cara. Cara must lead; Bob is kept for reassurance but sunk to
-  // the bottom and muted, so a $0 row never sits above money that still needs acting on.
-  const [bobRow, caraRow] = cancellingRows()
-  const sheet = mountSquare({
-    rows: [
-      { ...bobRow!, owedMinor: 0, settled: [] },
-      { ...caraRow!, owedMinor: 6_000, pending: [] },
-    ],
-    allSquare: false,
+    const rows = sheet.findAllComponents({ name: 'BalanceRow' })
+    expect(rows[0]!.props('displayName')).toBe('Cara')
+    expect(rows[0]!.props('muted')).toBe(false)
+    expect(rows[1]!.props('displayName')).toBe('Bob')
+    expect(rows[1]!.props('muted')).toBe(true)
   })
-  await nextTick()
-
-  const rows = sheet.findAllComponents({ name: 'BalanceRow' })
-  expect(rows[0]!.props('displayName')).toBe('Cara')
-  expect(rows[0]!.props('muted')).toBe(false)
-  expect(rows[1]!.props('displayName')).toBe('Bob')
-  expect(rows[1]!.props('muted')).toBe(true)
-})
 })
 
 describe('SettleUpSheet How it adds up', () => {

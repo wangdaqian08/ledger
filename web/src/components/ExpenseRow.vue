@@ -37,7 +37,7 @@ const props = withDefaults(
     paidBy?: string
     paidByYou?: boolean
     spentOn?: string
-    amountMinor:number
+    amountMinor: number
     allSquare?: boolean
     currencyCode?: string
     symbol?: string

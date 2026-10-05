@@ -36,9 +36,9 @@ const { t } = useI18n()
 
 <template>
   <div class="payid" :data-testid="testId">
-     <span class="payid__label">{{
-         showOwner ? t('payId.labelOf', { name: ownerName }) : t('payId.label')
-       }}</span>
+    <span class="payid__label">{{
+      showOwner ? t('payId.labelOf', { name: ownerName }) : t('payId.label')
+    }}</span>
     <template v-if="payId">
       <span class="payid__value" data-testid="payid-value">{{ payId }}</span>
       <TallyBadge

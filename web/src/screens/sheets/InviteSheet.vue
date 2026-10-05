@@ -191,12 +191,12 @@ async function deleteTrip() {
   const outstanding = props.trip.unsettledMinor
   const question = outstanding
     ? t('invite.deleteConfirmOutstanding', {
-      name: props.trip.name,
-      amount: formatMinor(outstanding, {
-        currencyCode: props.trip.currencyCode,
-        symbol: currencySymbol(props.trip.currencyCode),
-      }),
-    })
+        name: props.trip.name,
+        amount: formatMinor(outstanding, {
+          currencyCode: props.trip.currencyCode,
+          symbol: currencySymbol(props.trip.currencyCode),
+        }),
+      })
     : t('invite.deleteConfirm', { name: props.trip.name })
   if (!confirm(question)) return
 
@@ -363,8 +363,8 @@ async function copyLink() {
               :owner-name="member.displayName"
             />
             <span v-else class="invite__payid-none" data-testid="payid-unclaimed">
-               {{ t('payId.noneYet') }}
-             </span>
+              {{ t('payId.noneYet') }}
+            </span>
           </div>
         </div>
       </section>

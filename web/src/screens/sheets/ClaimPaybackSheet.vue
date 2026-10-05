@@ -5,7 +5,7 @@ import AmountKeypadField from '@/components/AmountKeypadField.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TextField from '@/components/TextField.vue'
-import {api, type MemberView} from '@/lib/api'
+import { api, type MemberView } from '@/lib/api'
 import { todayLocal } from '@/lib/dates'
 
 /**
@@ -25,7 +25,7 @@ const props = withDefaults(
     symbol: string
     recipient?: MemberView | null
   }>(),
-  {recipient: null},
+  { recipient: null },
 )
 const emit = defineEmits<{ close: []; saved: [] }>()
 

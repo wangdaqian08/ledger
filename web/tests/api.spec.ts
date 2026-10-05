@@ -92,11 +92,11 @@ describe('api client', () => {
     expect(path).toBe('/api/me/pay-id')
     expect(options.method).toBe('PUT')
     expect(options.headers['X-XSRF-TOKEN']).toBe('token-123')
-    expect(JSON.parse(options.body)).toEqual({payId: 'ann@example.com'})
+    expect(JSON.parse(options.body)).toEqual({ payId: 'ann@example.com' })
 
-    respond(200, {id: 'u1', displayName: 'Ann', email: 'a@x', photoUrl: null, friends: [], payId: null})
+    respond(200, { id: 'u1', displayName: 'Ann', email: 'a@x', photoUrl: null, friends: [], payId: null })
     await api.setPayId(null)
-    expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toEqual({payId: null})
+    expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toEqual({ payId: null })
   })
 
   it('posts a partition of member-id arrays as {families: [{memberIds}]}', async () => {
