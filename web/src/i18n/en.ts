@@ -53,7 +53,7 @@ export default {
     transferPaysYou: '{from} pays you',
     transferPays: '{from} pays {to}',
     transferCountOne: '{count} transfer settles everyone',
-    transferCount: '{count} transfers settles everyone',
+    transferCount: '{count} transfers settle everyone',
     transferPayMany: '{from} pay {to}',
     partyYouObject: 'you',
     partyJoin: '{a} & {b}',
