@@ -3296,6 +3296,113 @@ describe('SettleUpSheet By minimum transfer with families', () => {
     const catToggle = findAllByTestId(sheet, 'person-toggle').find((r) => r.text().includes('Cat'))!
     expect(catToggle.attributes('aria-pressed')).toBe('true')
   })
+
+  /** Builds one Family without leaving By minimum transfer — the same builder, opened from the plan. */
+  async function buildFamilyFromPlan(sheet: ReturnType<typeof mount>, names: string[]) {
+    await findByTestId(sheet, 'build-family').trigger('click')
+    for (const name of names) {
+      await findAllByTestId(sheet, 'person-toggle')
+        .find((r) => r.text().includes(name))!
+        .trigger('click')
+    }
+    await findByTestId(sheet, 'family-builder-add').trigger('click')
+    await flushPromises()
+  }
+
+  it('builds a family right from By minimum transfer, and the plan becomes the family plan', async () => {
+    mocked.previewFamilies!.mockResolvedValue(annBenFromDan)
+    const sheet = mountAs(dan)
+    await nextTick()
+    await openPlan(sheet)
+    expect(findAllByTestId(sheet, 'transfer-row')).toHaveLength(3)
+
+    // Picking people takes the plan's place: Pay under a half-built family would pay the wrong plan.
+    await findByTestId(sheet, 'build-family').trigger('click')
+    expect(findAllByTestId(sheet, 'transfer-row')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'person-toggle')).toHaveLength(5)
+    await findByTestId(sheet, 'family-builder-cancel').trigger('click')
+    await buildFamilyFromPlan(sheet, ['Ann', 'Ben'])
+
+    expect(mocked.previewFamilies).toHaveBeenCalledTimes(1)
+    expect(mocked.previewFamilies).toHaveBeenCalledWith('t-1', [[ann.id, ben.id]])
+    expect(findAllByTestId(sheet, 'person-toggle')).toHaveLength(0)
+    expect(findByTestId(sheet, 'transfer-families').text()).toBe('Using your families: Ann & Ben')
+    expect(findByTestId(sheet, 'transfer-count').text()).toBe('2 transfers settle everyone')
+    const lines = findAllByTestId(sheet, 'transfer-row')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]!.text()).toContain('You pay Ann & Ben')
+    expect(sheet.emitted('changed')).toBeUndefined()
+
+    // One partition, two views of it: the family built here is the one By family shows.
+    await findByTestId(sheet, 'mode-by-family').trigger('click')
+    await flushPromises()
+    expect(findAllByTestId(sheet, 'family-card')).toHaveLength(4)
+    expect(findAllByTestId(sheet, 'family-undo')).toHaveLength(1)
+  })
+
+  it('cancelling a build started from the plan puts the per-person plan back, fetching nothing', async () => {
+    const sheet = mountAs(dan)
+    await nextTick()
+    await openPlan(sheet)
+
+    await findByTestId(sheet, 'build-family').trigger('click')
+    await findByTestId(sheet, 'family-builder-cancel').trigger('click')
+
+    expect(mocked.previewFamilies).not.toHaveBeenCalled()
+    expect(findAllByTestId(sheet, 'transfer-families')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'transfer-row')).toHaveLength(3)
+    expect(findByTestId(sheet, 'build-family').exists()).toBe(true)
+  })
+
+  it('Undo on the plan takes back the last family built, down to the per-person plan', async () => {
+    mocked.previewFamilies!.mockResolvedValue(annBenFromDan)
+    const sheet = mountAs(dan)
+    await nextTick()
+    await openPlan(sheet)
+    expect(findAllByTestId(sheet, 'transfer-families-undo')).toHaveLength(0) // nothing built to undo
+    await buildFamilyFromPlan(sheet, ['Ann', 'Ben'])
+    await buildFamilyFromPlan(sheet, ['Cat', 'Eve'])
+    expect(mocked.previewFamilies).toHaveBeenLastCalledWith('t-1', [
+      [ann.id, ben.id],
+      [cat.id, eve.id],
+    ])
+    expect(findByTestId(sheet, 'transfer-families').text()).toBe('Using your families: Ann & Ben · Cat & Eve')
+    // Only Dan is left unplaced, and a family of one is no family: nothing more to build.
+    expect(findAllByTestId(sheet, 'build-family')).toHaveLength(0)
+
+    await findByTestId(sheet, 'transfer-families-undo').trigger('click')
+    await flushPromises()
+    expect(mocked.previewFamilies).toHaveBeenLastCalledWith('t-1', [[ann.id, ben.id]])
+    expect(findByTestId(sheet, 'transfer-families').text()).toBe('Using your families: Ann & Ben')
+
+    const calls = mocked.previewFamilies!.mock.calls.length
+    await findByTestId(sheet, 'transfer-families-undo').trigger('click')
+    await flushPromises()
+    // Nothing built is the per-person plan, and that one came with the trip — no fetch for it.
+    expect(mocked.previewFamilies!.mock.calls.length).toBe(calls)
+    expect(findAllByTestId(sheet, 'transfer-families')).toHaveLength(0)
+    expect(findAllByTestId(sheet, 'transfer-row')).toHaveLength(3)
+    expect(findByTestId(sheet, 'transfer-count').text()).toBe('3 transfers settle everyone')
+    expect(sheet.emitted('changed')).toBeUndefined()
+  })
+
+  it('a build from the plan that fails says why there, and keeps what was ticked', async () => {
+    mocked.previewFamilies!.mockRejectedValue(new Error('Network unreachable'))
+    const sheet = mountAs(dan)
+    await nextTick()
+    await openPlan(sheet)
+
+    await buildFamilyFromPlan(sheet, ['Ann', 'Ben'])
+
+    expect(sheet.find('[role="alert"]').text()).toBe('Network unreachable')
+    expect(findAllByTestId(sheet, 'transfer-families')).toHaveLength(0)
+    const ticked = findAllByTestId(sheet, 'person-toggle').filter(
+      (r) => r.attributes('aria-pressed') === 'true',
+    )
+    expect(ticked).toHaveLength(2)
+    expect(ticked[0]!.text()).toContain('Ann')
+    expect(ticked[1]!.text()).toContain('Ben')
+  })
 })
 
 describe('TripScreen after the trip ends', () => {

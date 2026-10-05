@@ -42,11 +42,13 @@ import {
  * Paying by transfers settles nets, not pairs, which is why "square" means your net is 0: the rows
  * can then still read non-zero while cancelling out, and they fade with nothing left to act on.
  *
- * With Families built under "By family", the plan honours them: a Family settles among itself, so
- * as one party it pays or gets paid once rather than each member squaring up separately. That plan
- * comes back with the Family preview, already ordered, with the member a payment on each line goes
- * to chosen by the server. Building nothing leaves the per-person plan exactly as it was, and the
- * Families are still ephemeral — nothing is saved, and they reset with the rest of the sheet.
+ * With Families built, the plan honours them: a Family settles among itself, so as one party it
+ * pays or gets paid once rather than each member squaring up separately. They can be built under
+ * "By family" or right here — one partition, two views of it — and the plan's Undo takes back the
+ * most recent one, since the plan has no per-Family card to undo from. That plan comes back with
+ * the Family preview, already ordered, with the member a payment on each line goes to chosen by
+ * the server. Building nothing leaves the per-person plan exactly as it was, and the Families are
+ * still ephemeral — nothing is saved, and they reset with the rest of the sheet.
  * Any claim already filed on a family line hides Pay from every member of the paying Family, because
  * a second member paying the same line would be the Family paying twice.
  *
@@ -110,7 +112,7 @@ watch(
     // on "By person" with nothing built, the same way the rest of this sheet's state resets.
     mode.value = 'person'
     builtFamilies.value = []
-    buildingFamily.value = false
+    buildingOn.value = null
     familiesView.value = null
     familiesError.value = ''
     familyTicks.value = {}
@@ -254,7 +256,10 @@ function startTransferPay(transfer: TransferView) {
 const familyMode = computed(() => mode.value === 'family')
 /** Committed explicit Families, in build order — member ids only, never persisted. */
 const builtFamilies = ref<string[][]>([])
-const buildingFamily = ref(false)
+/** The tab the builder was opened from, if any. Both tabs build into the one partition, but a
+ *  half-built family belongs to the view it was started in, like a half-filled pay form: the other
+ *  tab keeps showing its own content rather than somebody else's builder. */
+const buildingOn = ref<Mode | null>(null)
 const familiesView = ref<FamiliesView | null>(null)
 const familiesError = ref('')
 
@@ -277,7 +282,7 @@ const familyTicks = ref<Record<string, boolean>>({})
 
 function startBuildingFamily() {
   familyTicks.value = {}
-  buildingFamily.value = true
+  buildingOn.value = mode.value
 }
 
 /** Order-independent identity for a set of member ids, so a Family can be matched back to what
@@ -365,13 +370,19 @@ async function onFamilyBuilt(memberIds: string[]) {
   const candidate = [...builtFamilies.value, memberIds]
   if (await refreshFamilies(candidate)) {
     builtFamilies.value = candidate
-    buildingFamily.value = false
+    buildingOn.value = null
   }
 }
 
 async function disband(entry: FamilyView) {
   const key = familyKey(entry.members.map((m) => m.id))
   builtFamilies.value = builtFamilies.value.filter((family) => familyKey(family) !== key)
+  await refreshFamilies()
+}
+
+/** The plan's Undo takes back the most recent build — the plan has no card per Family to pick from. */
+async function undoLastFamily() {
+  builtFamilies.value = builtFamilies.value.slice(0, -1)
   await refreshFamilies()
 }
 
@@ -518,13 +529,13 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
             data-testid="pending-claim"
           >
             <div class="settle__pending-head">
-              <span class="settle__pending-text">
-                {{
-                  claim.fromMemberId === myMemberId
-                    ? t('settle.sentForConfirmation', { name: row.displayName })
-                    : t('settle.awaitingYou', { name: row.displayName })
-                }}
-              </span>
+               <span class="settle__pending-text">
+                 {{
+                   claim.fromMemberId === myMemberId
+                     ? t('settle.sentForConfirmation', { name: row.displayName })
+                     : t('settle.awaitingYou', { name: row.displayName })
+                 }}
+               </span>
               <!-- U1: the amount that is actually waiting, shown — not just that something is. -->
               <AmountText
                 :amount-minor="claim.amountMinor"
@@ -597,14 +608,14 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
             data-testid="settled-claim"
           >
             <div class="settle__pending-head">
-              <span class="settle__settled-text">
-                {{
-                  claim.fromMemberId === myMemberId
-                    ? t('settle.youPaidThem', { name: row.displayName })
-                    : t('settle.theyPaidYou', { name: row.displayName })
-                }}
-                · {{ t('settle.settled') }}
-              </span>
+               <span class="settle__settled-text">
+                 {{
+                   claim.fromMemberId === myMemberId
+                     ? t('settle.youPaidThem', { name: row.displayName })
+                     : t('settle.theyPaidYou', { name: row.displayName })
+                 }}
+                 · {{ t('settle.settled') }}
+               </span>
               <AmountText
                 :amount-minor="claim.amountMinor"
                 size="sm"
@@ -629,9 +640,9 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
             data-testid="declined-claim"
           >
             <div class="settle__pending-head">
-              <span class="settle__declined-text">{{
-                t('settle.declinedByThem', { name: row.displayName })
-              }}</span>
+               <span class="settle__declined-text">{{
+                   t('settle.declinedByThem', { name: row.displayName })
+                 }}</span>
               <AmountText
                 :amount-minor="claim.amountMinor"
                 size="sm"
@@ -679,212 +690,250 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
       </template>
 
       <template v-else-if="mode === 'transfers'">
-        <p v-if="familyPlanMode" class="settle__transfer-families" data-testid="transfer-families">
-          {{ familiesNote }}
-        </p>
-        <p v-if="planSize === 0" class="settle__family-empty" data-testid="no-transfers">
-          {{ t('settle.noTransfers') }}
-        </p>
-        <template v-else-if="planSize !== null">
-          <p class="settle__transfer-count" data-testid="transfer-count">
-            {{
-              planSize === 1
-                ? t('settle.transferCountOne', { count: planSize })
-                : t('settle.transferCount', { count: planSize })
-            }}
-          </p>
-          <!-- Each side a Family or a lone person, rendered as the server sent it. -->
-          <ol v-if="familyPlanMode" class="settle__transfers">
-            <li
-              v-for="(transfer, index) in familyPlan ?? []"
-              :key="familyLineKey(transfer)"
-              class="settle__transfer"
-              data-testid="transfer-row"
+        <!-- The same builder as By family, into the same partition, standing in for the plan while
+             people are picked: Pay under a half-built family would pay from a plan about to change. -->
+        <FamilyBuilder
+          v-if="buildingOn === 'transfers'"
+          :initial-ticked="familyTicks"
+          :candidates="unassignedMembers"
+          :must-leave-one-out="builtFamilies.length === 0"
+          @built="onFamilyBuilt"
+          @cancel="buildingOn = null"
+        />
+        <template v-else>
+          <div v-if="familyPlanMode" class="settle__transfer-families-head">
+            <p class="settle__transfer-families" data-testid="transfer-families">
+              {{ familiesNote }}
+            </p>
+            <TallyButton
+              variant="ghost"
+              size="sm"
+              data-testid="transfer-families-undo"
+              @click="undoLastFamily"
             >
-              <div class="settle__transfer-head">
-                <span class="settle__transfer-index">{{ index + 1 }}</span>
-                <span class="settle__transfer-text">{{ familyTransferSentence(transfer) }}</span>
-                <AmountText
-                  :amount-minor="transfer.amountMinor"
-                  :currency-code="currencyCode"
-                  :symbol="symbol"
+              {{ t('common.undo') }}
+            </TallyButton>
+          </div>
+          <p v-if="planSize === 0" class="settle__family-empty" data-testid="no-transfers">
+            {{ t('settle.noTransfers') }}
+          </p>
+          <template v-else-if="planSize !== null">
+            <p class="settle__transfer-count" data-testid="transfer-count">
+              {{
+                planSize === 1
+                  ? t('settle.transferCountOne', { count: planSize })
+                  : t('settle.transferCount', { count: planSize })
+              }}
+            </p>
+            <!-- Each side a Family or a lone person, rendered as the server sent it. -->
+            <ol v-if="familyPlanMode" class="settle__transfers">
+              <li
+                v-for="(transfer, index) in familyPlan ?? []"
+                :key="familyLineKey(transfer)"
+                class="settle__transfer"
+                data-testid="transfer-row"
+              >
+                <div class="settle__transfer-head">
+                  <span class="settle__transfer-index">{{ index + 1 }}</span>
+                  <span class="settle__transfer-text">{{ familyTransferSentence(transfer) }}</span>
+                  <AmountText
+                    :amount-minor="transfer.amountMinor"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </div>
+
+                <!-- Whoever the server picked to receive this line's payment. -->
+                <PayIdLine
+                  class="settle__transfer-payid"
+                  test-id="transfer-payid"
+                  :pay-id="memberById(transfer.payToMemberId)?.payId ?? null"
+                  :recently-changed="memberById(transfer.payToMemberId)?.payIdChangedRecently ?? false"
+                  :owner-name="memberName(transfer.payToMemberId)"
+                  :show-owner="transfer.to.length > 1"
                 />
-              </div>
 
-              <!-- Whoever the server picked to receive this line's payment. -->
-              <PayIdLine
-                class="settle__transfer-payid"
-                test-id="transfer-payid"
-                :pay-id="memberById(transfer.payToMemberId)?.payId ?? null"
-                :recently-changed="memberById(transfer.payToMemberId)?.payIdChangedRecently ?? false"
-                :owner-name="memberName(transfer.payToMemberId)"
-                :show-owner="transfer.to.length > 1"
-              />
-
-              <!-- Already claimed by anyone in the paying Family: read-only, and Pay hidden from every
+                <!-- Already claimed by anyone in the paying Family: read-only, and Pay hidden from every
                    one of them — a second member paying this line would be the Family paying twice. -->
-              <template v-if="transfer.pending.length > 0">
+                <template v-if="transfer.pending.length > 0">
+                  <div
+                    v-for="claim in transfer.pending"
+                    :key="claim.id"
+                    class="settle__pending settle__transfer-note"
+                    data-testid="transfer-pending"
+                  >
+                    <div class="settle__pending-head">
+                       <span class="settle__pending-text">
+                         {{
+                           claim.fromMemberId === myMemberId
+                             ? t('settle.sentForConfirmation', { name: memberName(claim.toMemberId) })
+                             : t('settle.familySentForConfirmation', { name: memberName(claim.fromMemberId) })
+                         }}
+                       </span>
+                      <AmountText
+                        :amount-minor="claim.amountMinor"
+                        size="sm"
+                        :currency-code="currencyCode"
+                        :symbol="symbol"
+                      />
+                    </div>
+                  </div>
+                </template>
+
+                <template v-else-if="youPayOn(transfer)">
+                  <form
+                    v-if="paying === transfer.payToMemberId"
+                    class="settle__pay"
+                    data-testid="pay-form"
+                    @submit.prevent="pay"
+                  >
+                    <AmountKeypadField
+                      v-model="amountMinor"
+                      test-id="pay-amount"
+                      :currency-code="currencyCode"
+                      :symbol="symbol"
+                    />
+                    <TallyButton
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      data-testid="pay-send"
+                      :loading="pendingTag === 'pay'"
+                      :disabled="amountMinor <= 0"
+                      @click="pay"
+                    >
+                      {{ t('settle.pay') }}
+                    </TallyButton>
+                  </form>
+                  <TallyButton
+                    v-else
+                    class="settle__transfer-pay"
+                    size="sm"
+                    data-testid="transfer-pay"
+                    @click="startFamilyTransferPay(transfer)"
+                  >
+                    {{ t('settle.pay') }}
+                  </TallyButton>
+                </template>
+              </li>
+            </ol>
+            <ol v-else class="settle__transfers">
+              <li
+                v-for="(transfer, index) in transfers"
+                :key="`${transfer.fromMemberId}-${transfer.toMemberId}`"
+                class="settle__transfer"
+                data-testid="transfer-row"
+              >
+                <div class="settle__transfer-head">
+                  <span class="settle__transfer-index">{{ index + 1 }}</span>
+                  <span class="settle__transfer-text">{{ transferSentence(transfer) }}</span>
+                  <AmountText
+                    :amount-minor="transfer.amountMinor"
+                    :currency-code="currencyCode"
+                    :symbol="symbol"
+                  />
+                </div>
+
+                <PayIdLine
+                  class="settle__transfer-payid"
+                  test-id="transfer-payid"
+                  :pay-id="memberById(transfer.toMemberId)?.payId ?? null"
+                  :recently-changed="memberById(transfer.toMemberId)?.payIdChangedRecently ?? false"
+                  :owner-name="memberName(transfer.toMemberId)"
+                />
+
+                <!-- Already claimed: read-only here. Withdrawing or deciding it is the By person
+                   strip's job, so a settlement keeps exactly one place it is acted on (§7a). -->
                 <div
-                  v-for="claim in transfer.pending"
-                  :key="claim.id"
+                  v-if="pendingOnTransfer(transfer)"
                   class="settle__pending settle__transfer-note"
                   data-testid="transfer-pending"
                 >
                   <div class="settle__pending-head">
-                    <span class="settle__pending-text">
-                      {{
-                        claim.fromMemberId === myMemberId
-                          ? t('settle.sentForConfirmation', { name: memberName(claim.toMemberId) })
-                          : t('settle.familySentForConfirmation', { name: memberName(claim.fromMemberId) })
-                      }}
-                    </span>
+                     <span class="settle__pending-text">
+                       {{
+                         pendingOnTransfer(transfer)!.sentByYou
+                           ? t('settle.sentForConfirmation', { name: memberName(transfer.toMemberId) })
+                           : t('settle.awaitingYou', { name: memberName(transfer.fromMemberId) })
+                       }}
+                     </span>
                     <AmountText
-                      :amount-minor="claim.amountMinor"
+                      :amount-minor="pendingOnTransfer(transfer)!.claim.amountMinor"
                       size="sm"
                       :currency-code="currencyCode"
                       :symbol="symbol"
                     />
                   </div>
                 </div>
-              </template>
 
-              <template v-else-if="youPayOn(transfer)">
-                <form
-                  v-if="paying === transfer.payToMemberId"
-                  class="settle__pay"
-                  data-testid="pay-form"
-                  @submit.prevent="pay"
-                >
-                  <AmountKeypadField
-                    v-model="amountMinor"
-                    test-id="pay-amount"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
+                <template v-else-if="transfer.fromMemberId === myMemberId">
+                  <form
+                    v-if="paying === transfer.toMemberId"
+                    class="settle__pay"
+                    data-testid="pay-form"
+                    @submit.prevent="pay"
+                  >
+                    <AmountKeypadField
+                      v-model="amountMinor"
+                      test-id="pay-amount"
+                      :currency-code="currencyCode"
+                      :symbol="symbol"
+                    />
+                    <TallyButton
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      data-testid="pay-send"
+                      :loading="pendingTag === 'pay'"
+                      :disabled="amountMinor <= 0"
+                      @click="pay"
+                    >
+                      {{ t('settle.pay') }}
+                    </TallyButton>
+                  </form>
                   <TallyButton
-                    type="submit"
-                    variant="primary"
+                    v-else
+                    class="settle__transfer-pay"
                     size="sm"
-                    data-testid="pay-send"
-                    :loading="pendingTag === 'pay'"
-                    :disabled="amountMinor <= 0"
-                    @click="pay"
+                    data-testid="transfer-pay"
+                    @click="startTransferPay(transfer)"
                   >
                     {{ t('settle.pay') }}
                   </TallyButton>
-                </form>
-                <TallyButton
-                  v-else
-                  class="settle__transfer-pay"
-                  size="sm"
-                  data-testid="transfer-pay"
-                  @click="startFamilyTransferPay(transfer)"
-                >
-                  {{ t('settle.pay') }}
-                </TallyButton>
-              </template>
-            </li>
-          </ol>
-          <ol v-else class="settle__transfers">
-            <li
-              v-for="(transfer, index) in transfers"
-              :key="`${transfer.fromMemberId}-${transfer.toMemberId}`"
-              class="settle__transfer"
-              data-testid="transfer-row"
-            >
-              <div class="settle__transfer-head">
-                <span class="settle__transfer-index">{{ index + 1 }}</span>
-                <span class="settle__transfer-text">{{ transferSentence(transfer) }}</span>
-                <AmountText
-                  :amount-minor="transfer.amountMinor"
-                  :currency-code="currencyCode"
-                  :symbol="symbol"
-                />
-              </div>
+                </template>
+              </li>
+            </ol>
+          </template>
 
-              <PayIdLine
-                class="settle__transfer-payid"
-                test-id="transfer-payid"
-                :pay-id="memberById(transfer.toMemberId)?.payId ?? null"
-                :recently-changed="memberById(transfer.toMemberId)?.payIdChangedRecently ?? false"
-                :owner-name="memberName(transfer.toMemberId)"
-              />
-
-              <!-- Already claimed: read-only here. Withdrawing or deciding it is the By person
-                   strip's job, so a settlement keeps exactly one place it is acted on (§7a). -->
-              <div
-                v-if="pendingOnTransfer(transfer)"
-                class="settle__pending settle__transfer-note"
-                data-testid="transfer-pending"
-              >
-                <div class="settle__pending-head">
-                  <span class="settle__pending-text">
-                    {{
-                      pendingOnTransfer(transfer)!.sentByYou
-                        ? t('settle.sentForConfirmation', { name: memberName(transfer.toMemberId) })
-                        : t('settle.awaitingYou', { name: memberName(transfer.fromMemberId) })
-                    }}
-                  </span>
-                  <AmountText
-                    :amount-minor="pendingOnTransfer(transfer)!.claim.amountMinor"
-                    size="sm"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                </div>
-              </div>
-
-              <template v-else-if="transfer.fromMemberId === myMemberId">
-                <form
-                  v-if="paying === transfer.toMemberId"
-                  class="settle__pay"
-                  data-testid="pay-form"
-                  @submit.prevent="pay"
-                >
-                  <AmountKeypadField
-                    v-model="amountMinor"
-                    test-id="pay-amount"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                  <TallyButton
-                    type="submit"
-                    variant="primary"
-                    size="sm"
-                    data-testid="pay-send"
-                    :loading="pendingTag === 'pay'"
-                    :disabled="amountMinor <= 0"
-                    @click="pay"
-                  >
-                    {{ t('settle.pay') }}
-                  </TallyButton>
-                </form>
-                <TallyButton
-                  v-else
-                  class="settle__transfer-pay"
-                  size="sm"
-                  data-testid="transfer-pay"
-                  @click="startTransferPay(transfer)"
-                >
-                  {{ t('settle.pay') }}
-                </TallyButton>
-              </template>
-            </li>
-          </ol>
+          <TallyButton
+            v-if="unassignedMembers.length >= 2"
+            variant="secondary"
+            full-width
+            data-testid="build-family"
+            @click="startBuildingFamily"
+          >
+            {{ t('settle.buildFamily') }}
+          </TallyButton>
         </template>
 
-        <p v-if="familyPlanMode && familiesError" class="settle__error" role="alert">{{ familiesError }}</p>
+        <p
+          v-if="(familyPlanMode || buildingOn === 'transfers') && familiesError"
+          class="settle__error"
+          role="alert"
+        >
+          {{ familiesError }}
+        </p>
         <p v-if="error" class="settle__error" role="alert">{{ error }}</p>
       </template>
 
       <template v-else>
         <FamilyBuilder
-          v-if="buildingFamily"
+          v-if="buildingOn === 'family'"
           :initial-ticked="familyTicks"
           :candidates="unassignedMembers"
           :must-leave-one-out="builtFamilies.length === 0"
           @built="onFamilyBuilt"
-          @cancel="buildingFamily = false"
+          @cancel="buildingOn = null"
         />
         <template v-else>
           <p v-if="builtFamilies.length === 0" class="settle__family-empty" data-testid="no-families-yet">
@@ -957,7 +1006,7 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                   class="sums__num"
                   role="columnheader"
                   data-testid="breakdown-head-settled"
-                  >{{ t('breakdown.settled') }}</span
+                >{{ t('breakdown.settled') }}</span
                 >
                 <span class="sums__num" role="columnheader">{{ t('breakdown.balance') }}</span>
                 <span class="sums__transfers" role="columnheader">{{ t('breakdown.transfers') }}</span>
@@ -970,101 +1019,101 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                 role="row"
                 data-testid="breakdown-row"
               >
-                <span
-                  class="sums__name"
-                  role="rowheader"
-                  :title="row.displayName"
-                  data-testid="breakdown-name"
-                  >{{ row.isYou ? t('common.you') : row.displayName }}</span
-                >
+                 <span
+                   class="sums__name"
+                   role="rowheader"
+                   :title="row.displayName"
+                   data-testid="breakdown-name"
+                 >{{ row.isYou ? t('common.you') : row.displayName }}</span
+                 >
                 <span class="sums__num" role="cell" data-testid="breakdown-paid">
-                  <AmountText
-                    :amount-minor="row.paidMinor"
-                    size="xs"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                </span>
+                   <AmountText
+                     :amount-minor="row.paidMinor"
+                     size="xs"
+                     :currency-code="currencyCode"
+                     :symbol="symbol"
+                   />
+                 </span>
                 <span class="sums__num" role="cell" data-testid="breakdown-share">
-                  <AmountText
-                    :amount-minor="row.shareMinor"
-                    size="xs"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                </span>
+                   <AmountText
+                     :amount-minor="row.shareMinor"
+                     size="xs"
+                     :currency-code="currencyCode"
+                     :symbol="symbol"
+                   />
+                 </span>
                 <span v-if="showSettled" class="sums__num" role="cell" data-testid="breakdown-settled">
-                  <AmountText
-                    :amount-minor="row.settledMinor"
-                    size="xs"
-                    :show-sign="row.settledMinor !== 0"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                </span>
+                   <AmountText
+                     :amount-minor="row.settledMinor"
+                     size="xs"
+                     :show-sign="row.settledMinor !== 0"
+                     :currency-code="currencyCode"
+                     :symbol="symbol"
+                   />
+                 </span>
                 <span class="sums__num" role="cell" data-testid="breakdown-balance">
-                  <AmountText
-                    :amount-minor="row.netMinor"
-                    size="xs"
-                    :tone="balanceTone(row.netMinor)"
-                    :show-sign="row.netMinor !== 0"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                </span>
+                   <AmountText
+                     :amount-minor="row.netMinor"
+                     size="xs"
+                     :tone="balanceTone(row.netMinor)"
+                     :show-sign="row.netMinor !== 0"
+                     :currency-code="currencyCode"
+                     :symbol="symbol"
+                   />
+                 </span>
                 <span class="sums__transfers" role="cell" data-testid="breakdown-transfers">{{
-                  t('breakdown.transferPair', {
-                    byPerson: row.transfersByPerson,
-                    fewest: row.transfersFewest,
-                  })
-                }}</span>
+                    t('breakdown.transferPair', {
+                      byPerson: row.transfersByPerson,
+                      fewest: row.transfersFewest,
+                    })
+                  }}</span>
               </div>
 
               <div class="sums__line sums__line--total" role="row" data-testid="breakdown-total">
-                <span class="sums__name" role="rowheader" data-testid="breakdown-name">{{
-                  t('breakdown.total')
-                }}</span>
+                 <span class="sums__name" role="rowheader" data-testid="breakdown-name">{{
+                     t('breakdown.total')
+                   }}</span>
                 <span class="sums__num" role="cell" data-testid="breakdown-paid">
-                  <AmountText
-                    :amount-minor="breakdown.totals.paidMinor"
-                    size="xs"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                </span>
+                   <AmountText
+                     :amount-minor="breakdown.totals.paidMinor"
+                     size="xs"
+                     :currency-code="currencyCode"
+                     :symbol="symbol"
+                   />
+                 </span>
                 <span class="sums__num" role="cell" data-testid="breakdown-share">
-                  <AmountText
-                    :amount-minor="breakdown.totals.shareMinor"
-                    size="xs"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                </span>
+                   <AmountText
+                     :amount-minor="breakdown.totals.shareMinor"
+                     size="xs"
+                     :currency-code="currencyCode"
+                     :symbol="symbol"
+                   />
+                 </span>
                 <span v-if="showSettled" class="sums__num" role="cell" data-testid="breakdown-settled">
-                  <AmountText
-                    :amount-minor="breakdown.totals.settledMinor"
-                    size="xs"
-                    :show-sign="breakdown.totals.settledMinor !== 0"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                </span>
+                   <AmountText
+                     :amount-minor="breakdown.totals.settledMinor"
+                     size="xs"
+                     :show-sign="breakdown.totals.settledMinor !== 0"
+                     :currency-code="currencyCode"
+                     :symbol="symbol"
+                   />
+                 </span>
                 <span class="sums__num" role="cell" data-testid="breakdown-balance">
-                  <AmountText
-                    :amount-minor="breakdown.totals.netMinor"
-                    size="xs"
-                    :tone="balanceTone(breakdown.totals.netMinor)"
-                    :show-sign="breakdown.totals.netMinor !== 0"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                </span>
+                   <AmountText
+                     :amount-minor="breakdown.totals.netMinor"
+                     size="xs"
+                     :tone="balanceTone(breakdown.totals.netMinor)"
+                     :show-sign="breakdown.totals.netMinor !== 0"
+                     :currency-code="currencyCode"
+                     :symbol="symbol"
+                   />
+                 </span>
                 <span class="sums__transfers" role="cell" data-testid="breakdown-transfers">{{
-                  t('breakdown.transferPair', {
-                    byPerson: breakdown.totals.transfersByPerson,
-                    fewest: breakdown.totals.transfersFewest,
-                  })
-                }}</span>
+                    t('breakdown.transferPair', {
+                      byPerson: breakdown.totals.transfersByPerson,
+                      fewest: breakdown.totals.transfersFewest,
+                    })
+                  }}</span>
               </div>
             </div>
 
@@ -1074,7 +1123,7 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
       </section>
 
       <TallyButton variant="secondary" full-width data-testid="settle-done" @click="emit('close')"
-        >{{ t('common.done') }}
+      >{{ t('common.done') }}
       </TallyButton>
     </div>
   </SheetPanel>
@@ -1142,19 +1191,18 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
   color: var(--ink-2);
 }
 
+.settle__transfer-families-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .settle__transfer-families {
+  min-width: 0;
   font-size: var(--text-caption);
   color: var(--text-muted);
   overflow-wrap: anywhere;
-}
-
-.settle__transfers {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
 .settle__transfer {

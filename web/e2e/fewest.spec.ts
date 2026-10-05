@@ -159,17 +159,17 @@ test('UC-2 with Ann and Ben built into one family: the plan pays the family once
   await ann.getByTestId('sheet-close').click()
 
   await ann.getByTestId('settle-up').click()
-  await ann.getByTestId('mode-by-family').click()
+  await ann.getByTestId('mode-mini-transfer').click()
+  await expect(ann.getByTestId('transfer-count')).toHaveText('3 transfers settle everyone')
   await ann.getByTestId('build-family').click()
   await ann.getByTestId('person-toggle').filter({ hasText: 'You' }).click()
   await ann.getByTestId('person-toggle').filter({ hasText: 'Ben' }).click()
   await ann.getByTestId('family-builder-add').click()
-  await expect(ann.getByTestId('family-card')).toHaveCount(4) // {Ann, Ben}, Cat, Dan, Eve
+
 
   // As one party Ann and Ben are owed 50, which Dan owes exactly: two payments instead of three,
   // and the family's goes to the member with a PayID. Order is the server's, so lines are found by
   // what they say rather than where they sit.
-  await ann.getByTestId('mode-min-transfer').click()
   await expect(ann.getByTestId('transfer-families')).toHaveText('Using your families: You & Ben')
   await expect(ann.getByTestId('transfer-count')).toHaveText('2 transfers settle everyone')
   const plan = ann.getByTestId('transfer-row')
@@ -180,6 +180,16 @@ test('UC-2 with Ann and Ben built into one family: the plan pays the family once
   await expect(plan.filter({ hasText: 'Eve pays Cat' })).toContainText('$30.00')
   // Ann's family is paid, not paying, so nothing here is hers to Pay.
   await expect(ann.getByTestId('transfer-pay')).toHaveCount(0)
+
+  // One partition behind both views: By family shows the family built on the plan.
+  await ann.getByTestId('mode-by-family').click()
+  await expect(ann.getByTestId('family-card')).toHaveCount(4) // {Ann, Ben}, Cat, Dan, Eve
+
+  // And Undo on the plan takes it back to the per-person plan.
+  await ann.getByTestId('mode-min-transfer').click()
+  await ann.getByTestId('transfer-families-undo').click()
+  await expect(ann.getByTestId('transfer-families')).toHaveCount(0)
+  await expect(ann.getByTestId('transfer-count')).toHaveText('3 transfers settle everyone')
 })
 
 test('paying the one suggested transfer squares everyone, and the rows that cancel stay as history', async ({
