@@ -1205,6 +1205,15 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
   overflow-wrap: anywhere;
 }
 
+.settle__transfers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .settle__transfer {
   display: flex;
   flex-direction: column;
