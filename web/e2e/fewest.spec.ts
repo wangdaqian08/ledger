@@ -159,13 +159,12 @@ test('UC-2 with Ann and Ben built into one family: the plan pays the family once
   await ann.getByTestId('sheet-close').click()
 
   await ann.getByTestId('settle-up').click()
-  await ann.getByTestId('mode-mini-transfer').click()
+  await ann.getByTestId('mode-min-transfer').click()
   await expect(ann.getByTestId('transfer-count')).toHaveText('3 transfers settle everyone')
   await ann.getByTestId('build-family').click()
   await ann.getByTestId('person-toggle').filter({ hasText: 'You' }).click()
   await ann.getByTestId('person-toggle').filter({ hasText: 'Ben' }).click()
   await ann.getByTestId('family-builder-add').click()
-
 
   // As one party Ann and Ben are owed 50, which Dan owes exactly: two payments instead of three,
   // and the family's goes to the member with a PayID. Order is the server's, so lines are found by

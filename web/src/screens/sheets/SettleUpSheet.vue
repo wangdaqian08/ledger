@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
+import {computed, ref, useId, watch} from 'vue'
+import {useI18n} from 'vue-i18n'
 import AmountKeypadField from '@/components/AmountKeypadField.vue'
 import AmountText from '@/components/AmountText.vue'
 import BalanceRow from '@/components/BalanceRow.vue'
@@ -76,11 +76,11 @@ const props = withDefaults(
     /** "How it adds up", as the server derived it. Absent from an older server: no section then. */
     breakdown?: BreakdownView | null
   }>(),
-  { focusMemberId: null, allSquare: false, transfers: () => [], breakdown: null },
+  {focusMemberId: null, allSquare: false, transfers: () => [], breakdown: null},
 )
 const emit = defineEmits<{ close: []; changed: [] }>()
 
-const { t } = useI18n()
+const {t} = useI18n()
 
 // Real debts first, all-square people sunk and faded, so a $0 row never sits above money that still
 // needs acting on.
@@ -175,7 +175,7 @@ async function act(action: () => Promise<unknown>, tag: string | null = null) {
 async function pay() {
   const toMemberId = paying.value
   if (!toMemberId || amountMinor.value <= 0) return
-  await act(() => api.submitSettlement(props.tripId, { toMemberId, amountMinor: amountMinor.value }), 'pay')
+  await act(() => api.submitSettlement(props.tripId, {toMemberId, amountMinor: amountMinor.value}), 'pay')
   if (!error.value) paying.value = null
 }
 
@@ -220,10 +220,10 @@ function setMode(next: Mode) {
 /** "You pay Cat" / "Dan pays you" / "Dan pays Ben" — the viewer is always "you", grammatically. */
 function transferSentence(transfer: TransferView): string {
   if (transfer.fromMemberId === props.myMemberId) {
-    return t('settle.transferYouPay', { to: memberName(transfer.toMemberId) })
+    return t('settle.transferYouPay', {to: memberName(transfer.toMemberId)})
   }
   if (transfer.toMemberId === props.myMemberId) {
-    return t('settle.transferPaysYou', { from: memberName(transfer.fromMemberId) })
+    return t('settle.transferPaysYou', {from: memberName(transfer.fromMemberId)})
   }
   return t('settle.transferPays', {
     from: memberName(transfer.fromMemberId),
@@ -242,7 +242,7 @@ function pendingOnTransfer(transfer: TransferView): { claim: PaybackView; sentBy
   const other = mine ? transfer.toMemberId : transfer.fromMemberId
   const row = props.rows.find((r) => r.memberId === other)
   const claim = row ? pendingOf(row).find((p) => p.fromMemberId === transfer.fromMemberId) : undefined
-  return claim ? { claim, sentByYou: mine } : null
+  return claim ? {claim, sentByYou: mine} : null
 }
 
 function startTransferPay(transfer: TransferView) {
@@ -400,7 +400,7 @@ const planSize = computed<number | null>(() =>
 
 /** Folds names pairwise through a "{a} … {b}" message, so each language owns its separator. */
 function joinWith(key: string, parts: string[]): string {
-  return parts.slice(1).reduce((a, b) => t(key, { a, b }), parts[0] ?? '')
+  return parts.slice(1).reduce((a, b) => t(key, {a, b}), parts[0] ?? '')
 }
 
 /** A party by name, the viewer first: "You & Dan" leading a sentence, "you & Ben" after a verb. */
@@ -417,7 +417,7 @@ const familiesNote = computed(() =>
       'settle.familiesJoin',
       builtFamilies.value.map((ids) =>
         partyLabel(
-          ids.map((id) => ({ id, displayName: memberName(id) })),
+          ids.map((id) => ({id, displayName: memberName(id)})),
           true,
         ),
       ),
@@ -532,8 +532,8 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                <span class="settle__pending-text">
                  {{
                    claim.fromMemberId === myMemberId
-                     ? t('settle.sentForConfirmation', { name: row.displayName })
-                     : t('settle.awaitingYou', { name: row.displayName })
+                     ? t('settle.sentForConfirmation', {name: row.displayName})
+                     : t('settle.awaitingYou', {name: row.displayName})
                  }}
                </span>
               <!-- U1: the amount that is actually waiting, shown — not just that something is. -->
@@ -611,8 +611,8 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                <span class="settle__settled-text">
                  {{
                    claim.fromMemberId === myMemberId
-                     ? t('settle.youPaidThem', { name: row.displayName })
-                     : t('settle.theyPaidYou', { name: row.displayName })
+                     ? t('settle.youPaidThem', {name: row.displayName})
+                     : t('settle.theyPaidYou', {name: row.displayName})
                  }}
                  · {{ t('settle.settled') }}
                </span>
@@ -641,7 +641,7 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
           >
             <div class="settle__pending-head">
                <span class="settle__declined-text">{{
-                   t('settle.declinedByThem', { name: row.displayName })
+                   t('settle.declinedByThem', {name: row.displayName})
                  }}</span>
               <AmountText
                 :amount-minor="claim.amountMinor"
@@ -721,8 +721,8 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
             <p class="settle__transfer-count" data-testid="transfer-count">
               {{
                 planSize === 1
-                  ? t('settle.transferCountOne', { count: planSize })
-                  : t('settle.transferCount', { count: planSize })
+                  ? t('settle.transferCountOne', {count: planSize})
+                  : t('settle.transferCount', {count: planSize})
               }}
             </p>
             <!-- Each side a Family or a lone person, rendered as the server sent it. -->
@@ -766,8 +766,8 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                        <span class="settle__pending-text">
                          {{
                            claim.fromMemberId === myMemberId
-                             ? t('settle.sentForConfirmation', { name: memberName(claim.toMemberId) })
-                             : t('settle.familySentForConfirmation', { name: memberName(claim.fromMemberId) })
+                             ? t('settle.sentForConfirmation', {name: memberName(claim.toMemberId)})
+                             : t('settle.familySentForConfirmation', {name: memberName(claim.fromMemberId)})
                          }}
                        </span>
                       <AmountText
@@ -853,8 +853,8 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                      <span class="settle__pending-text">
                        {{
                          pendingOnTransfer(transfer)!.sentByYou
-                           ? t('settle.sentForConfirmation', { name: memberName(transfer.toMemberId) })
-                           : t('settle.awaitingYou', { name: memberName(transfer.fromMemberId) })
+                           ? t('settle.sentForConfirmation', {name: memberName(transfer.toMemberId)})
+                           : t('settle.awaitingYou', {name: memberName(transfer.fromMemberId)})
                        }}
                      </span>
                     <AmountText
