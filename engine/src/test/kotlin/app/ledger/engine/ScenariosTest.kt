@@ -379,5 +379,4 @@ class ScenariosTest {
             familyTransfers(families),
         )
     }
-
 }

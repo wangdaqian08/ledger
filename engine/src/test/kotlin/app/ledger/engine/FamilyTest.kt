@@ -322,7 +322,6 @@ class FamilyTest {
         }
     }
 
-
     @Test
     fun `a family's figure with another is the exact negative of that family's figure back`() {
         (1..500).forEach { seed ->
