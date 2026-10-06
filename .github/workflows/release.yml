@@ -1,0 +1,55 @@
+name: Release
+
+# Pushing a tag like v0.2.5 builds the production jar and attaches it to a GitHub Release, so the
+# Home PC can fetch it with one curl instead of the Mac → VM → Cloud Shell → browser relay.
+# Tests are not re-run here: tag only commits on main, which CI has already passed.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  jar:
+    name: Build and publish ledger.jar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: temurin
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # The sign-in screen shows VITE_APP_VERSION, so the deployed site names its own release. The
+      # tag itself, not `git describe`, which could pick another tag on the same commit.
+      - name: Build the SPA for /ledger/
+        run: |
+          npm --prefix web ci
+          VITE_BASE=/ledger/ VITE_APP_VERSION="$GITHUB_REF_NAME" npm --prefix web run build
+
+      # -PrequireSpa refuses a jar whose bundle is missing or built for another base.
+      - name: Build the jar
+        run: ./gradlew :server:bootJar -PrequireSpa=/ledger/
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Releases v0.2.0–v0.2.5 were created by hand with no jar, so a release may already exist for
+        # the tag: attach to it rather than fail.
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" server/build/libs/ledger.jar --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" server/build/libs/ledger.jar --generate-notes
+          fi
