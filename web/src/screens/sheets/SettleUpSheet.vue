@@ -1228,6 +1228,7 @@ const breakdownColumns = computed(() => (showSettled.value ? 4 : 3))
   background: none;
   cursor: pointer;
   text-align: left;
+  overflow: hidden;
 }
 
 /* The same uppercase micro-label as the comment fold, so it reads as a section, not a stray control. */
