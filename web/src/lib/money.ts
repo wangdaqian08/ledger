@@ -90,11 +90,20 @@ export function currencySymbol(currencyCode: string): string {
 
 /** The whole thing as one string: `−$1,234.05`. Uses a real minus sign, not a hyphen. */
 export function formatMinor(amountMinor: number, options: FormatOptions = {}): string {
-  const { currencyCode = 'AUD', symbol = '$', showSign = false, locale = 'en-US' } = options
+  const {
+    currencyCode = 'AUD',
+    symbol = currencySymbol(currencyCode),
+    showSign = false,
+    locale = 'en-US',
+  } = options
   const parts = splitMinor(amountMinor, currencyCode, locale)
 
   const sign = showSign ? (parts.negative ? '−' : '+') : parts.negative ? '−' : ''
   const decimal = parts.fraction === '' ? '' : `.${parts.fraction}`
 
   return `${sign}${symbol}${parts.whole}${decimal}`
+}
+
+export function toneOf(minor: number): 'settled' | 'owed' | 'owe' {
+  return minor === 0 ? 'settled' : minor > 0 ? 'owed' : 'owe'
 }

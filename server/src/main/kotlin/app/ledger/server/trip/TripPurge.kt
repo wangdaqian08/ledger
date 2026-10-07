@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
+import java.time.Duration
 
 /**
  * Destroys trips whose restore window has passed (spec §3): deleting is reversible for
@@ -34,7 +35,6 @@ class TripPurge(
     private val paybacks: PaybackRepository,
     private val items: ItemRepository,
     private val members: TripMemberRepository,
-    private val properties: TripProperties,
     private val clock: Clock,
     transactionManager: PlatformTransactionManager,
 ) {
@@ -58,7 +58,7 @@ class TripPurge(
      */
     @Scheduled(cron = "0 47 3 * * *")
     fun purgeDeleted(): Int {
-        val cutoff = clock.instant().minus(properties.restoreWindow)
+        val cutoff = clock.instant().minus(RESTORE_WINDOW)
         var removed = 0
         for (trip in trips.findAllPurgeable(cutoff)) {
             try {
@@ -85,8 +85,12 @@ class TripPurge(
             }
         }
         if (removed > 0) {
-            log.info("purged {} trip(s) deleted over {} ago", removed, properties.restoreWindow)
+            log.info("purged {} trip(s) deleted over {} ago", removed, RESTORE_WINDOW)
         }
         return removed
+    }
+
+    companion object {
+        val RESTORE_WINDOW: Duration = Duration.ofDays(30)
     }
 }

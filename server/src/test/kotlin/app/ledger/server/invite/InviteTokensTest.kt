@@ -20,7 +20,7 @@ class InviteTokensTest {
 
     private fun tokensAt(instant: Instant, secret: String = this.secret) =
         InviteTokens(
-            InviteProperties(secret = secret, validity = Duration.ofDays(14)),
+            InviteProperties(secret = secret),
             Clock.fixed(instant, ZoneOffset.UTC),
         )
 
@@ -30,6 +30,11 @@ class InviteTokensTest {
         val tokens = tokensAt(now)
 
         assertEquals(trip, tokens.verify(tokens.issue(trip).token))
+    }
+
+    @Test
+    fun `a link lastes 14 days`() {
+        assertEquals(now.plus(Duration.ofDays(14)), tokensAt(now).issue(UUID.randomUUID()).expiresAt)
     }
 
     @Test

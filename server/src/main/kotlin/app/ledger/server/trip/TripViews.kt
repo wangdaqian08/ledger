@@ -107,8 +107,6 @@ data class TripsView(
 
 data class CurrencyTotalView(val currencyCode: String, val netMinor: Long)
 
-data class InviteView(val token: String, val expiresAt: Instant)
-
 /**
  * What a share link is allowed to show before its holder is on the trip: the trip's name and the
  * names still free to claim. Deliberately not [TripView] — no items, no balances, no claimed

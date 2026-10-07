@@ -1,6 +1,5 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import AmountInput from '../src/components/AmountInput.vue'
 import AmountKeypadField from '../src/components/AmountKeypadField.vue'
 import CategoryPicker from '../src/components/CategoryPicker.vue'
 import CommentField from '../src/components/CommentField.vue'
@@ -82,72 +81,6 @@ describe('SplitBar', () => {
     await bar.find('.split').trigger('pointermove', { clientX: 1 })
 
     expect(bar.emitted('update:people')).toBeUndefined()
-  })
-})
-
-describe('AmountInput', () => {
-  it('accumulates digits as whole cents, like a till', async () => {
-    const input = mount(AmountInput, { props: { modelValue: 0 } })
-
-    await input.find('input').setValue('1999')
-
-    // 19.99 typed as digits is 1999 cents. Never 19.99 the float, which is 19.989999999999998.
-    expect(input.emitted('update:modelValue')?.at(-1)).toEqual([1999])
-    expect((input.find('input').element as HTMLInputElement).value).toBe('19.99')
-  })
-
-  it('ignores anything that is not a digit', async () => {
-    const input = mount(AmountInput, { props: { modelValue: 0 } })
-
-    await input.find('input').setValue('1a9$9.9')
-
-    expect(input.emitted('update:modelValue')?.at(-1)).toEqual([1999])
-  })
-
-  it('has no decimal point at all for a zero-decimal currency', async () => {
-    const input = mount(AmountInput, { props: { modelValue: 0, currencyCode: 'JPY', symbol: '¥' } })
-
-    await input.find('input').setValue('3334')
-
-    expect(input.emitted('update:modelValue')?.at(-1)).toEqual([3334])
-    expect((input.find('input').element as HTMLInputElement).value).toBe('3334')
-  })
-
-  it('shows an empty field rather than a zero, so the placeholder can do its job', () => {
-    const input = mount(AmountInput, { props: { modelValue: 0 } })
-    expect((input.find('input').element as HTMLInputElement).value).toBe('')
-  })
-
-  it('clears a typed zero from the screen, not only from the model', async () => {
-    // The browser paints the keystroke before Vue hears about it, and a ref set to the value it
-    // already holds patches nothing — so a typed "0" used to stay visible against a model of 0.
-    const input = mount(AmountInput, { props: { modelValue: 0 } })
-
-    await input.find('input').setValue('0')
-
-    expect(input.emitted('update:modelValue')?.at(-1)).toEqual([0])
-    expect((input.find('input').element as HTMLInputElement).value).toBe('')
-  })
-
-  it('rejects a digit past the safe-integer cap on screen as well as in the model', async () => {
-    const input = mount(AmountInput, { props: { modelValue: 9_007_199_254_740_991 } })
-
-    await input.find('input').setValue('90071992547409919')
-
-    // Nothing was emitted, and the field snapped back to the last accepted amount rather than
-    // keeping the rejected text.
-    expect(input.emitted('update:modelValue')).toBeUndefined()
-    expect((input.find('input').element as HTMLInputElement).value).toBe('90071992547409.91')
-  })
-
-  it('moves the decimal point when the currency changes under an unchanged amount', async () => {
-    const input = mount(AmountInput, { props: { modelValue: 1999 } })
-    expect((input.find('input').element as HTMLInputElement).value).toBe('19.99')
-
-    await input.setProps({ currencyCode: 'JPY', symbol: '¥' })
-
-    // Same digits, different currency: 1999 minor units of yen are ¥1999, not ¥19.99.
-    expect((input.find('input').element as HTMLInputElement).value).toBe('1999')
   })
 })
 

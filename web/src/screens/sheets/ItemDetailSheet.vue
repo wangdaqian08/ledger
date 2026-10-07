@@ -13,13 +13,17 @@ import TallyIcon from '@/components/TallyIcon.vue'
 import TextField from '@/components/TextField.vue'
 import {
   api,
+  categoryName,
+  errorMessage,
   receiptHref,
   type CategoryView,
   type ItemDetail,
   type PaybackView,
+  type SplitRule,
   type TripView,
 } from '@/lib/api'
-import { currencySymbol, formatMinor } from '@/lib/money'
+import { LONG_DATE, parseLocalDate } from '@/lib/dates'
+import { formatMinor } from '@/lib/money'
 import { prepareReceipt } from '@/lib/receipt'
 
 /**
@@ -37,7 +41,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   changed: []
-  payBack: [itemId: string, toName: string, prefillMinor: number]
+  payBack: [itemId: string, prefillMinor: number]
   edit: [item: ItemDetail]
 }>()
 
@@ -54,7 +58,6 @@ const editingNote = ref(false)
 const noteDraft = ref('')
 const noteTooLong = ref(false)
 
-const symbol = computed(() => currencySymbol(props.trip.currencyCode))
 const me = computed(() => props.trip.members.find((m) => m.isYou) ?? null)
 const payerName = computed(() => memberName(detail.value?.payerMemberId ?? ''))
 const iAmPayer = computed(() => detail.value?.payerMemberId === me.value?.id)
@@ -64,10 +67,9 @@ const iCanEdit = computed(() => iAmPayer.value || props.trip.youAreCreator)
 // An ended trip's spending record is read-only (the server answers 409); viewing — receipts
 // included — stays, because the retention window exists to be looked at while people settle.
 const tripStillOpen = computed(() => !props.trip.closedAt)
-const iCanEditReceipt = computed(() => iCanEdit.value && tripStillOpen.value)
-// The comment is part of the spending record, so it is gated exactly like the receipt and the
-// split: the payer or the creator, and only while the trip is open.
-const iCanEditNote = computed(() => iCanEdit.value && tripStillOpen.value)
+// The receipt and the comment are part of the spending record, so both are gated like the split:
+// the payer or the creator, and only while the trip is open.
+const iCanEditRecord = computed(() => iCanEdit.value && tripStillOpen.value)
 /**
  * Whether the box is showing rather than the paragraph — and the same value the field's own
  * disclosure is bound to, because Save and Discard are drawn here while the box is drawn there.
@@ -83,26 +85,21 @@ const noteEditorOpen = computed({
   set: (open) => (open ? editNote() : cancelNote()),
 })
 
-const categoryName = computed(() => {
+const categoryLabel = computed(() => {
   const category = props.categories.find((c) => c.id === detail.value?.categoryId)
-  if (!category) return ''
-  return locale.value.startsWith('zh') ? category.nameZh : category.nameEn
+  return category ? categoryName(category, locale.value) : ''
 })
 const spentOnLabel = computed(() => {
   const iso = detail.value?.spentOn
   if (!iso) return ''
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: 'short', day: 'numeric' }).format(
-    new Date(y!, m! - 1, d),
-  )
+  return new Intl.DateTimeFormat(locale.value, LONG_DATE).format(parseLocalDate(iso))
 })
-const splitRuleLabel = computed(() =>
-  detail.value?.splitRule === 'WEIGHTED'
-    ? t('itemDetail.splitWeighted')
-    : detail.value?.splitRule === 'EXACT'
-      ? t('itemDetail.splitExact')
-      : t('itemDetail.splitEqual'),
-)
+const SPLIT_RULE_LABELS: Record<SplitRule, string> = {
+  EQUAL: 'itemDetail.splitEqual',
+  WEIGHTED: 'itemDetail.splitWeighted',
+  EXACT: 'itemDetail.splitExact',
+}
+const splitRuleLabel = computed(() => t(SPLIT_RULE_LABELS[detail.value?.splitRule ?? 'EQUAL']))
 
 /**
  * What I still owe on this bill: my share minus what I have already claimed — pending claims
@@ -139,7 +136,7 @@ watch(
     } catch (failure) {
       // An unguarded fetch here left a blank, titleless sheet with no way to know why — a co-editor
       // may have just deleted the bill. Surface it instead of a silent empty panel.
-      if (token === detailToken) error.value = failure instanceof Error ? failure.message : String(failure)
+      if (token === detailToken) error.value = errorMessage(failure)
     }
   },
 )
@@ -167,7 +164,9 @@ async function removeReceipt() {
   await act(() => api.deleteReceipt(itemId))
 }
 
-const memberName = (memberId: string) => props.trip.members.find((m) => m.id === memberId)?.displayName ?? '?'
+const memberOf = (memberId: string) => props.trip.members.find((m) => m.id === memberId)
+const memberName = (memberId: string) => memberOf(memberId)?.displayName ?? '?'
+const hueOf = (memberId: string) => memberOf(memberId)?.personHue ?? 1
 
 async function reload() {
   if (props.itemId) detail.value = await api.itemDetail(props.itemId)
@@ -182,7 +181,7 @@ async function act(action: () => Promise<unknown>) {
     await action()
     await reload()
   } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
+    error.value = errorMessage(failure)
   } finally {
     busy.value = false
   }
@@ -248,10 +247,7 @@ async function remove() {
   const approved = (detail.value?.paybacks ?? []).filter((p) => p.status === 'APPROVED')
   if (approved.length > 0) {
     const total = approved.reduce((sum, p) => sum + p.amountMinor, 0)
-    const amount = formatMinor(total, {
-      currencyCode: props.trip.currencyCode,
-      symbol: symbol.value,
-    })
+    const amount = formatMinor(total, { currencyCode: props.trip.currencyCode })
     if (!confirm(t('itemDetail.deleteApprovedConfirm', { count: approved.length, amount }))) return
   }
 
@@ -266,7 +262,7 @@ async function remove() {
     emit('changed')
     emit('close')
   } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
+    error.value = errorMessage(failure)
   } finally {
     busy.value = false
   }
@@ -281,12 +277,7 @@ async function remove() {
       <div class="detail__totals">
         <div>
           <p class="detail__label">{{ t('itemDetail.total') }}</p>
-          <AmountText
-            :amount-minor="detail.amountMinor"
-            size="lg"
-            :currency-code="trip.currencyCode"
-            :symbol="symbol"
-          />
+          <AmountText :amount-minor="detail.amountMinor" size="lg" :currency-code="trip.currencyCode" />
         </div>
         <div v-if="detail.yourShareMinor > 0" class="detail__yours">
           <p class="detail__label">{{ t('itemDetail.yourPortion') }}</p>
@@ -297,17 +288,16 @@ async function remove() {
             size="lg"
             :tone="iAmPayer ? 'neutral' : 'owe'"
             :currency-code="trip.currencyCode"
-            :symbol="symbol"
           />
         </div>
       </div>
 
       <!-- Category, date and how it was split — the facts the detail sheet used to omit. -->
-      <p v-if="categoryName || spentOnLabel" class="detail__meta">
-        {{ [categoryName, spentOnLabel, splitRuleLabel].filter(Boolean).join(' · ') }}
+      <p v-if="categoryLabel || spentOnLabel" class="detail__meta">
+        {{ [categoryLabel, spentOnLabel, splitRuleLabel].filter(Boolean).join(' · ') }}
       </p>
 
-      <section v-if="detail.receipt || iCanEditReceipt" class="detail__section">
+      <section v-if="detail.receipt || iCanEditRecord" class="detail__section">
         <h3 class="detail__label">{{ t('receipt.section') }}</h3>
         <!-- Tapping the thumbnail opens the actual bill full screen for review. -->
         <button
@@ -348,19 +338,10 @@ async function remove() {
       <section class="detail__section">
         <h3 class="detail__label">{{ t('itemDetail.paidBy') }}</h3>
         <div class="detail__row">
-          <PersonAvatar
-            :name="payerName"
-            :hue="trip.members.find((m) => m.id === detail!.payerMemberId)?.personHue ?? 1"
-            :size="36"
-          />
+          <PersonAvatar :name="payerName" :hue="hueOf(detail!.payerMemberId)" :size="36" />
           <span class="detail__name">{{ payerName }}</span>
           <span class="detail__hint">{{ t('itemDetail.frontedTheBill') }}</span>
-          <AmountText
-            :amount-minor="detail.amountMinor"
-            size="sm"
-            :currency-code="trip.currencyCode"
-            :symbol="symbol"
-          />
+          <AmountText :amount-minor="detail.amountMinor" size="sm" :currency-code="trip.currencyCode" />
         </div>
       </section>
 
@@ -371,19 +352,10 @@ async function remove() {
           {{ t('itemDetail.howSplit', { count: detail.splits.length }) }} · {{ splitRuleLabel }}
         </h3>
         <div v-for="split in detail.splits" :key="split.memberId" class="detail__row" data-testid="split-row">
-          <PersonAvatar
-            :name="memberName(split.memberId)"
-            :hue="trip.members.find((m) => m.id === split.memberId)?.personHue ?? 1"
-            :size="32"
-          />
+          <PersonAvatar :name="memberName(split.memberId)" :hue="hueOf(split.memberId)" :size="32" />
           <span class="detail__name">{{ memberName(split.memberId) }}</span>
           <span v-if="split.weight" class="detail__hint">×{{ split.weight }}</span>
-          <AmountText
-            :amount-minor="split.amountMinor"
-            size="sm"
-            :currency-code="trip.currencyCode"
-            :symbol="symbol"
-          />
+          <AmountText :amount-minor="split.amountMinor" size="sm" :currency-code="trip.currencyCode" />
         </div>
       </section>
 
@@ -400,7 +372,7 @@ async function remove() {
           <div class="detail__row">
             <PersonAvatar
               :name="memberName(payback.fromMemberId)"
-              :hue="trip.members.find((m) => m.id === payback.fromMemberId)?.personHue ?? 1"
+              :hue="hueOf(payback.fromMemberId)"
               :size="32"
             />
             <span class="detail__name">{{ memberName(payback.fromMemberId) }}</span>
@@ -419,12 +391,7 @@ async function remove() {
                     : t('payback.rejected')
               }}
             </TallyBadge>
-            <AmountText
-              :amount-minor="payback.amountMinor"
-              size="sm"
-              :currency-code="trip.currencyCode"
-              :symbol="symbol"
-            />
+            <AmountText :amount-minor="payback.amountMinor" size="sm" :currency-code="trip.currencyCode" />
           </div>
 
           <p v-if="payback.rejectReason" class="detail__reason">{{ payback.rejectReason }}</p>
@@ -481,9 +448,9 @@ async function remove() {
       </section>
 
       <!-- Nothing at all when there is no comment and no right to write one. -->
-      <section v-if="detail.note || iCanEditNote" class="detail__section">
+      <section v-if="detail.note || iCanEditRecord" class="detail__section">
         <!-- Read-only for anyone who cannot correct the bill, an ended trip included. -->
-        <p v-if="!iCanEditNote" class="detail__note">{{ detail.note }}</p>
+        <p v-if="!iCanEditRecord" class="detail__note">{{ detail.note }}</p>
         <!-- A comment that exists is its own way in: tap the words to change them. Named for what
              it does, though, not for what it says — the comment's own text is all a screen reader
              would otherwise read out, followed by "button" and no clue why. -->
@@ -548,7 +515,7 @@ async function remove() {
           variant="primary"
           full-width
           data-testid="pay-back-open"
-          @click="emit('payBack', detail.id, payerName, myRemaining)"
+          @click="emit('payBack', detail.id, myRemaining)"
         >
           {{ t('itemDetail.payBack') }}
         </TallyButton>
@@ -558,7 +525,7 @@ async function remove() {
         v-if="detail.receipt"
         :open="lightboxOpen"
         :src="receiptHref(detail.id, detail.receipt.version)"
-        :can-edit="iCanEditReceipt"
+        :can-edit="iCanEditRecord"
         :busy="busy"
         @close="lightboxOpen = false"
         @replace="pickReceipt"

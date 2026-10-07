@@ -1,6 +1,7 @@
 package app.ledger.server.trip
 
 import app.ledger.server.auth.LedgerPrincipal
+import app.ledger.server.invite.IssuedInvite
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
@@ -56,7 +57,7 @@ class TripController(private val trips: TripService) {
     fun invite(
         @PathVariable tripId: UUID,
         @AuthenticationPrincipal principal: LedgerPrincipal,
-    ): InviteView = trips.invite(tripId, principal.userId).let { InviteView(it.token, it.expiresAt) }
+    ): IssuedInvite = trips.invite(tripId, principal.userId)
 
     @PostMapping("/{tripId}/close")
     fun close(

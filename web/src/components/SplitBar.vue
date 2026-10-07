@@ -27,10 +27,9 @@ const props = withDefaults(
     /** The item's salt. Comes from its id, so the preview matches the server exactly. */
     salt: bigint
     currencyCode?: string
-    symbol?: string
     height?: number
   }>(),
-  { currencyCode: 'AUD', symbol: '$', height: 56 },
+  { currencyCode: 'AUD', height: 56 },
 )
 
 const emit = defineEmits<{ 'update:people': [SplitPerson[]] }>()
@@ -143,12 +142,7 @@ function onMove(event: PointerEvent) {
           :style="{ background: `var(--person-${((person.personHue - 1) % 8) + 1})` }"
         />
         <span class="split__name">{{ person.displayName }}</span>
-        <AmountText
-          :amount-minor="amounts[i] ?? 0"
-          :currency-code="currencyCode"
-          :symbol="symbol"
-          size="sm"
-        />
+        <AmountText :amount-minor="amounts[i] ?? 0" :currency-code="currencyCode" size="sm" />
       </span>
     </div>
   </div>

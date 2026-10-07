@@ -6,7 +6,6 @@
  */
 export default {
   common: {
-    all: 'All',
     back: 'Back',
     cancel: 'Cancel',
     close: 'Close',
@@ -36,8 +35,6 @@ export default {
     theyPaidYou: '{name} paid you',
     declinedByThem: '{name} declined your payment',
     undoConfirm: 'Undo this settled payment? Their balance will re-open.',
-    owesYou: '{name} owes you',
-    youOweThem: 'You owe {name}',
     owesYouShort: 'Owes you',
     youOweShort: 'You owe',
     squareOverall: "You're square overall — these cancel out",
@@ -224,7 +221,6 @@ export default {
   },
   itemDetail: {
     total: 'Total',
-    yourShare: 'You owe',
     yourPortion: 'Your share',
     paidBy: 'Paid by',
     frontedTheBill: 'fronted the whole bill',
@@ -293,7 +289,6 @@ export default {
     title: 'Join {trip}',
     pickYourName: 'Pick your name',
     claim: "That's me",
-    signInFirst: 'Sign in first, then pick your name.',
     allClaimed: 'Every name on this trip is already taken.',
     badLink: 'This link is not valid any more — ask for a fresh one.',
     alreadyOn: "You're already on this trip as {name}",

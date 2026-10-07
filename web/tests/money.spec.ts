@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatMinor, fractionDigits, splitMinor } from '../src/lib/money'
+import { formatMinor, fractionDigits, splitMinor, toneOf } from '../src/lib/money'
 
 /**
  * The money rule, held at the last step before a number reaches a human.
@@ -29,6 +29,13 @@ describe('money', () => {
     expect(formatMinor(-3334, { currencyCode: 'JPY', symbol: '¥' })).toBe('−¥3,334')
   })
 
+  it('picks the symbol from the currency code unless told otherwise', () => {
+    expect(formatMinor(3334, { currencyCode: 'JPY' })).toBe('¥3,334')
+    expect(formatMinor(1234567, { currencyCode: 'KWD' })).toBe('KWD 1,234.567')
+    // An explicit symbol still wins, including none at all.
+    expect(formatMinor(1999, { currencyCode: 'AUD', symbol: '' })).toBe('19.99')
+  })
+
   it('respects currencies with three minor digits', () => {
     expect(formatMinor(1234567, { currencyCode: 'KWD', symbol: 'KD' })).toBe('KD1,234.567')
   })
@@ -54,5 +61,11 @@ describe('money', () => {
     // 90,071,992,547,409 cents — within 2^53, where integers are still exact. Well past any trip,
     // but it is the boundary the "integers are safe" reasoning rests on, so it is worth pinning.
     expect(formatMinor(90_071_992_547_409)).toBe('$900,719,925,474.09')
+  })
+
+  it('colours a balance by its sign alone, with no tolerance around zero', () => {
+    expect(toneOf(0)).toBe('settled')
+    expect(toneOf(1)).toBe('owed')
+    expect(toneOf(-1)).toBe('owe')
   })
 })

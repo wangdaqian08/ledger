@@ -10,9 +10,6 @@ import TallyIcon from './TallyIcon.vue'
  */
 import { KEYS, type KeypadKey } from '@/lib/till'
 
-// Re-exported so callers importing the type alongside the component keep working.
-export type { KeypadKey }
-
 defineEmits<{ key: [KeypadKey] }>()
 </script>
 

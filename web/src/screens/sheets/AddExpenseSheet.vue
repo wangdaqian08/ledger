@@ -2,21 +2,20 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CategoryPicker from '@/components/CategoryPicker.vue'
-import PersonToggleRow from '@/components/PersonToggleRow.vue'
 import ReceiptLightbox from '@/components/ReceiptLightbox.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
-import SplitBar, { type SplitPerson } from '@/components/SplitBar.vue'
+import SplitEditor from '@/components/SplitEditor.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TallyIcon from '@/components/TallyIcon.vue'
 import CommentField from '@/components/CommentField.vue'
-import TallyKeypad, { type KeypadKey } from '@/components/TallyKeypad.vue'
+import TallyKeypad from '@/components/TallyKeypad.vue'
 import TextField from '@/components/TextField.vue'
-import { api, type CategoryView, type TripView } from '@/lib/api'
+import { api, categoryName, errorMessage, type CategoryView, type TripView } from '@/lib/api'
 import { todayLocal } from '@/lib/dates'
 import { currencySymbol, formatMinor } from '@/lib/money'
 import { prepareReceipt } from '@/lib/receipt'
-import { newItemId, saltFor, splitShares } from '@/lib/split'
-import { pressKey } from '@/lib/till'
+import { newItemId } from '@/lib/split'
+import { pressKey, type KeypadKey } from '@/lib/till'
 import { DRAG_SCALE, normalizedWeights } from '@/lib/weights'
 
 /**
@@ -50,8 +49,6 @@ const receiptFile = ref<File | null>(null)
 const receiptUrl = ref('')
 const receiptInput = ref<HTMLInputElement | null>(null)
 const reviewOpen = ref(false)
-
-const symbol = computed(() => currencySymbol(props.trip.currencyCode))
 
 watch(
   () => props.open,
@@ -110,7 +107,7 @@ const sharers = computed(() => props.trip.members.filter((m) => ticked.value[m.i
 /** A blank title falls back to the category's name in the reader's language, never the example. */
 function fallbackTitle(): string {
   const category = props.categories.find((c) => c.id === categoryId.value)
-  if (category) return locale.value.startsWith('zh') ? category.nameZh : category.nameEn
+  if (category) return categoryName(category, locale.value)
   return t('addExpense.untitled')
 }
 
@@ -131,26 +128,6 @@ const isDirty = computed(
     receiptFile.value !== null,
 )
 
-const splitPeople = computed<SplitPerson[]>(() =>
-  sharers.value.map((m) => ({
-    memberId: m.id,
-    displayName: m.displayName,
-    personHue: m.personHue,
-    weight: weights.value[m.id] ?? 1,
-  })),
-)
-
-/** The engine's own answer, before saving: what each ticked person will actually be charged. */
-const previewShares = computed<Map<string, number>>(() => {
-  if (sharers.value.length === 0 || amountMinor.value === 0) return new Map()
-  const parts = splitShares({
-    totalMinor: amountMinor.value,
-    weights: sharers.value.map((m) => (custom.value ? (weights.value[m.id] ?? 1) : 1)),
-    salt: saltFor(itemId.value),
-  })
-  return new Map(sharers.value.map((m, index) => [m.id, parts[index]!]))
-})
-
 /**
  * "$25.00 each" — shown only when the division is exact. When it is not, "each" would be a lie
  * by a cent for somebody, and the per-person rows above already show the exact answer.
@@ -158,15 +135,8 @@ const previewShares = computed<Map<string, number>>(() => {
 const evenEach = computed(() => {
   const count = sharers.value.length
   if (count === 0 || amountMinor.value % count !== 0) return null
-  return formatMinor(amountMinor.value / count, {
-    currencyCode: props.trip.currencyCode,
-    symbol: symbol.value,
-  })
+  return formatMinor(amountMinor.value / count, { currencyCode: props.trip.currencyCode })
 })
-
-function onWeights(next: SplitPerson[]) {
-  for (const person of next) weights.value[person.memberId] = person.weight
-}
 
 async function save() {
   if (busy.value || sharers.value.length === 0 || !payerId.value || !categoryId.value) return
@@ -190,7 +160,7 @@ async function save() {
       ),
     })
   } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
+    error.value = errorMessage(failure)
     busy.value = false
     return
   }
@@ -203,7 +173,7 @@ async function save() {
       const prepared = await prepareReceipt(receiptFile.value)
       await api.uploadReceipt(itemId.value, prepared.image, prepared.filename)
     } catch (failure) {
-      const reason = failure instanceof Error ? failure.message : String(failure)
+      const reason = errorMessage(failure)
       error.value = t('addExpense.savedPhotoFailed', { reason })
       busy.value = false
       return
@@ -223,15 +193,11 @@ async function save() {
   >
     <div v-if="step === 1" class="add">
       <p class="add__amount" data-testid="amount-display">
-        <span class="add__symbol">{{ symbol }}</span>
+        <span class="add__symbol">{{ currencySymbol(trip.currencyCode) }}</span>
         <span class="add__digits">{{ amountMinor === 0 ? '0' : shown }}</span>
       </p>
 
-      <CategoryPicker
-        v-model="categoryId"
-        :categories="categories.map((c) => ({ ...c, hue: c.hue }))"
-        :locale="locale === 'zh' ? 'zh' : 'en'"
-      />
+      <CategoryPicker v-model="categoryId" :categories="categories" />
 
       <TextField
         v-model="title"
@@ -267,27 +233,17 @@ async function save() {
     </div>
 
     <div v-else class="add">
-      <section class="add__section">
-        <h3 class="add__label">{{ t('addExpense.whoPaid') }}</h3>
-        <div class="add__payers">
-          <button
-            v-for="member in trip.members"
-            :key="member.id"
-            type="button"
-            class="add__payer"
-            data-testid="payer-chip"
-            :class="{ 'add__payer--on': payerId === member.id }"
-            :aria-pressed="payerId === member.id"
-            @click="payerId = member.id"
-          >
-            {{ member.isYou ? t('common.you') : member.displayName }}
-          </button>
-        </div>
-      </section>
-
-      <section class="add__section">
-        <div class="add__how">
-          <h3 class="add__label">{{ t('addExpense.splitBetween') }}</h3>
+      <SplitEditor
+        v-model:payer-id="payerId"
+        v-model:ticked="ticked"
+        v-model:custom="custom"
+        v-model:weights="weights"
+        :members="trip.members"
+        :item-id="itemId"
+        :total-minor="amountMinor"
+        :currency-code="trip.currencyCode"
+      >
+        <template #all>
           <!-- Nobody is ticked by default (spec §3); this is the one-tap "it was everyone" case. -->
           <button
             type="button"
@@ -299,61 +255,13 @@ async function save() {
           >
             {{ t('addExpense.all') }}
           </button>
-        </div>
-        <div class="add__people">
-          <PersonToggleRow
-            v-for="member in trip.members"
-            :key="member.id"
-            :display-name="member.isYou ? t('common.you') : member.displayName"
-            :person-hue="member.personHue"
-            :selected="ticked[member.id] ?? false"
-            :share-minor="previewShares.get(member.id) ?? null"
-            :currency-code="trip.currencyCode"
-            :symbol="symbol"
-            @update:selected="(on) => (ticked[member.id] = on)"
-          />
-        </div>
-        <p v-if="!custom && evenEach && amountMinor > 0" class="add__each" data-testid="even-each">
-          {{ t('addExpense.each', { amount: evenEach }) }}
-        </p>
-      </section>
-
-      <section class="add__section">
-        <div class="add__how">
-          <h3 class="add__label">{{ t('addExpense.how') }}</h3>
-          <div class="add__toggle" role="group">
-            <button
-              type="button"
-              class="add__mode"
-              data-testid="mode-evenly"
-              :class="{ 'add__mode--on': !custom }"
-              :aria-pressed="!custom"
-              @click="custom = false"
-            >
-              {{ t('addExpense.evenly') }}
-            </button>
-            <button
-              type="button"
-              class="add__mode"
-              data-testid="mode-custom"
-              :class="{ 'add__mode--on': custom }"
-              :aria-pressed="custom"
-              @click="custom = true"
-            >
-              {{ t('addExpense.custom') }}
-            </button>
-          </div>
-        </div>
-        <SplitBar
-          v-if="custom && splitPeople.length > 1"
-          :people="splitPeople"
-          :total-minor="amountMinor"
-          :salt="saltFor(itemId)"
-          :currency-code="trip.currencyCode"
-          :symbol="symbol"
-          @update:people="onWeights"
-        />
-      </section>
+        </template>
+        <template #each>
+          <p v-if="!custom && evenEach && amountMinor > 0" class="add__each" data-testid="even-each">
+            {{ t('addExpense.each', { amount: evenEach }) }}
+          </p>
+        </template>
+      </SplitEditor>
 
       <section class="add__section">
         <h3 class="add__label">{{ t('receipt.section') }}</h3>
@@ -472,36 +380,6 @@ async function save() {
   color: var(--text-muted);
 }
 
-.add__payers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.add__payer {
-  padding: var(--space-2) var(--space-4);
-  border: 2px solid var(--hairline-strong);
-  border-radius: var(--radius-pill);
-  background: var(--surface-card);
-  font-weight: var(--weight-semibold);
-  color: var(--ink-2);
-  cursor: pointer;
-  /* Names wrap the chip row, never truncate inside a chip. */
-  white-space: nowrap;
-}
-
-.add__payer--on {
-  border-color: var(--ink);
-  background: var(--grape-tint);
-  color: var(--ink);
-}
-
-.add__people {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
 .add__each {
   font-size: var(--text-caption);
   color: var(--text-muted);
@@ -544,36 +422,6 @@ async function save() {
 }
 
 .add__all--on {
-  border-color: var(--ink);
-  background: var(--grape-tint);
-  color: var(--ink);
-}
-
-.add__how {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.add__toggle {
-  display: flex;
-  gap: var(--space-1);
-}
-
-.add__mode {
-  padding: var(--space-1) var(--space-3);
-  border: 2px solid var(--hairline-strong);
-  border-radius: var(--radius-pill);
-  background: var(--surface-card);
-  font-size: var(--text-caption);
-  font-weight: var(--weight-semibold);
-  color: var(--ink-2);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.add__mode--on {
   border-color: var(--ink);
   background: var(--grape-tint);
   color: var(--ink);

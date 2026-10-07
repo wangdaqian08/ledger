@@ -1,5 +1,6 @@
 package app.ledger.server.demo
 
+import app.ledger.engine.PaybackStatus
 import app.ledger.server.item.ItemEntity
 import app.ledger.server.item.ItemRepository
 import app.ledger.server.item.ItemShareEntity
@@ -8,7 +9,6 @@ import app.ledger.server.item.ItemShareRepository
 import app.ledger.server.item.SplitRuleName
 import app.ledger.server.payback.PaybackEntity
 import app.ledger.server.payback.PaybackRepository
-import app.ledger.server.payback.PaybackStatusName
 import app.ledger.server.trip.TripEntity
 import app.ledger.server.trip.TripMemberEntity
 import app.ledger.server.trip.TripMemberRepository
@@ -223,7 +223,7 @@ class DemoData {
                 toMemberId = to.id,
                 amountMinor = amountMinor,
                 paidOn = LocalDate.of(2026, 7, 21),
-                status = PaybackStatusName.APPROVED,
+                status = PaybackStatus.APPROVED,
                 createdByUserId = trip.createdByUserId,
                 reviewedByUserId = trip.createdByUserId,
                 reviewedAt = Instant.now(),

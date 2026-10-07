@@ -5,6 +5,7 @@ import AmountText from './AmountText.vue'
 import AvatarStack from './AvatarStack.vue'
 import { familyDisplayName, familyGrammaticalCount } from '@/lib/family'
 import type { FamilyMemberView } from '@/lib/api'
+import { toneOf } from '@/lib/money'
 
 /**
  * One Family's bilateral position with one *other* Family in the partition (§7b) — never an
@@ -50,9 +51,8 @@ const props = withDefaults(
     cardMemberCount: number
     owedMinor: number
     currencyCode?: string
-    symbol?: string
   }>(),
-  { currencyCode: 'AUD', symbol: '$' },
+  { currencyCode: 'AUD' },
 )
 
 const { t } = useI18n()
@@ -102,9 +102,8 @@ const sentenceParts = computed(() => {
     <AmountText
       :amount-minor="Math.abs(owedMinor)"
       :currency-code="currencyCode"
-      :symbol="symbol"
       size="sm"
-      :tone="owedMinor === 0 ? 'settled' : owedMinor > 0 ? 'owed' : 'owe'"
+      :tone="toneOf(owedMinor)"
     />
   </div>
 </template>

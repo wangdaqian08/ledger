@@ -8,6 +8,7 @@ import TallyButton from './TallyButton.vue'
 import TallyCard from './TallyCard.vue'
 import type { FamilyCounterpartView, FamilyMemberView } from '@/lib/api'
 import { familyDisplayName, familyGrammaticalCount } from '@/lib/family'
+import { toneOf } from '@/lib/money'
 
 /**
  * One Family's card in the Settle-up partition view (§7b): its own net across the whole trip, and
@@ -24,9 +25,8 @@ const props = withDefaults(
     counterparts: FamilyCounterpartView[]
     removable: boolean
     currencyCode?: string
-    symbol?: string
   }>(),
-  { currencyCode: 'AUD', symbol: '$' },
+  { currencyCode: 'AUD' },
 )
 defineEmits<{ remove: [] }>()
 
@@ -62,9 +62,8 @@ const netLabel = computed(() => {
     <AmountText
       :amount-minor="Math.abs(netMinor)"
       size="lg"
-      :tone="netMinor === 0 ? 'settled' : netMinor > 0 ? 'owed' : 'owe'"
+      :tone="toneOf(netMinor)"
       :currency-code="currencyCode"
-      :symbol="symbol"
     />
 
     <div class="family__counterparts">
@@ -76,7 +75,6 @@ const netLabel = computed(() => {
         :card-name="cardName"
         :card-member-count="cardGrammaticalCount"
         :currency-code="currencyCode"
-        :symbol="symbol"
       />
     </div>
   </TallyCard>

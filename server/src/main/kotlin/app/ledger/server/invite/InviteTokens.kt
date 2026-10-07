@@ -25,7 +25,6 @@ data class InviteProperties(
     /** 32 characters is 256 bits at one byte each — the width of the HMAC this keys. */
     @field:Size(min = 32, message = "the invite signing secret must be at least 32 characters")
     val secret: String,
-    val validity: Duration = Duration.ofDays(14),
 )
 
 class InvalidInviteToken(message: String) : RuntimeException(message)
@@ -35,16 +34,16 @@ class InvalidInviteToken(message: String) : RuntimeException(message)
  *
  * Stateless by choice (spec §4). The trade-off to keep in mind is that a token cannot be withdrawn
  * before it expires — if a link leaks, the only remedies are waiting it out or rotating the secret,
- * which invalidates every outstanding link at once. That is why [InviteProperties.validity] is
- * measured in days rather than months.
+ * which invalidates every outstanding link at once. That is why [VALIDITY] is measured in days
+ * rather than months.
  */
 @Component
 class InviteTokens(
     private val properties: InviteProperties,
-    private val clock: Clock = Clock.systemUTC(),
+    private val clock: Clock,
 ) {
     fun issue(tripId: UUID): IssuedInvite {
-        val expiresAt = clock.instant().plus(properties.validity)
+        val expiresAt = clock.instant().plus(VALIDITY)
         val payload = "$tripId:${expiresAt.epochSecond}"
         val token = "${payload.base64()}.${sign(payload).base64()}"
         return IssuedInvite(token = token, expiresAt = expiresAt)
@@ -95,7 +94,9 @@ class InviteTokens(
 
     private companion object {
         const val ALGORITHM = "HmacSHA256"
+        val VALIDITY: Duration = Duration.ofDays(14)
     }
 }
 
+/** Also the response body of `POST /api/trips/{id}/invite`. */
 data class IssuedInvite(val token: String, val expiresAt: Instant)

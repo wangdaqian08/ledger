@@ -15,23 +15,21 @@ import { pressKey, type KeypadKey } from '@/lib/till'
  */
 const props = withDefaults(
   defineProps<{
-    modelValue: number
     currencyCode?: string
-    symbol?: string
     /** Lands on the tappable box. The keypad's keys carry their own `key-*` ids. */
     testId?: string
     /** Open with the keypad already unfolded — for sheets whose whole point is this amount. */
     startOpen?: boolean
   }>(),
-  { currencyCode: 'AUD', symbol: '$', testId: undefined, startOpen: false },
+  { currencyCode: 'AUD', testId: undefined, startOpen: false },
 )
 
-const emit = defineEmits<{ 'update:modelValue': [number] }>()
+const model = defineModel<number>({ required: true })
 
 const open = ref(props.startOpen)
 
 function onKey(key: KeypadKey) {
-  emit('update:modelValue', pressKey(props.modelValue, key))
+  model.value = pressKey(model.value, key)
 }
 </script>
 
@@ -45,7 +43,7 @@ function onKey(key: KeypadKey) {
       :aria-expanded="open"
       @click="open = !open"
     >
-      <span class="tap__amount">{{ formatMinor(modelValue, { currencyCode, symbol }) }}</span>
+      <span class="tap__amount">{{ formatMinor(model, { currencyCode }) }}</span>
       <TallyIcon
         name="chevron-right"
         :size="18"

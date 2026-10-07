@@ -9,8 +9,8 @@ import TallyBadge from '@/components/TallyBadge.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TallyIcon from '@/components/TallyIcon.vue'
 import TextField from '@/components/TextField.vue'
-import { api, type TripView } from '@/lib/api'
-import { currencySymbol, formatMinor } from '@/lib/money'
+import { api, errorMessage, type TripView } from '@/lib/api'
+import { formatMinor } from '@/lib/money'
 import { useSession } from '@/stores/session'
 import { useTrips } from '@/stores/trips'
 
@@ -65,22 +65,36 @@ function startPayIdEdit(current: string | null) {
   editingPayId.value = true
 }
 
-/** Blank clears it; the server trims too, but sending what will be stored keeps the two in step. */
-async function savePayId() {
-  if (busy.value) return
+/**
+ * One write at a time: busy while it runs (with `action` naming which button spins), its failure
+ * shown in `failed`, and `changed` once it lands.
+ */
+async function run(work: () => Promise<unknown>, action: 'add' | 'payid' | null = null, failed = error) {
   busy.value = true
-  activeAction.value = 'payid'
-  payIdError.value = ''
+  activeAction.value = action
+  failed.value = ''
   try {
-    session.me = await api.setPayId(payIdDraft.value.trim() || null)
-    editingPayId.value = false
+    await work()
     emit('changed')
   } catch (failure) {
-    payIdError.value = failure instanceof Error ? failure.message : String(failure)
+    failed.value = errorMessage(failure)
   } finally {
     busy.value = false
     activeAction.value = null
   }
+}
+
+/** Blank clears it; the server trims too, but sending what will be stored keeps the two in step. */
+async function savePayId() {
+  if (busy.value) return
+  await run(
+    async () => {
+      session.me = await api.setPayId(payIdDraft.value.trim() || null)
+      editingPayId.value = false
+    },
+    'payid',
+    payIdError,
+  )
 }
 
 function startRename(member: { id: string; displayName: string }) {
@@ -93,90 +107,38 @@ async function saveRename() {
   const memberId = editingId.value
   const name = editedName.value.trim()
   if (!memberId || !name || busy.value) return
-  busy.value = true
-  error.value = ''
-  try {
+  await run(async () => {
     await api.renameMember(props.trip.id, memberId, name)
     editingId.value = null
-    emit('changed')
-  } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
-  } finally {
-    busy.value = false
-  }
+  })
 }
 
 async function addName() {
   if (!newName.value.trim() || busy.value) return
-  busy.value = true
-  activeAction.value = 'add'
-  error.value = ''
-  try {
+  await run(async () => {
     await api.addMember(props.trip.id, newName.value.trim())
     newName.value = ''
-    emit('changed')
-  } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
-  } finally {
-    busy.value = false
-    activeAction.value = null
-  }
+  }, 'add')
 }
 
 async function endTrip() {
   if (busy.value || !confirm(t('invite.endConfirm'))) return
-  busy.value = true
-  error.value = ''
-  try {
-    await api.closeTrip(props.trip.id)
-    emit('changed')
-  } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
-  } finally {
-    busy.value = false
-  }
+  await run(() => api.closeTrip(props.trip.id))
 }
 
 async function reopenTrip() {
   if (busy.value) return
-  busy.value = true
-  error.value = ''
-  try {
-    await api.reopenTrip(props.trip.id)
-    emit('changed')
-  } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
-  } finally {
-    busy.value = false
-  }
+  await run(() => api.reopenTrip(props.trip.id))
 }
 
 async function putAway() {
   if (busy.value) return
-  busy.value = true
-  error.value = ''
-  try {
-    await api.hideTrip(props.trip.id)
-    emit('changed')
-  } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
-  } finally {
-    busy.value = false
-  }
+  await run(() => api.hideTrip(props.trip.id))
 }
 
 async function putBack() {
   if (busy.value) return
-  busy.value = true
-  error.value = ''
-  try {
-    await api.unhideTrip(props.trip.id)
-    emit('changed')
-  } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
-  } finally {
-    busy.value = false
-  }
+  await run(() => api.unhideTrip(props.trip.id))
 }
 
 /**
@@ -192,10 +154,7 @@ async function deleteTrip() {
   const question = outstanding
     ? t('invite.deleteConfirmOutstanding', {
         name: props.trip.name,
-        amount: formatMinor(outstanding, {
-          currencyCode: props.trip.currencyCode,
-          symbol: currencySymbol(props.trip.currencyCode),
-        }),
+        amount: formatMinor(outstanding, { currencyCode: props.trip.currencyCode }),
       })
     : t('invite.deleteConfirm', { name: props.trip.name })
   if (!confirm(question)) return
@@ -211,7 +170,7 @@ async function deleteTrip() {
     // where it can be brought back from, and staying on a screen for a deleted trip would 404.
     await router.push({ name: 'trips' })
   } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
+    error.value = errorMessage(failure)
     busy.value = false
   }
 }
@@ -232,7 +191,7 @@ async function copyLink() {
       linkNote.value = link
     }
   } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
+    error.value = errorMessage(failure)
   }
 }
 </script>

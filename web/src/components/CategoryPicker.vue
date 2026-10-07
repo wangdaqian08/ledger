@@ -1,16 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import TallyIcon from './TallyIcon.vue'
-
-export interface PickableCategory {
-  id: string
-  key: string
-  nameEn: string
-  nameZh: string
-  icon: string
-  hue: number
-  builtIn: boolean
-}
+import { categoryName, type CategoryView } from '@/lib/api'
 
 /**
  * Choosing what an expense was for. The eight built-ins plus whatever this trip has added, in the
@@ -20,19 +12,15 @@ export interface PickableCategory {
  * dot per page below — a thumb gesture, not a taller sheet. The pages snap, and the dots both
  * report and steer.
  */
-const props = defineProps<{
-  categories: PickableCategory[]
-  modelValue: string | null
-  /** Which name to show. The interface is translated; a member's own category name is not. */
-  locale?: 'en' | 'zh'
-}>()
+const props = defineProps<{ categories: CategoryView[] }>()
+const model = defineModel<string | null>({ required: true })
 
-defineEmits<{ 'update:modelValue': [string] }>()
+const { locale } = useI18n()
 
 const PAGE_SIZE = 8
 
 const pages = computed(() => {
-  const chunks: PickableCategory[][] = []
+  const chunks: CategoryView[][] = []
   for (let start = 0; start < props.categories.length; start += PAGE_SIZE) {
     chunks.push(props.categories.slice(start, start + PAGE_SIZE))
   }
@@ -63,11 +51,11 @@ function goToPage(index: number) {
           :key="category.id"
           type="button"
           role="radio"
-          :aria-checked="modelValue === category.id"
+          :aria-checked="model === category.id"
           class="picker__item"
           data-testid="category-item"
-          :class="{ 'picker__item--on': modelValue === category.id }"
-          @click="$emit('update:modelValue', category.id)"
+          :class="{ 'picker__item--on': model === category.id }"
+          @click="model = category.id"
         >
           <span
             class="picker__disc"
@@ -78,7 +66,7 @@ function goToPage(index: number) {
           >
             <TallyIcon :name="category.icon" :size="20" />
           </span>
-          <span class="picker__name">{{ locale === 'zh' ? category.nameZh : category.nameEn }}</span>
+          <span class="picker__name">{{ categoryName(category, locale) }}</span>
         </button>
       </div>
     </div>

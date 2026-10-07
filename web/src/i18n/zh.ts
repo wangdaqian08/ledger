@@ -7,7 +7,6 @@
  */
 export default {
   common: {
-    all: '全部',
     back: '返回',
     cancel: '取消',
     close: '关闭',
@@ -35,8 +34,6 @@ export default {
     theyPaidYou: '{name}付给了你',
     declinedByThem: '{name}拒绝了你的付款',
     undoConfirm: '撤销这笔已结清的付款？对方的余额会重新计入。',
-    owesYou: '{name}欠你',
-    youOweThem: '你欠{name}',
     owesYouShort: '欠你',
     youOweShort: '你欠',
     squareOverall: '你总体已结清 — 这些互相抵消了',
@@ -204,7 +201,6 @@ export default {
   },
   itemDetail: {
     total: '总额',
-    yourShare: '你应付',
     yourPortion: '你的份额',
     paidBy: '付款人',
     frontedTheBill: '垫付了整单',
@@ -267,7 +263,6 @@ export default {
     title: '加入{trip}',
     pickYourName: '认领你的名字',
     claim: '是我',
-    signInFirst: '请先登录，再认领名字。',
     allClaimed: '这个行程的名字都已被认领。',
     badLink: '链接已失效——请索取新的链接。',
     alreadyOn: '你已经以{name}的身份在这个行程里了',

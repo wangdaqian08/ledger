@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import AmountText from './AmountText.vue'
 import PersonAvatar from './PersonAvatar.vue'
 import TallyButton from './TallyButton.vue'
+import { toneOf } from '@/lib/money'
 
 /**
  * One Settle-up row: your position with one person, and the one action it affords.
@@ -22,7 +23,6 @@ withDefaults(
     personHue: number
     owedMinor: number
     currencyCode?: string
-    symbol?: string
     /** A claim already sent between the two of you and waiting on somebody. */
     pending?: boolean
     /** A nudge already sent this sitting: the button itself says so, in place. */
@@ -34,7 +34,6 @@ withDefaults(
   }>(),
   {
     currencyCode: 'AUD',
-    symbol: '$',
     pending: false,
     reminded: false,
     muted: false,
@@ -70,9 +69,8 @@ const { t } = useI18n()
       <AmountText
         :amount-minor="Math.abs(owedMinor)"
         :currency-code="currencyCode"
-        :symbol="symbol"
         size="lg"
-        :tone="owedMinor === 0 ? 'settled' : owedMinor > 0 ? 'owed' : 'owe'"
+        :tone="toneOf(owedMinor)"
       />
 
       <TallyButton

@@ -1,12 +1,5 @@
 <script setup lang="ts">
-withDefaults(
-  defineProps<{
-    /** Greys out and sinks: how an all-square expense reads without being hidden. */
-    sunk?: boolean
-    interactive?: boolean
-  }>(),
-  { sunk: false, interactive: false },
-)
+withDefaults(defineProps<{ interactive?: boolean }>(), { interactive: false })
 </script>
 
 <template>
@@ -16,7 +9,7 @@ withDefaults(
     :is="interactive ? 'button' : 'div'"
     :type="interactive ? 'button' : undefined"
     class="card"
-    :class="{ 'card--sunk': sunk, 'card--interactive': interactive }"
+    :class="{ 'card--interactive': interactive }"
   >
     <slot />
   </component>
@@ -56,11 +49,5 @@ withDefaults(
 .card--interactive:active {
   transform: translateY(2px);
   box-shadow: none;
-}
-
-.card--sunk {
-  background: var(--bg-sunk);
-  box-shadow: none;
-  opacity: 0.72;
 }
 </style>

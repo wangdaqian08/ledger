@@ -9,7 +9,6 @@ import GroupCard from '../src/components/GroupCard.vue'
 import ProgressBar from '../src/components/ProgressBar.vue'
 import TallyButton from '../src/components/TallyButton.vue'
 import TallyIcon from '../src/components/TallyIcon.vue'
-import TallyStepper from '../src/components/TallyStepper.vue'
 import TallyKeypad from '../src/components/TallyKeypad.vue'
 import type { FamilyCounterpartView, FamilyMemberView } from '@/lib/api'
 import { findAllByTestId, findByTestId } from './testids'
@@ -345,17 +344,6 @@ describe('TallyButton', () => {
 
     await btn.trigger('click')
     expect(btn.emitted('click')).toHaveLength(1)
-  })
-})
-
-describe('TallyStepper', () => {
-  it('stays inside its bounds and stays whole', () => {
-    const stepper = mount(TallyStepper, { props: { modelValue: 1, min: 1, max: 3 } })
-    expect(stepper.findAll('button')[0]!.attributes('disabled')).toBeDefined()
-
-    const mid = mount(TallyStepper, { props: { modelValue: 2, min: 1, max: 3 } })
-    mid.findAll('button')[1]!.trigger('click')
-    expect(mid.emitted('update:modelValue')?.[0]).toEqual([3])
   })
 })
 

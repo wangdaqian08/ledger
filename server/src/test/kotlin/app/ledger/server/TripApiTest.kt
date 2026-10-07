@@ -390,6 +390,15 @@ class TripApiTest : ApiTest() {
         assertEquals(HttpStatus.FORBIDDEN, bob.post("/api/trips/$tripId/invite", emptyMap<String, String>()).statusCode)
     }
 
+    @Test
+    fun `an invite answers its token and when it expires, nothing more`() {
+        val alice = signedIn("Alice")
+        val tripId = alice.createTrip("Hokkaido")
+        val body = alice.post("/api/trips/$tripId/invite", emptyMap<String, String>()).json()
+
+        assertEquals(setOf("token", "expiresAt"), body.fieldNames().asSequence().toSet())
+        assertTrue(body["expiresAt"].isTextual, "expiresAt should be an ISO instant: $body")
+    }
     // --- balances ------------------------------------------------------------------------------
 
     @Test

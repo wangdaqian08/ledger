@@ -16,7 +16,6 @@ import java.util.UUID
  */
 data class LedgerPrincipal(
     val userId: UUID,
-    val displayName: String,
 ) : Principal, Serializable {
     override fun getName(): String = userId.toString()
 

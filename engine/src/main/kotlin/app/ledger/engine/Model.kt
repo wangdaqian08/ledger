@@ -39,13 +39,6 @@ data class Item(
     val split: SplitRule = SplitRule.Equal,
 )
 
-/** A repayment towards this item. The recipient can only ever be the person who fronted it. */
-fun Item.repaidBy(
-    from: MemberId,
-    amountMinor: Long,
-    status: PaybackStatus = PaybackStatus.APPROVED,
-): Payback = Payback(from = from, to = payer, amountMinor = amountMinor, status = status, itemId = id)
-
 data class Trip(
     val members: List<MemberId>,
     val items: List<Item>,
@@ -352,22 +345,13 @@ fun partitionIntoFamilies(
     val families = (explicitFamilies + singletons).map(::Family)
     require(families.size >= 2) { "a partition needs at least two families" }
 
-    fun netOf(family: Family) = family.members.sumOf(settlement::net)
-
-    fun owesBetweenFamilies(a: Family, b: Family) = a.members.sumOf { x ->
-        b.members.sumOf { y ->
-            owesBetween(
-                trip,
-                x,
-                y,
-            )
-        }
-    }
+    fun owesBetweenFamilies(a: Family, b: Family) =
+        a.members.sumOf { x -> b.members.sumOf { y -> owesBetween(trip, x, y) } }
 
     return families.map { family ->
         FamilyBalance(
             family = family,
-            netMinor = netOf(family),
+            netMinor = family.members.sumOf(settlement::net),
             betweenFamilies = families.filter { it != family }.associateWith { owesBetweenFamilies(family, it) },
         )
     }

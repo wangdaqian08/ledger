@@ -21,9 +21,8 @@ withDefaults(
     members: StackedPerson[]
     yourNetMinor: number
     currencyCode?: string
-    symbol?: string
   }>(),
-  { icon: 'users', hue: 6, currencyCode: 'AUD', symbol: '$' },
+  { icon: 'users', hue: 6, currencyCode: 'AUD' },
 )
 
 defineEmits<{ click: [] }>()
@@ -65,7 +64,6 @@ const { t } = useI18n()
         <AmountText
           :amount-minor="Math.abs(yourNetMinor)"
           :currency-code="currencyCode"
-          :symbol="symbol"
           size="lg"
           :tone="yourNetMinor > 0 ? 'owed' : 'owe'"
         />
