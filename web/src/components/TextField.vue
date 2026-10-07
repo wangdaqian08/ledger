@@ -1,10 +1,8 @@
 <script setup lang="ts">
 withDefaults(
   defineProps<{
-    modelValue: string
     label?: string
     placeholder?: string
-    hint?: string
     error?: string
     type?: 'text' | 'email' | 'date'
     disabled?: boolean
@@ -14,7 +12,6 @@ withDefaults(
   {
     label: undefined,
     placeholder: '',
-    hint: undefined,
     error: undefined,
     type: 'text',
     disabled: false,
@@ -22,7 +19,7 @@ withDefaults(
   },
 )
 
-defineEmits<{ 'update:modelValue': [string] }>()
+const model = defineModel<string>({ required: true })
 </script>
 
 <template>
@@ -32,17 +29,16 @@ defineEmits<{ 'update:modelValue': [string] }>()
       class="field__input"
       :class="{ 'field__input--bad': error }"
       :type="type"
-      :value="modelValue"
+      :value="model"
       :placeholder="placeholder"
       :disabled="disabled"
       :data-testid="testId"
       :aria-invalid="error ? 'true' : undefined"
-      @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
+      @input="model = ($event.target as HTMLInputElement).value"
     />
     <!-- The error replaces the hint rather than stacking under it: two lines of small print below
          a field is how people read neither. -->
     <span v-if="error" class="field__error">{{ error }}</span>
-    <span v-else-if="hint" class="field__hint">{{ hint }}</span>
   </label>
 </template>
 
@@ -75,11 +71,6 @@ defineEmits<{ 'update:modelValue': [string] }>()
 
 .field__input--bad {
   border-color: var(--coral);
-}
-
-.field__hint {
-  font-size: var(--text-caption);
-  color: var(--text-muted);
 }
 
 .field__error {

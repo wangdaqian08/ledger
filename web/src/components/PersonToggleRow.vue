@@ -12,21 +12,15 @@ withDefaults(
   defineProps<{
     displayName: string
     personHue: number
-    selected: boolean
     /** Their share if the list stays as it is. Omitted before an amount has been entered. */
     shareMinor?: number | null
     currencyCode?: string
-    symbol?: string
     disabled?: boolean
   }>(),
-  { shareMinor: null, currencyCode: 'AUD', symbol: '$', disabled: false },
+  { shareMinor: null, currencyCode: 'AUD', disabled: false },
 )
 
-const emit = defineEmits<{ 'update:selected': [boolean] }>()
-
-function toggle(current: boolean) {
-  emit('update:selected', !current)
-}
+const selected = defineModel<boolean>('selected', { required: true })
 </script>
 
 <template>
@@ -37,7 +31,7 @@ function toggle(current: boolean) {
     data-testid="person-toggle"
     :disabled="disabled"
     :aria-pressed="selected"
-    @click="toggle(selected)"
+    @click="selected = !selected"
   >
     <PersonAvatar :name="displayName" :hue="personHue" :size="36" :dimmed="!selected" />
     <span class="row__name">{{ displayName }}</span>
@@ -45,7 +39,6 @@ function toggle(current: boolean) {
       v-if="selected && shareMinor !== null"
       :amount-minor="shareMinor"
       :currency-code="currencyCode"
-      :symbol="symbol"
       size="sm"
       :tone="'neutral'"
     />

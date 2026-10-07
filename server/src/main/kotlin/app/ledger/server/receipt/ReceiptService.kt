@@ -2,6 +2,7 @@ package app.ledger.server.receipt
 
 import app.ledger.server.item.ItemRepository
 import app.ledger.server.item.ItemView
+import app.ledger.server.item.getOr404
 import app.ledger.server.item.toView
 import app.ledger.server.trip.TripAccess
 import app.ledger.server.trip.TripSnapshots
@@ -34,7 +35,7 @@ class ReceiptService(
      */
     @Transactional
     fun attach(itemId: UUID, contentType: String?, bytes: ByteArray, actor: UUID): ItemView {
-        val item = items.findById(itemId).orElseThrow { noSuchItem() }
+        val item = items.getOr404(itemId)
         val trip = access.expenseEditorOnly(item.tripId, item.payerMemberId, actor)
         access.requireOpen(trip)
 
@@ -108,7 +109,7 @@ class ReceiptService(
      */
     @Transactional(readOnly = true)
     fun open(itemId: UUID, actor: UUID): StoredReceipt {
-        val item = items.findById(itemId).orElseThrow { noSuchItem() }
+        val item = items.getOr404(itemId)
         access.visibleTrip(item.tripId, actor)
         val receipt = receipts.findById(item.id).orElseThrow { noReceipt() }
         val bytes = storage.fetch(receipt.objectName) ?: throw noReceipt()
@@ -117,7 +118,7 @@ class ReceiptService(
 
     @Transactional
     fun remove(itemId: UUID, actor: UUID) {
-        val item = items.findById(itemId).orElseThrow { noSuchItem() }
+        val item = items.getOr404(itemId)
         val trip = access.expenseEditorOnly(item.tripId, item.payerMemberId, actor)
         access.requireOpen(trip)
         val receipt = receipts.findById(item.id).orElseThrow { noReceipt() }
@@ -151,8 +152,6 @@ class ReceiptService(
 
     private companion object {
         val IMAGE_TYPES = setOf("image/jpeg", "image/png", "image/webp")
-
-        fun noSuchItem() = ResponseStatusException(HttpStatus.NOT_FOUND, "No such expense")
 
         fun noReceipt() = ResponseStatusException(HttpStatus.NOT_FOUND, "This expense has no receipt")
     }

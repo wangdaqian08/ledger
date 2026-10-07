@@ -36,21 +36,17 @@ const props = withDefaults(
     /** The payer's display name; when [paidByYou] is set it is not shown, "You paid" is. */
     paidBy?: string
     paidByYou?: boolean
-    spentOn?: string
     amountMinor: number
     allSquare?: boolean
     currencyCode?: string
-    symbol?: string
     divider?: boolean
   }>(),
   {
     categoryKey: 'other',
     paidBy: undefined,
     paidByYou: false,
-    spentOn: undefined,
     allSquare: false,
     currencyCode: 'AUD',
-    symbol: '$',
     divider: true,
   },
 )
@@ -62,7 +58,6 @@ const { t } = useI18n()
 const look = () => CATEGORY_LOOK[props.categoryKey] ?? CATEGORY_LOOK.other!
 const paidLabel = () =>
   props.paidByYou ? t('trip.youPaid') : props.paidBy ? t('trip.paidBy', { name: props.paidBy }) : null
-const subtitle = () => [paidLabel(), props.spentOn].filter(Boolean).join(' · ')
 </script>
 
 <template>
@@ -85,14 +80,13 @@ const subtitle = () => [paidLabel(), props.spentOn].filter(Boolean).join(' · ')
 
     <span class="row__body">
       <span class="row__title">{{ title }}</span>
-      <span class="row__subtitle">{{ subtitle() }}</span>
+      <span class="row__subtitle">{{ paidLabel() }}</span>
     </span>
 
     <span class="row__trailing">
       <AmountText
         :amount-minor="amountMinor"
         :currency-code="currencyCode"
-        :symbol="symbol"
         :tone="allSquare ? 'settled' : 'neutral'"
         :show-sign="false"
       />

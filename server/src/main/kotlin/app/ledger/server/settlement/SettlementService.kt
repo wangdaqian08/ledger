@@ -2,13 +2,14 @@ package app.ledger.server.settlement
 
 import app.ledger.engine.Family
 import app.ledger.engine.MemberId
+import app.ledger.engine.PaybackStatus
 import app.ledger.engine.familyTransfers
 import app.ledger.server.payback.PaybackEntity
 import app.ledger.server.payback.PaybackRepository
-import app.ledger.server.payback.PaybackStatusName
 import app.ledger.server.payback.PaybackView
 import app.ledger.server.payback.toView
 import app.ledger.server.trip.TripAccess
+import app.ledger.server.trip.TripEntity
 import app.ledger.server.trip.TripMemberEntity
 import app.ledger.server.trip.TripSnapshot
 import app.ledger.server.trip.TripSnapshots
@@ -30,14 +31,9 @@ class SettlementService(
     /** Your position with every other person on the trip, one row each. */
     @Transactional(readOnly = true)
     fun forViewer(tripId: UUID, actor: UUID): SettlementView {
-        val trip = access.visibleTrip(tripId, actor)
-        val snapshot = snapshots.load(tripId)
-        val you = snapshot.memberFor(actor)
-            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
+        val (trip, snapshot, you) = seat(tripId, actor)
 
-        val userIdOf = snapshot.roster.associate { it.id to it.userId }
-
-        fun view(payback: PaybackEntity) = payback.toView(actor, trip.createdByUserId) { userIdOf[it] }
+        fun view(payback: PaybackEntity) = payback.toView(actor, trip.createdByUserId) { snapshot.userIdOf[it] }
 
         fun theOther(payback: PaybackEntity) =
             if (payback.fromMemberId == you.id) payback.toMemberId else payback.fromMemberId
@@ -48,13 +44,13 @@ class SettlementService(
         val mine = snapshot.paybacks.filter {
             it.itemId == null && (it.fromMemberId == you.id || it.toMemberId == you.id)
         }
-        val pendingByOther = mine.filter { it.status == PaybackStatusName.PENDING }.groupBy(::theOther)
-        val settledByOther = mine.filter { it.status == PaybackStatusName.APPROVED }.groupBy(::theOther)
+        val pendingByOther = mine.filter { it.status == PaybackStatus.PENDING }.groupBy(::theOther)
+        val settledByOther = mine.filter { it.status == PaybackStatus.APPROVED }.groupBy(::theOther)
         // Ones you filed and they turned down, handed back to you (the claimant) with the reason —
         // a settlement has no bill sheet to carry a rejection, so this row is where it must land.
         // Only your own: a decline you made needs no echo to yourself.
         val rejectedByOther = mine
-            .filter { it.status == PaybackStatusName.REJECTED && it.fromMemberId == you.id }
+            .filter { it.status == PaybackStatus.REJECTED && it.fromMemberId == you.id }
             .groupBy(::theOther)
 
         val rows = snapshot.roster
@@ -129,21 +125,12 @@ class SettlementService(
      */
     @Transactional
     fun pay(tripId: UUID, command: SubmitSettlement, actor: UUID): PaybackView {
-        val trip = access.visibleTrip(tripId, actor)
-        val snapshot = snapshots.load(tripId)
-        val you = snapshot.memberFor(actor)
-            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
-        val them = snapshot.roster.firstOrNull { it.id == command.toMemberId }
-            ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "That person is not on this trip")
-
-        if (them.id == you.id) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "You cannot settle up with yourself")
-        }
+        val (trip, snapshot, you) = seat(tripId, actor)
+        val them = counterpart(snapshot, you, command.toMemberId, "You cannot settle up with yourself")
 
         // Deliberately not capped at what you currently owe. Paying more than the running figure is
         // a real thing people do — rounding a debt up, or covering something not yet entered — and
         // refusing it would be the app telling somebody they are wrong about their own money.
-        val userIdOf = snapshot.roster.associate { it.id to it.userId }
         return paybacks
             .save(
                 PaybackEntity(
@@ -153,10 +140,10 @@ class SettlementService(
                     toMemberId = them.id,
                     amountMinor = command.amountMinor,
                     paidOn = LocalDate.now(),
-                    status = PaybackStatusName.PENDING,
+                    status = PaybackStatus.PENDING,
                     createdByUserId = actor,
                 ),
-            ).toView(actor, trip.createdByUserId) { userIdOf[it] }
+            ).toView(actor, trip.createdByUserId) { snapshot.userIdOf[it] }
     }
 
     /**
@@ -175,16 +162,8 @@ class SettlementService(
      */
     @Transactional(readOnly = true)
     fun remind(tripId: UUID, command: Remind, actor: UUID) {
-        access.visibleTrip(tripId, actor)
-        val snapshot = snapshots.load(tripId)
-        val you = snapshot.memberFor(actor)
-            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
-        val them = snapshot.roster.firstOrNull { it.id == command.memberId }
-            ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "That person is not on this trip")
-
-        if (them.id == you.id) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "You cannot remind yourself")
-        }
+        val (_, snapshot, you) = seat(tripId, actor)
+        val them = counterpart(snapshot, you, command.memberId, "You cannot remind yourself")
         if (snapshot.owesBetween(them.id, you.id) <= 0) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "They do not owe you anything")
         }
@@ -208,10 +187,7 @@ class SettlementService(
      */
     @Transactional(readOnly = true)
     fun families(tripId: UUID, command: PreviewFamilies, actor: UUID): FamiliesView {
-        val trip = access.visibleTrip(tripId, actor)
-        val snapshot = snapshots.load(tripId)
-        val you = snapshot.memberFor(actor)
-            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
+        val (trip, snapshot, you) = seat(tripId, actor)
         val onTrip = snapshot.roster.associateBy { it.id }
 
         if (command.families.any { it.memberIds.isEmpty() }) {
@@ -261,9 +237,8 @@ class SettlementService(
         } else {
             users.findAllById(accounts).filter { !it.payId.isNullOrBlank() }.mapTo(mutableSetOf()) { it.id }
         }
-        val userIdOf = snapshot.roster.associate { it.id to it.userId }
         val pendingSettlements = snapshot.paybacks.filter {
-            it.itemId == null && it.status == PaybackStatusName.PENDING
+            it.itemId == null && it.status == PaybackStatus.PENDING
         }
 
         return FamiliesView(
@@ -288,9 +263,33 @@ class SettlementService(
                     payToMemberId = (payees.firstOrNull { it.userId in withPayId } ?: payees.first()).id,
                     pending = pendingSettlements
                         .filter { it.fromMemberId in payers && it.toMemberId in payeeIds }
-                        .map { it.toView(actor, trip.createdByUserId) { member -> userIdOf[member] } },
+                        .map { it.toView(actor, trip.createdByUserId) { member -> snapshot.userIdOf[member] } },
                 )
             },
         )
     }
+
+    /** The trip, loaded, and your seat on it — a 404 when it is not yours to see. */
+    private fun seat(tripId: UUID, actor: UUID): Seat {
+        val trip = access.visibleTrip(tripId, actor)
+        val snapshot = snapshots.load(tripId)
+        val you = snapshot.memberFor(actor)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
+        return Seat(trip, snapshot, you)
+    }
+
+    /** The other person on a settle-up action: on this trip, and not you. */
+    private fun counterpart(
+        snapshot: TripSnapshot,
+        you: TripMemberEntity,
+        memberId: UUID,
+        yourselfMessage: String,
+    ): TripMemberEntity {
+        val them = snapshot.roster.firstOrNull { it.id == memberId }
+            ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "That person is not on this trip")
+        if (them.id == you.id) throw ResponseStatusException(HttpStatus.BAD_REQUEST, yourselfMessage)
+        return them
+    }
+
+    private data class Seat(val trip: TripEntity, val snapshot: TripSnapshot, val you: TripMemberEntity)
 }

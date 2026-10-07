@@ -9,7 +9,6 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "test:watch": "vitest",
-    "typecheck": "vue-tsc --noEmit",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write ."
   },

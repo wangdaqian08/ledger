@@ -90,9 +90,7 @@ class ExportService(
             if (digits == 0) return amountMinor.toString()
             var scale = 1L
             repeat(digits) { scale *= 10 }
-            val sign = if (amountMinor < 0) "-" else ""
-            val abs = if (amountMinor < 0) -amountMinor else amountMinor
-            return "$sign${abs / scale}.${(abs % scale).toString().padStart(digits, '0')}"
+            return "${amountMinor / scale}.${(amountMinor % scale).toString().padStart(digits, '0')}"
         }
 
         /**

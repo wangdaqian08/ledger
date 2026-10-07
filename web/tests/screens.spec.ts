@@ -33,6 +33,7 @@ import type {
   TripView,
 } from '@/lib/api'
 import TallyButton from '@/components/TallyButton.vue'
+import { i18n } from '@/i18n'
 
 /**
  * The screens against a scripted API. Every number a screen shows must be traceable to the
@@ -428,7 +429,10 @@ describe('TripScreen', () => {
     expect(screen.text()).toContain('43.21') //  yourShareMinor from the payload, not the item sum (40.00)
     expect(screen.text()).toContain('88.88') //  youFrontedMinor from the payload, not the item sum (90.00)
     // Two different days, two day headers.
-    expect(findAllByTestId(screen, 'expense-day')).toHaveLength(2)
+    expect(findAllByTestId(screen, 'expense-day').map((d) => d.find('h3').text())).toEqual([
+      'Fri, Aug 7',
+      'Thu, Aug 6',
+    ])
 
     // The feed shows each bill's total — what the payer paid — whoever paid it. Never the viewer's
     // stake (total − share, or −share), which read as a debt that never moved when paid back.
@@ -477,7 +481,6 @@ describe('TripScreen', () => {
     await findByTestId(screen, 'settle-up').trigger('click')
     const sheet = screen.findComponent(SettleUpSheet)
     expect(sheet.props('open')).toBe(true)
-    expect(sheet.props('focusMemberId')).toBeNull()
     // Opened on nobody: the By person rows are there, and no pay form is unfolded for anyone.
     expect(findByTestId(screen, 'sheet-panel').findAll(testId('balance-row'))).toHaveLength(1)
     expect(findAllByTestId(screen, 'pay-form')).toHaveLength(0)
@@ -607,12 +610,13 @@ describe('TripScreen', () => {
     const screen = mount(TripScreen, { props: { tripId: 't-1' }, global: global() })
     await flushPromises()
 
-    screen.findComponent(ItemDetailSheet).vm.$emit('payBack', 'i-2', 'Bob', 3_000)
+    screen.findComponent(ItemDetailSheet).vm.$emit('payBack', 'i-2', 3_000)
     await flushPromises()
 
     const claim = screen.findComponent(ClaimPaybackSheet)
     expect(claim.props('open')).toBe(true)
     expect(findByTestId(claim, 'payid-value').text()).toBe('bob@example.com')
+    expect(claim.text()).toContain('This asks Bob to confirm')
   })
 
   it('filters the feed to unsettled without touching the data', async () => {
@@ -628,6 +632,11 @@ describe('TripScreen', () => {
     await flushPromises()
 
     expect(screen.text()).toContain('Paid off')
+    expect(['all', 'unsettled', 'youPaid'].map((f) => findByTestId(screen, `filter-${f}`).text())).toEqual([
+      'All',
+      'Unsettled',
+      'You paid',
+    ])
     await findByTestId(screen, 'filter-unsettled').trigger('click')
 
     expect(screen.text()).not.toContain('Paid off')
@@ -1337,6 +1346,206 @@ describe('EditSplitSheet', () => {
   })
 })
 
+describe('category names follow the reader language', () => {
+  afterEach(() => {
+    i18n.global.locale.value = 'en'
+  })
+
+  it('in the picker, the blank-title fallback, and the detail meta line', async () => {
+    i18n.global.locale.value = 'zh'
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('cafebabe-dead-4eef-cafe-babedead4eef')
+    mocked.createItem!.mockResolvedValue(item({}))
+    const add = mount(AddExpenseSheet, {
+      props: { open: false, trip: trip(), categories: foodCategories },
+      global: global(),
+    })
+    await add.setProps({ open: true })
+    await nextTick()
+    expect(findByTestId(add, 'category-item').text()).toBe('餐饮')
+    await findByTestId(add, 'key-5').trigger('click')
+    await findByTestId(add, 'next-step').trigger('click')
+    await findByTestId(add, 'split-all').trigger('click')
+    await findByTestId(add, 'save-expense').trigger('click')
+    await flushPromises()
+    expect(mocked.createItem).toHaveBeenCalledWith('t-1', expect.objectContaining({ title: '餐饮' }))
+
+    const edit = mount(EditSplitSheet, {
+      props: { open: false, trip: trip(), item: null, categories: foodCategories },
+      global: global(),
+    })
+    await edit.setProps({ open: true, item: item({ id: 'cafebabe-dead-4eef-cafe-babedead4eef' }) })
+    await nextTick()
+    expect(findByTestId(edit, 'category-item').text()).toBe('餐饮')
+  })
+
+  async function metaLine(splitRule: 'EQUAL' | 'WEIGHTED' | 'EXACT') {
+    mocked.itemDetail!.mockResolvedValue({ ...item({ splitRule }), paybacks: [] })
+    const sheet = mount(ItemDetailSheet, {
+      props: { open: false, itemId: 'i-1', trip: trip(), categories: foodCategories },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await flushPromises()
+    return sheet.find('.detail__meta').text()
+  }
+
+  it('in the detail meta line, with the local date and the split rule', async () => {
+    expect(await metaLine('EQUAL')).toBe('Food · Aug 7, 2026 · Even split')
+    expect(await metaLine('WEIGHTED')).toBe('Food · Aug 7, 2026 · By shares')
+    expect(await metaLine('EXACT')).toBe('Food · Aug 7, 2026 · Exact amounts')
+    i18n.global.locale.value = 'zh'
+    expect(await metaLine('EQUAL')).toBe('餐饮 · 2026年8月7日 · 平均分摊')
+  })
+})
+
+describe('split editor, shared by the add and edit sheets', () => {
+  const euro = () => trip({ currencyCode: 'EUR' })
+  const people = (sheet: ReturnType<typeof mount>) => findAllByTestId(sheet, 'person-toggle')
+  const chip = (sheet: ReturnType<typeof mount>, name: string) =>
+    findAllByTestId(sheet, 'payer-chip').find((c) => c.text() === name)!
+
+  async function addSheet() {
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('cafebabe-dead-4eef-cafe-babedead4eef')
+    mocked.createItem!.mockResolvedValue(item({}))
+    const sheet = mount(AddExpenseSheet, {
+      props: { open: false, trip: euro(), categories: foodCategories },
+      global: global(),
+    })
+    await sheet.setProps({ open: true })
+    await nextTick()
+    for (const key of ['9', '0', '0', '0']) await findByTestId(sheet, `key-${key}`).trigger('click')
+    expect(findByTestId(sheet, 'amount-display').text()).toBe('€90.00')
+    await findByTestId(sheet, 'next-step').trigger('click')
+    return sheet
+  }
+
+  async function editSheet() {
+    const existing = item({ id: 'cafebabe-dead-4eef-cafe-babedead4eef' })
+    mocked.patchItem!.mockResolvedValue(existing)
+    const sheet = mount(EditSplitSheet, {
+      props: { open: false, trip: euro(), item: null, categories: foodCategories },
+      global: global(),
+    })
+    await sheet.setProps({ open: true, item: existing })
+    await nextTick()
+    return sheet
+  }
+
+  it('adds: the trip currency on every figure, the All chip both ways, the payer, and the dragged weights', async () => {
+    const sheet = await addSheet()
+    expect(chip(sheet, 'You').attributes('aria-pressed')).toBe('true')
+    expect(findByTestId(sheet, 'even-each').exists()).toBe(false)
+
+    await findByTestId(sheet, 'split-all').trigger('click')
+    expect(findByTestId(sheet, 'split-all').attributes('aria-pressed')).toBe('true')
+    expect(people(sheet).map((r) => r.text())).toEqual(['YYou€30.00✓', 'BBob€30.00✓', 'CCara€30.00✓'])
+    expect(findByTestId(sheet, 'even-each').text()).toBe('€30.00 each')
+
+    await findByTestId(sheet, 'split-all').trigger('click')
+    expect(people(sheet).every((r) => r.attributes('aria-pressed') === 'false')).toBe(true)
+    expect(findByTestId(sheet, 'save-expense').attributes('disabled')).toBeDefined()
+    await findByTestId(sheet, 'split-all').trigger('click')
+
+    await chip(sheet, 'Bob').trigger('click')
+    expect(chip(sheet, 'Bob').attributes('aria-pressed')).toBe('true')
+    expect(chip(sheet, 'You').attributes('aria-pressed')).toBe('false')
+
+    await findByTestId(sheet, 'mode-custom').trigger('click')
+    expect(findByTestId(sheet, 'mode-custom').attributes('aria-pressed')).toBe('true')
+    expect(findByTestId(sheet, 'even-each').exists()).toBe(false)
+    const bar = sheet.findComponent({ name: 'SplitBar' })
+    expect(bar.text()).toContain('€30.00')
+    const dragged = (bar.props('people') as { weight: number }[]).map((p, i) => ({
+      ...p,
+      weight: i === 0 ? 40 : 20,
+    }))
+    bar.vm.$emit('update:people', dragged)
+    await nextTick()
+    expect(people(sheet).map((r) => r.text())).toEqual(['YYou€45.00✓', 'BBob€22.50✓', 'CCara€22.50✓'])
+
+    await findByTestId(sheet, 'save-expense').trigger('click')
+    await flushPromises()
+    expect(mocked.createItem).toHaveBeenCalledWith(
+      't-1',
+      expect.objectContaining({
+        payerMemberId: bob.id,
+        splitRule: 'WEIGHTED',
+        sharedBy: [
+          { memberId: you.id, weight: 2 },
+          { memberId: bob.id, weight: 1 },
+          { memberId: cara.id, weight: 1 },
+        ],
+      }),
+    )
+  })
+
+  it('edits: no All chip or each line, zero shown as zero, a new payer, and the dragged weights', async () => {
+    const sheet = await editSheet()
+    expect(findByTestId(sheet, 'edit-amount').text()).toContain('€90.00')
+    expect(findByTestId(sheet, 'split-all').exists()).toBe(false)
+    expect(findByTestId(sheet, 'even-each').exists()).toBe(false)
+    expect(people(sheet).map((r) => r.text())).toEqual(['YYou€30.00✓', 'BBob€30.00✓', 'CCara€30.00✓'])
+
+    // Cleared to nothing, the rows still show what each would pay: nothing.
+    sheet.findComponent(AmountKeypadField).vm.$emit('update:modelValue', 0)
+    await nextTick()
+    expect(people(sheet).map((r) => r.text())).toEqual(['YYou€0.00✓', 'BBob€0.00✓', 'CCara€0.00✓'])
+    sheet.findComponent(AmountKeypadField).vm.$emit('update:modelValue', 9_000)
+    await nextTick()
+
+    await chip(sheet, 'Cara').trigger('click')
+    expect(chip(sheet, 'Cara').attributes('aria-pressed')).toBe('true')
+
+    const custom = () => sheet.findAll('button').find((b) => b.text() === 'Custom')!
+    await custom().trigger('click')
+    expect(custom().attributes('aria-pressed')).toBe('true')
+    const bar = sheet.findComponent({ name: 'SplitBar' })
+    expect(bar.text()).toContain('€30.00')
+    const dragged = (bar.props('people') as { weight: number }[]).map((p, i) => ({
+      ...p,
+      weight: i === 0 ? 40 : 20,
+    }))
+    bar.vm.$emit('update:people', dragged)
+    await nextTick()
+    expect(people(sheet).map((r) => r.text())).toEqual(['YYou€45.00✓', 'BBob€22.50✓', 'CCara€22.50✓'])
+
+    await findByTestId(sheet, 'save-split').trigger('click')
+    await flushPromises()
+    expect(mocked.patchItem).toHaveBeenCalledWith(
+      'cafebabe-dead-4eef-cafe-babedead4eef',
+      expect.objectContaining({
+        payerMemberId: cara.id,
+        splitRule: 'WEIGHTED',
+        sharedBy: [
+          { memberId: you.id, weight: 2 },
+          { memberId: bob.id, weight: 1 },
+          { memberId: cara.id, weight: 1 },
+        ],
+      }),
+    )
+  })
+
+  it('shows the trip currency on the trip screen figures and feed', async () => {
+    mocked.trip!.mockResolvedValue(
+      trip({
+        currencyCode: 'EUR',
+        yourNetMinor: 9_000,
+        groupSpendMinor: 12_345,
+        yourShareMinor: 4_321,
+        youFrontedMinor: 8_888,
+        items: [item({})],
+      }),
+    )
+    mocked.settlement!.mockResolvedValue(emptySettlement)
+    mocked.categories!.mockResolvedValue(foodCategories)
+    const screen = mount(TripScreen, { props: { tripId: 't-1' }, global: global() })
+    await flushPromises()
+
+    for (const figure of ['€90.00', '€123.45', '€43.21', '€88.88']) expect(screen.text()).toContain(figure)
+    expect(screen.text()).not.toContain('$')
+  })
+})
+
 describe('InviteSheet', () => {
   it('writes a name onto the roster and reports the change', async () => {
     mocked.addMember!.mockResolvedValue({ ...cara, id: 'm-new', displayName: 'Dana' })
@@ -1368,6 +1577,21 @@ describe('InviteSheet', () => {
     resolveAdd({ ...cara, id: 'm-new', displayName: 'Dana' })
     await flushPromises()
     expect(sheet.emitted('changed')).toBeTruthy()
+    expect(findAllByTestId(sheet, 'btn-spinner')).toHaveLength(0)
+  })
+
+  it('shows a refused write with its reason, reports nothing, and keeps the typed name', async () => {
+    mocked.addMember!.mockRejectedValue(new ApiError(409, 'That name is taken'))
+    const sheet = mount(InviteSheet, { props: { open: true, trip: trip() }, global: global() })
+    await nextTick()
+
+    await findByTestId(sheet, 'member-name').setValue('Bob')
+    await sheet.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(sheet.find('[role="alert"]').text()).toBe('That name is taken')
+    expect(sheet.emitted('changed')).toBeUndefined()
+    expect((findByTestId(sheet, 'member-name').element as HTMLInputElement).value).toBe('Bob')
     expect(findAllByTestId(sheet, 'btn-spinner')).toHaveLength(0)
   })
 
@@ -1536,11 +1760,10 @@ describe('ClaimPaybackSheet', () => {
       props: {
         open: false,
         itemId: 'i-1',
-        toName: 'Alice',
+        recipient: 'you',
         prefillMinor: 2_500,
         fromMemberId: bob.id,
         currencyCode: 'AUD',
-        symbol: '$',
       },
       global: global(),
     })
@@ -1566,11 +1789,10 @@ describe('ClaimPaybackSheet', () => {
       props: {
         open: false,
         itemId: 'i-1',
-        toName: 'Alice',
+        recipient: 'you',
         prefillMinor: 2_500,
         fromMemberId: bob.id,
         currencyCode: 'AUD',
-        symbol: '$',
       },
       global: global(),
     })
@@ -1596,11 +1818,9 @@ describe('ClaimPaybackSheet', () => {
       props: {
         open: false,
         itemId: 'i-1',
-        toName: 'Alice',
         prefillMinor: 2_500,
         fromMemberId: bob.id,
         currencyCode: 'AUD',
-        symbol: '$',
         recipient: { ...you, payId: 'alice@example.com', payIdChangedRecently: true },
       },
       global: global(),
@@ -1618,11 +1838,9 @@ describe('ClaimPaybackSheet', () => {
       props: {
         open: false,
         itemId: 'i-1',
-        toName: 'Bob',
         prefillMinor: 2_500,
         fromMemberId: you.id,
         currencyCode: 'AUD',
-        symbol: '$',
         recipient: bob,
       },
       global: global(),
@@ -1731,6 +1949,36 @@ describe('SheetPanel', () => {
 })
 
 describe('SettleUpSheet', () => {
+  it('shows the trip currency on the row and in the pay form', async () => {
+    const sheet = mount(SettleUpSheet, {
+      props: {
+        open: true,
+        tripId: 't-1',
+        myMemberId: you.id,
+        rows: [
+          {
+            memberId: bob.id,
+            displayName: 'Bob',
+            personHue: 2,
+            owedMinor: 6_000,
+            pending: [],
+            settled: [],
+            rejected: [],
+          },
+        ],
+        members: [you, bob],
+        currencyCode: 'EUR',
+      },
+      global: global(),
+    })
+    await nextTick()
+
+    expect(sheet.text()).toContain('€60.00')
+    await findByTestId(sheet, 'row-pay').trigger('click')
+    expect(findByTestId(sheet, 'pay-amount').text()).toContain('€60.00')
+    expect(sheet.text()).not.toContain('$')
+  })
+
   it('pre-fills Pay with exactly what is owed and files it as a settlement', async () => {
     mocked.submitSettlement!.mockResolvedValue({})
     const sheet = mount(SettleUpSheet, {
@@ -1738,7 +1986,6 @@ describe('SettleUpSheet', () => {
         open: true,
         tripId: 't-1',
         myMemberId: you.id,
-        youAreCreator: true,
         rows: [
           {
             memberId: bob.id,
@@ -1752,7 +1999,6 @@ describe('SettleUpSheet', () => {
         ],
         members: [you, bob],
         currencyCode: 'AUD',
-        symbol: '$',
       },
       global: global(),
     })
@@ -1776,7 +2022,6 @@ describe('SettleUpSheet', () => {
         open: true,
         tripId: 't-1',
         myMemberId: you.id,
-        youAreCreator: true,
         rows: [
           {
             memberId: bob.id,
@@ -1790,7 +2035,6 @@ describe('SettleUpSheet', () => {
         ],
         members: [you, bob],
         currencyCode: 'AUD',
-        symbol: '$',
       },
       global: global(),
     })
@@ -1816,7 +2060,6 @@ describe('SettleUpSheet', () => {
         open: true,
         tripId: 't-1',
         myMemberId: you.id,
-        youAreCreator: true,
         rows: [
           {
             memberId: bob.id,
@@ -1830,7 +2073,6 @@ describe('SettleUpSheet', () => {
         ],
         members: [you, bob],
         currencyCode: 'AUD',
-        symbol: '$',
       },
       global: global(),
     })
@@ -1879,11 +2121,9 @@ describe('SettleUpSheet', () => {
         open: true,
         tripId: 't-1',
         myMemberId: you.id,
-        youAreCreator: false,
         rows,
         members: [you, bob],
         currencyCode: 'AUD',
-        symbol: '$',
       },
       global: global(),
     })
@@ -1967,11 +2207,9 @@ describe('SettleUpSheet square overall', () => {
         open: true,
         tripId: 't-1',
         myMemberId: you.id,
-        youAreCreator: false,
         rows: cancellingRows(),
         members: [you, bob, cara],
         currencyCode: 'AUD',
-        symbol: '$',
         allSquare: true,
         transfers: [],
         ...over,
@@ -1994,14 +2232,6 @@ describe('SettleUpSheet square overall', () => {
     // Claims are still claims: the settled record stays undoable and the pending one decidable.
     expect(findAllByTestId(sheet, 'settled-claim')).toHaveLength(1)
     expect(findByTestId(sheet, 'pending-claim').find(testId('pending-approve')).exists()).toBe(true)
-  })
-
-  it('does not unfold a pay form when reopened on a row, because there is nothing to pay', async () => {
-    const sheet = mountSquare({ open: false, focusMemberId: bob.id })
-    await sheet.setProps({ open: true })
-    await nextTick()
-
-    expect(findAllByTestId(sheet, 'pay-form')).toHaveLength(0)
   })
 
   it('says nothing about square overall when every row is already clear', async () => {
@@ -2128,11 +2358,9 @@ describe('SettleUpSheet How it adds up', () => {
         open: true,
         tripId: 't-1',
         myMemberId: ann.id,
-        youAreCreator: true,
         rows: [],
         members: [ann, ben, cat, dan, eve],
         currencyCode: 'AUD',
-        symbol: '$',
         allSquare: false,
         transfers: [],
         breakdown: uc1(),
@@ -2366,11 +2594,9 @@ describe('SettleUpSheet By minimum transfer', () => {
         open: true,
         tripId: 't-1',
         myMemberId: eve.id,
-        youAreCreator: false,
         rows: eveRows(),
         members,
         currencyCode: 'AUD',
-        symbol: '$',
         allSquare: false,
         transfers,
         ...over,
@@ -2592,11 +2818,9 @@ describe('SettleUpSheet Family mode', () => {
         open: true,
         tripId: 't-1',
         myMemberId: you.id,
-        youAreCreator: true,
         rows,
         members,
         currencyCode: 'AUD',
-        symbol: '$',
       },
       global: global(),
     })
@@ -2996,11 +3220,9 @@ describe('SettleUpSheet By minimum transfer with families', () => {
         open: true,
         tripId: 't-1',
         myMemberId: viewer.id,
-        youAreCreator: false,
         rows,
         members: rosterFor(viewer),
         currencyCode: 'AUD',
-        symbol: '$',
         allSquare: false,
         transfers: perPersonPlan,
       },

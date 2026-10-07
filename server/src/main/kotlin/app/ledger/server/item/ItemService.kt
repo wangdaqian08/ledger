@@ -94,15 +94,16 @@ class ItemService(
 
     @Transactional(readOnly = true)
     fun detail(itemId: UUID, actor: UUID): ItemDetailView {
-        val item = items.findById(itemId).orElseThrow { noSuchItem() }
+        val item = items.getOr404(itemId)
         val trip = access.visibleTrip(item.tripId, actor)
 
         val snapshot = snapshots.load(item.tripId)
         val loaded = snapshot.items.first { it.id == item.id }
-        val userIdOf = snapshot.roster.associate { it.id to it.userId }
         return ItemDetailView(
             item = snapshot.toView(loaded, actor),
-            paybacks = snapshot.paybacksFor(loaded).map { it.toView(actor, trip.createdByUserId) { m -> userIdOf[m] } },
+            paybacks = snapshot.paybacksFor(loaded).map {
+                it.toView(actor, trip.createdByUserId) { m -> snapshot.userIdOf[m] }
+            },
         )
     }
 
@@ -113,7 +114,7 @@ class ItemService(
      */
     @Transactional
     fun patch(itemId: UUID, command: PatchItem, actor: UUID): ItemView {
-        val item = items.findById(itemId).orElseThrow { noSuchItem() }
+        val item = items.getOr404(itemId)
         val trip = editableTrip(item, actor)
         access.requireOpen(trip)
 
@@ -164,7 +165,7 @@ class ItemService(
     /** Item payer plus trip creator. Cascades take the people list and any claims with it. */
     @Transactional
     fun delete(itemId: UUID, actor: UUID) {
-        val item = items.findById(itemId).orElseThrow { noSuchItem() }
+        val item = items.getOr404(itemId)
         access.requireOpen(editableTrip(item, actor))
         // The cascade takes the receipt row; the object it points at is reachable by no cascade.
         receipts.removeForDeletedItem(item.id)
@@ -309,10 +310,6 @@ class ItemService(
         shares.flush()
         val snapshot = snapshots.load(tripId)
         return snapshot.toView(snapshot.items.first { it.id == itemId }, actor)
-    }
-
-    private companion object {
-        fun noSuchItem() = ResponseStatusException(HttpStatus.NOT_FOUND, "No such expense")
     }
 }
 

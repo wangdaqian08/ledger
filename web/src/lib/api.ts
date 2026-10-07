@@ -38,6 +38,9 @@ export class ApiError extends Error {
   }
 }
 
+export function errorMessage(failure: unknown): string {
+  return failure instanceof Error ? failure.message : String(failure)
+}
 /** Called on any 401 so the router can hand the person to the sign-in screen. */
 let onUnauthorized: (() => void) | null = null
 
@@ -315,6 +318,9 @@ export interface CategoryView {
   builtIn: boolean
 }
 
+export function categoryName(category: Pick<CategoryView, 'nameEn' | 'nameZh'>, locale: string): string {
+  return locale.startsWith('zh') ? category.nameZh : category.nameEn
+}
 export interface MeView {
   id: string
   displayName: string

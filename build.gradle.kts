@@ -5,6 +5,15 @@ plugins {
     alias(libs.plugins.spotless)
 }
 
+val ktlintVersion = libs.versions.ktlint.get()
+
+// Applied to every project, so `server` and `web` are covered the moment they are added to
+// settings.gradle.kts — see docs/specs/2026-07-31-ledger-design.md §8.
+//
+// Which rules are on is decided in .editorconfig, which ktlint reads directly. Spotless wires
+// spotlessCheck into `check`, so `./gradlew check` fails on unformatted code and
+// `./gradlew spotlessApply` fixes it.
+
 allprojects {
     group = "app.ledger"
     version = "0.1.0-SNAPSHOT"
@@ -14,14 +23,6 @@ allprojects {
     }
 }
 
-val ktlintVersion = libs.versions.ktlint.get()
-
-// Applied to every project, so `server` and `web` are covered the moment they are added to
-// settings.gradle.kts — see docs/specs/2026-07-31-ledger-design.md §8.
-//
-// Which rules are on is decided in .editorconfig, which ktlint reads directly. Spotless wires
-// spotlessCheck into `check`, so `./gradlew check` fails on unformatted code and
-// `./gradlew spotlessApply` fixes it.
 allprojects {
     apply(plugin = "com.diffplug.spotless")
 

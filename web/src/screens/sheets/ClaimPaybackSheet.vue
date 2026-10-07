@@ -6,7 +6,7 @@ import PayIdLine from '@/components/PayIdLine.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TextField from '@/components/TextField.vue'
-import { api, type MemberView } from '@/lib/api'
+import { api, errorMessage, type MemberView } from '@/lib/api'
 import { todayLocal } from '@/lib/dates'
 
 /**
@@ -19,11 +19,10 @@ const props = withDefaults(
   defineProps<{
     open: boolean
     itemId: string | null
-    toName: string
     prefillMinor: number
     fromMemberId: string
     currencyCode: string
-    symbol: string
+    /** Whoever paid the bill — named in the claim, and whose PayID is shown. */
     recipient?: MemberView | null
   }>(),
   { recipient: null },
@@ -62,7 +61,7 @@ async function send() {
     })
     emit('saved')
   } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
+    error.value = errorMessage(failure)
   } finally {
     busy.value = false
   }
@@ -76,7 +75,7 @@ async function send() {
         v-if="recipient"
         :pay-id="recipient.payId"
         :recently-changed="recipient.payIdChangedRecently"
-        :owner-name="toName"
+        :owner-name="recipient.displayName"
       />
       <label class="claim__label">{{ t('claim.amount') }}</label>
       <AmountKeypadField
@@ -84,13 +83,12 @@ async function send() {
         test-id="claim-amount"
         start-open
         :currency-code="currencyCode"
-        :symbol="symbol"
       />
 
       <TextField v-model="paidOn" test-id="claim-date" type="date" :label="t('claim.date')" />
       <TextField v-model="note" :label="t('claim.note')" :placeholder="t('claim.notePlaceholder')" />
 
-      <p class="claim__disclaimer">{{ t('claim.disclaimer', { name: toName }) }}</p>
+      <p class="claim__disclaimer">{{ t('claim.disclaimer', { name: recipient?.displayName ?? '?' }) }}</p>
       <p v-if="error" class="claim__error" role="alert">{{ error }}</p>
 
       <TallyButton

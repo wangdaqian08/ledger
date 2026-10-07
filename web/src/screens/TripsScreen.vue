@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AmountText from '@/components/AmountText.vue'
@@ -13,9 +14,10 @@ import TallyCard from '@/components/TallyCard.vue'
 import TextField from '@/components/TextField.vue'
 import TallyIcon from '@/components/TallyIcon.vue'
 import { api, ApiError } from '@/lib/api'
-import { currencySymbol } from '@/lib/money'
 import { useSession } from '@/stores/session'
 import { useTrips } from '@/stores/trips'
+import { LONG_DATE } from '@/lib/dates'
+import { toneOf } from '@/lib/money'
 
 /**
  * Screen 2 — GroupsHome. Every group as a card, with the overall position above them.
@@ -48,7 +50,7 @@ const GROUP_ICONS = [
   'party-popper',
 ]
 
-const overview = computed(() => trips.overview)
+const { overview } = storeToRefs(trips)
 
 // Three lists out of one payload. The server sends every trip you are on and lets the screen
 // decide what to show, which is why hiding can be a listing decision here without a hidden trip's
@@ -73,11 +75,7 @@ const shownCompleted = computed(() =>
 // The reader's own locale, same as every other date in the app — two date orders on one screen
 // would read as a mistake.
 const purgeDate = (iso: string | null) =>
-  iso
-    ? new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: 'short', day: 'numeric' }).format(
-        new Date(iso),
-      )
-    : ''
+  iso ? new Intl.DateTimeFormat(locale.value, LONG_DATE).format(new Date(iso)) : ''
 
 async function restore(tripId: string) {
   if (restoring.value) return
@@ -95,7 +93,6 @@ async function restore(tripId: string) {
 
 // One figure per currency: ¥ added to $ is a meaningless number, so each stands on its own line
 // with its own symbol. The server sends the per-currency breakdown already summed.
-const toneFor = (net: number) => (net === 0 ? 'settled' : net > 0 ? 'owed' : 'owe')
 const labelFor = (net: number) =>
   net === 0 ? t('money.allSquare') : net > 0 ? t('money.youAreOwed') : t('money.youOwe')
 
@@ -168,9 +165,8 @@ async function signOut() {
         <AmountText
           :amount-minor="Math.abs(total.netMinor)"
           size="hero"
-          :tone="toneFor(total.netMinor)"
+          :tone="toneOf(total.netMinor)"
           :currency-code="total.currencyCode"
-          :symbol="currencySymbol(total.currencyCode)"
         />
       </div>
       <ProgressBar
@@ -206,10 +202,9 @@ async function signOut() {
         :name="trip.name"
         :icon="trip.icon"
         :hue="trip.hue"
-        :members="trip.members.map((m) => ({ id: m.id, displayName: m.displayName, personHue: m.personHue }))"
+        :members="trip.members"
         :your-net-minor="trip.yourNetMinor"
         :currency-code="trip.currencyCode"
-        :symbol="currencySymbol(trip.currencyCode)"
         @click="router.push({ name: 'trip', params: { tripId: trip.id } })"
       />
 
@@ -250,10 +245,9 @@ async function signOut() {
         :name="trip.name"
         :icon="trip.icon"
         :hue="trip.hue"
-        :members="trip.members.map((m) => ({ id: m.id, displayName: m.displayName, personHue: m.personHue }))"
+        :members="trip.members"
         :your-net-minor="trip.yourNetMinor"
         :currency-code="trip.currencyCode"
-        :symbol="currencySymbol(trip.currencyCode)"
         @click="router.push({ name: 'trip', params: { tripId: trip.id } })"
       />
     </section>

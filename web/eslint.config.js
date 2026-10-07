@@ -4,7 +4,7 @@ import { defineConfigWithVueTs, vueTsConfigs } from '@vue/eslint-config-typescri
 import vue from 'eslint-plugin-vue'
 
 export default defineConfigWithVueTs(
-  { ignores: ['dist/**', 'node_modules/**'] },
+  { ignores: ['dist/**'] },
   js.configs.recommended,
   vue.configs['flat/recommended'],
   vueTsConfigs.recommended,

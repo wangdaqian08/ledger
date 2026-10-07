@@ -1,5 +1,6 @@
 package app.ledger.server.payback
 
+import app.ledger.engine.PaybackStatus
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
@@ -12,7 +13,7 @@ data class PaybackView(
     val amountMinor: Long,
     val paidOn: LocalDate,
     val note: String?,
-    val status: PaybackStatusName,
+    val status: PaybackStatus,
     val proofObjectName: String?,
     val rejectReason: String?,
     val reviewedAt: Instant?,
@@ -64,6 +65,6 @@ fun PaybackEntity.toView(
     proofObjectName = proofObjectName,
     rejectReason = rejectReason,
     reviewedAt = reviewedAt,
-    viewerCanDecide = status == PaybackStatusName.PENDING && reviewableBy(actor, creatorUserId, userIdOf),
+    viewerCanDecide = status == PaybackStatus.PENDING && reviewableBy(actor, creatorUserId, userIdOf),
     viewerCanUndo = undoableBy(actor, creatorUserId, userIdOf),
 )

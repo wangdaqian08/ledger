@@ -8,10 +8,7 @@ import TallyIcon from './TallyIcon.vue'
  * has been approved by the person owed (§7a). It celebrates a derived state, and if it is showing
  * when somebody is still owed money, the bug is upstream of here.
  */
-withDefaults(defineProps<{ message?: string; sub?: string }>(), {
-  message: "You're all square",
-  sub: undefined,
-})
+withDefaults(defineProps<{ message?: string }>(), { message: "You're all square" })
 </script>
 
 <template>
@@ -19,7 +16,6 @@ withDefaults(defineProps<{ message?: string; sub?: string }>(), {
     <span class="banner__disc"><TallyIcon name="party-popper" :size="24" /></span>
     <span class="banner__text">
       <strong class="banner__message">{{ message }}</strong>
-      <span v-if="sub" class="banner__sub">{{ sub }}</span>
     </span>
   </div>
 </template>
@@ -72,11 +68,5 @@ withDefaults(defineProps<{ message?: string; sub?: string }>(), {
 .banner__message {
   font-size: var(--text-heading-sm);
   font-weight: var(--weight-black);
-}
-
-.banner__sub {
-  font-size: var(--text-caption);
-  opacity: 0.9;
-  margin-top: 2px;
 }
 </style>

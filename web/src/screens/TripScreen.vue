@@ -25,8 +25,8 @@ import {
   type SettlementView,
   type TripView,
 } from '@/lib/api'
-import { currencySymbol } from '@/lib/money'
-import { useTrips } from '@/stores/trips'
+import { parseLocalDate } from '@/lib/dates'
+import { toneOf } from '@/lib/money'
 
 /**
  * Screen 3 — the group. Hero position and the expense feed grouped by day; the add / detail /
@@ -43,7 +43,6 @@ const props = defineProps<{ tripId: string }>()
 
 const { t, locale } = useI18n()
 const router = useRouter()
-const trips = useTrips()
 
 const trip = ref<TripView | null>(null)
 const settlement = ref<SettlementView | null>(null)
@@ -55,25 +54,26 @@ const settleOpen = ref(false)
 const inviteOpen = ref(false)
 const detailItemId = ref<string | null>(null)
 const editItem = ref<ItemView | null>(null)
-const claim = ref<{ itemId: string; toName: string; prefillMinor: number } | null>(null)
+const claim = ref<{ itemId: string; prefillMinor: number } | null>(null)
 // Whoever paid the bill being paid back — the claim's recipient, and so whose PayID the sheet shows.
 const claimRecipient = computed(() => {
   const payerId = trip.value?.items.find((item) => item.id === claim.value?.itemId)?.payerMemberId
   return trip.value?.members.find((m) => m.id === payerId) ?? null
 })
 
-const symbol = computed(() => currencySymbol(trip.value?.currencyCode ?? 'AUD'))
 const me = computed(() => trip.value?.members.find((m) => m.isYou) ?? null)
 const loadError = ref<'notFound' | 'other' | null>(null)
 
-const heroTone = computed(() => {
-  const net = trip.value?.yourNetMinor ?? 0
-  return net === 0 ? 'settled' : net > 0 ? 'owed' : 'owe'
-})
 const heroLabel = computed(() => {
   const net = trip.value?.yourNetMinor ?? 0
   return net === 0 ? t('money.allSquare') : net > 0 ? t('money.youAreOwed') : t('money.youOwe')
 })
+
+const FILTER_LABELS = {
+  all: 'trip.filterAll',
+  unsettled: 'trip.filterUnsettled',
+  youPaid: 'trip.filterYouPaid',
+}
 
 const filtered = computed(() =>
   (trip.value?.items ?? []).filter((item) => {
@@ -87,7 +87,7 @@ const filtered = computed(() =>
 const days = computed(() => {
   const groups: { day: string; items: ItemView[] }[] = []
   for (const item of filtered.value) {
-    const last = groups[groups.length - 1]
+    const last = groups.at(-1)
     if (last && last.day === item.spentOn) last.items.push(item)
     else groups.push({ day: item.spentOn, items: [item] })
   }
@@ -95,10 +95,8 @@ const days = computed(() => {
 })
 
 function dayLabel(isoDate: string): string {
-  // Rendering only — never arithmetic. The ISO string is parsed as a local calendar date.
-  const [y, m, d] = isoDate.split('-').map(Number)
   return new Intl.DateTimeFormat(locale.value, { weekday: 'short', day: 'numeric', month: 'short' }).format(
-    new Date(y!, m! - 1, d),
+    parseLocalDate(isoDate),
   )
 }
 
@@ -109,7 +107,7 @@ const categoryKey = (categoryId: string) => categories.value.find((c) => c.id ==
 
 async function refresh() {
   const [loadedTrip, loadedSettlement] = await Promise.all([
-    trips.loadTrip(props.tripId),
+    api.trip(props.tripId),
     api.settlement(props.tripId),
   ])
   trip.value = loadedTrip
@@ -131,13 +129,9 @@ async function load() {
 
 onMounted(load)
 
-function openDetail(itemId: string) {
-  detailItemId.value = itemId
-}
-
-function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
+function startClaimFor(itemId: string, prefillMinor: number) {
   detailItemId.value = null
-  claim.value = { itemId, toName, prefillMinor }
+  claim.value = { itemId, prefillMinor }
 }
 </script>
 
@@ -165,9 +159,8 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
             <AmountText
               :amount-minor="Math.abs(trip.yourNetMinor)"
               size="hero"
-              :tone="heroTone"
+              :tone="toneOf(trip.yourNetMinor)"
               :currency-code="trip.currencyCode"
-              :symbol="symbol"
             />
           </div>
           <TallyButton variant="primary" size="sm" data-testid="settle-up" @click="settleOpen = true">
@@ -175,37 +168,18 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
           </TallyButton>
         </div>
         <dl class="trip__stats">
-          <div class="trip__stat">
-            <dt>{{ t('trip.groupSpend') }}</dt>
+          <div
+            v-for="stat in [
+              { label: 'trip.groupSpend', minor: trip.groupSpendMinor },
+              { label: 'trip.yourShare', minor: trip.yourShareMinor },
+              { label: 'trip.youFronted', minor: trip.youFrontedMinor },
+            ]"
+            :key="stat.label"
+            class="trip__stat"
+          >
+            <dt>{{ t(stat.label) }}</dt>
             <dd>
-              <AmountText
-                :amount-minor="trip.groupSpendMinor"
-                size="sm"
-                :currency-code="trip.currencyCode"
-                :symbol="symbol"
-              />
-            </dd>
-          </div>
-          <div class="trip__stat">
-            <dt>{{ t('trip.yourShare') }}</dt>
-            <dd>
-              <AmountText
-                :amount-minor="trip.yourShareMinor"
-                size="sm"
-                :currency-code="trip.currencyCode"
-                :symbol="symbol"
-              />
-            </dd>
-          </div>
-          <div class="trip__stat">
-            <dt>{{ t('trip.youFronted') }}</dt>
-            <dd>
-              <AmountText
-                :amount-minor="trip.youFrontedMinor"
-                size="sm"
-                :currency-code="trip.currencyCode"
-                :symbol="symbol"
-              />
+              <AmountText :amount-minor="stat.minor" size="sm" :currency-code="trip.currencyCode" />
             </dd>
           </div>
         </dl>
@@ -225,13 +199,7 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
               :aria-pressed="filter === option"
               @click="filter = option"
             >
-              {{
-                option === 'all'
-                  ? t('trip.filterAll')
-                  : option === 'unsettled'
-                    ? t('trip.filterUnsettled')
-                    : t('trip.filterYouPaid')
-              }}
+              {{ t(FILTER_LABELS[option]) }}
             </button>
             <!-- A plain download: the browser fetches the CSV with the session cookie, no JS. The
                  file is the outward spend only — expenses, never the internal who-paid-who. -->
@@ -266,9 +234,8 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
               :amount-minor="item.amountMinor"
               :all-square="item.state === 'ALL_SQUARE'"
               :currency-code="trip.currencyCode"
-              :symbol="symbol"
               :divider="index < group.items.length - 1"
-              @click="openDetail(item.id)"
+              @click="detailItemId = item.id"
             />
           </TallyCard>
         </div>
@@ -344,12 +311,10 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       v-if="trip && me"
       :open="claim !== null"
       :item-id="claim?.itemId ?? null"
-      :to-name="claim?.toName ?? ''"
       :prefill-minor="claim?.prefillMinor ?? 0"
       :recipient="claimRecipient"
       :from-member-id="me.id"
       :currency-code="trip.currencyCode"
-      :symbol="symbol"
       @close="claim = null"
       @saved="((claim = null), refresh())"
     />
@@ -359,13 +324,11 @@ function startClaimFor(itemId: string, toName: string, prefillMinor: number) {
       :open="settleOpen"
       :trip-id="tripId"
       :my-member-id="me.id"
-      :you-are-creator="trip.youAreCreator"
       :rows="settlement.rows"
       :currency-code="trip.currencyCode"
-      :symbol="symbol"
       :members="trip.members"
       :all-square="settlement.allSquare"
-      :transfers="settlement.transfers ?? []"
+      :transfers="settlement.transfers"
       :breakdown="settlement.breakdown ?? null"
       @close="settleOpen = false"
       @changed="refresh"

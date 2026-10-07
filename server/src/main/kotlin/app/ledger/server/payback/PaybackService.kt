@@ -1,7 +1,9 @@
 package app.ledger.server.payback
 
+import app.ledger.engine.PaybackStatus
 import app.ledger.server.item.ItemRepository
 import app.ledger.server.item.ItemShareRepository
+import app.ledger.server.item.getOr404
 import app.ledger.server.trip.TripAccess
 import app.ledger.server.trip.TripEntity
 import app.ledger.server.trip.TripMemberRepository
@@ -30,7 +32,7 @@ class PaybackService(
      */
     @Transactional
     fun submitForItem(itemId: UUID, command: SubmitPayback, actor: UUID): PaybackView {
-        val item = items.findById(itemId).orElseThrow { noSuchItem() }
+        val item = items.getOr404(itemId)
         val trip = access.visibleTrip(item.tripId, actor)
         val payer = member(item.payerMemberId)
 
@@ -63,7 +65,7 @@ class PaybackService(
                     amountMinor = command.amountMinor,
                     paidOn = command.paidOn,
                     note = command.note?.trim()?.ifEmpty { null },
-                    status = if (recordedByThePersonOwed) PaybackStatusName.APPROVED else PaybackStatusName.PENDING,
+                    status = if (recordedByThePersonOwed) PaybackStatus.APPROVED else PaybackStatus.PENDING,
                     createdByUserId = actor,
                     reviewedByUserId = actor.takeIf { recordedByThePersonOwed },
                     reviewedAt = Instant.now().takeIf { recordedByThePersonOwed },
@@ -75,7 +77,7 @@ class PaybackService(
     @Transactional
     fun approve(paybackId: UUID, actor: UUID): PaybackView {
         val payback = reviewable(paybackId, actor)
-        payback.status = PaybackStatusName.APPROVED
+        payback.status = PaybackStatus.APPROVED
         payback.rejectReason = null
         payback.reviewedByUserId = actor
         payback.reviewedAt = Instant.now()
@@ -86,7 +88,7 @@ class PaybackService(
     @Transactional
     fun reject(paybackId: UUID, command: RejectPayback, actor: UUID): PaybackView {
         val payback = reviewable(paybackId, actor)
-        payback.status = PaybackStatusName.REJECTED
+        payback.status = PaybackStatus.REJECTED
         payback.rejectReason = command.reason.trim()
         payback.reviewedByUserId = actor
         payback.reviewedAt = Instant.now()
@@ -111,15 +113,15 @@ class PaybackService(
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only the person who made this claim can correct it")
         }
         when (payback.status) {
-            PaybackStatusName.APPROVED -> {
+            PaybackStatus.APPROVED -> {
                 throw ResponseStatusException(HttpStatus.CONFLICT, "This has been approved; undo it instead")
             }
 
-            PaybackStatusName.PENDING -> {
+            PaybackStatus.PENDING -> {
                 throw ResponseStatusException(HttpStatus.CONFLICT, "This claim is still waiting on the other person")
             }
 
-            PaybackStatusName.REJECTED -> {
+            PaybackStatus.REJECTED -> {
                 Unit
             }
         }
@@ -127,7 +129,7 @@ class PaybackService(
         command.amountMinor?.let { payback.amountMinor = it }
         command.paidOn?.let { payback.paidOn = it }
         command.note?.let { payback.note = it.trim().ifEmpty { null } }
-        payback.status = PaybackStatusName.PENDING
+        payback.status = PaybackStatus.PENDING
         payback.rejectReason = null
         payback.reviewedByUserId = null
         payback.reviewedAt = null
@@ -152,15 +154,6 @@ class PaybackService(
             )
         }
         paybacks.delete(payback)
-    }
-
-    @Transactional(readOnly = true)
-    fun forItem(itemId: UUID, actor: UUID): List<PaybackView> {
-        val item = items.findById(itemId).orElseThrow { noSuchItem() }
-        val trip = access.visibleTrip(item.tripId, actor)
-        return paybacks
-            .findAllByItemIdOrderByCreatedAt(item.id)
-            .map { it.toView(actor, trip.createdByUserId) { memberId -> member(memberId).userId } }
     }
 
     /**
@@ -190,7 +183,7 @@ class PaybackService(
             }
             throw ResponseStatusException(HttpStatus.FORBIDDEN, message)
         }
-        if (payback.status != PaybackStatusName.PENDING) {
+        if (payback.status != PaybackStatus.PENDING) {
             throw ResponseStatusException(HttpStatus.CONFLICT, "This has already been decided")
         }
         return payback
@@ -205,8 +198,6 @@ class PaybackService(
     private fun member(memberId: UUID) = members.findById(memberId).orElseThrow { noSuchPayback() }
 
     private companion object {
-        fun noSuchItem() = ResponseStatusException(HttpStatus.NOT_FOUND, "No such expense")
-
         fun noSuchPayback() = ResponseStatusException(HttpStatus.NOT_FOUND, "No such payback")
     }
 }

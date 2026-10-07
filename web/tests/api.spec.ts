@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError, handleUnauthorized } from '@/lib/api'
+import { api, ApiError, errorMessage, handleUnauthorized } from '@/lib/api'
 
 /** The client's three duties: echo the CSRF cookie, surface the server's reason, signal 401s. */
 describe('api client', () => {
@@ -124,5 +124,13 @@ describe('api client', () => {
     // multipart boundary and the server would see an unreadable request.
     expect(options.headers['Content-Type']).toBeUndefined()
     expect(options.headers['X-XSRF-TOKEN']).toBe('token-123')
+  })
+})
+
+describe('errorMessage', () => {
+  it("shows an Error's message and anything else as text", () => {
+    expect(errorMessage(new ApiError(409, 'Trip has ended'))).toBe('Trip has ended')
+    expect(errorMessage(new TypeError('Failed to fetch'))).toBe('Failed to fetch')
+    expect(errorMessage('nope')).toBe('nope')
   })
 })

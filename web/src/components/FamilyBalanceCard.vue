@@ -24,9 +24,8 @@ const props = withDefaults(
     counterparts: FamilyCounterpartView[]
     removable: boolean
     currencyCode?: string
-    symbol?: string
   }>(),
-  { currencyCode: 'AUD', symbol: '$' },
+  { currencyCode: 'AUD' },
 )
 defineEmits<{ remove: [] }>()
 
@@ -62,9 +61,8 @@ const netLabel = computed(() => {
     <AmountText
       :amount-minor="Math.abs(netMinor)"
       size="lg"
-      :tone="netMinor === 0 ? 'settled' : netMinor > 0 ? 'owed' : 'owe'"
+      :tone="toneOf(netMinor)"
       :currency-code="currencyCode"
-      :symbol="symbol"
     />
 
     <div class="family__counterparts">
@@ -76,7 +74,6 @@ const netLabel = computed(() => {
         :card-name="cardName"
         :card-member-count="cardGrammaticalCount"
         :currency-code="currencyCode"
-        :symbol="symbol"
       />
     </div>
   </TallyCard>

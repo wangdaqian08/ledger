@@ -7,7 +7,6 @@ import app.ledger.engine.ItemId
 import app.ledger.engine.ItemState
 import app.ledger.engine.MemberId
 import app.ledger.engine.Payback
-import app.ledger.engine.PaybackStatus
 import app.ledger.engine.SplitRule
 import app.ledger.engine.Trip
 import app.ledger.engine.breakdown
@@ -23,7 +22,6 @@ import app.ledger.server.item.ItemShareRepository
 import app.ledger.server.item.SplitRuleName
 import app.ledger.server.payback.PaybackEntity
 import app.ledger.server.payback.PaybackRepository
-import app.ledger.server.payback.PaybackStatusName
 import app.ledger.server.receipt.ReceiptRepository
 import org.springframework.stereotype.Component
 import java.util.UUID
@@ -42,8 +40,7 @@ import java.util.UUID
  * This mapping is permanent once anything is deployed. Change it and every existing item
  * redistributes its rounding by a cent, silently, with no migration that could put it back.
  *
- * A negative value is fine: the engine rotates with `((index - offset) % count + count) % count`,
- * which is well defined for any Long.
+ * A negative value is fine: the engine rotates with `mod`, which is well defined for any Long.
  */
 fun engineItemId(itemId: UUID): ItemId = ItemId(itemId.mostSignificantBits xor itemId.leastSignificantBits)
 
@@ -70,6 +67,9 @@ class TripSnapshot(
     )
 
     private val settlement by lazy { settle(engineTrip) }
+
+    /** Member id to the account behind it, null for a seat nobody has claimed. */
+    val userIdOf: Map<UUID, UUID?> = roster.associate { it.id to it.userId }
 
     fun netFor(memberId: UUID): Long = settlement.net(MemberId(memberId.toString()))
 
@@ -141,11 +141,7 @@ class TripSnapshot(
         from = MemberId(fromMemberId.toString()),
         to = MemberId(toMemberId.toString()),
         amountMinor = amountMinor,
-        status = when (status) {
-            PaybackStatusName.PENDING -> PaybackStatus.PENDING
-            PaybackStatusName.APPROVED -> PaybackStatus.APPROVED
-            PaybackStatusName.REJECTED -> PaybackStatus.REJECTED
-        },
+        status = status,
         itemId = itemId?.let(::engineItemId),
     )
 
@@ -187,13 +183,7 @@ class TripSnapshots(
      * Five queries for a whole trip, however many items it has. Loading shares or receipts per
      * item would be the classic N+1, and every screen in this app reads a trip whole.
      */
-    fun load(tripId: UUID): TripSnapshot = TripSnapshot(
-        roster = members.findAllByTripIdOrderByCreatedAt(tripId),
-        items = items.findAllByTripIdOrderBySpentOnDescCreatedAtDesc(tripId),
-        paybacks = paybacks.findAllByTripIdOrderByCreatedAt(tripId),
-        sharesByItem = shares.findAllByTripIdOrderByPosition(tripId).groupBy { it.id.itemId },
-        receiptVersionByItem = receipts.findAllByTripId(tripId).associate { it.itemId to it.version },
-    )
+    fun load(tripId: UUID): TripSnapshot = loadAll(listOf(tripId)).getValue(tripId)
 
     /**
      * Still five queries for any number of trips. GroupsHome shows your net on every group at

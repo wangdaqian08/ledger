@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import PersonAvatar from '@/components/PersonAvatar.vue'
 import TallyButton from '@/components/TallyButton.vue'
 import TallyCard from '@/components/TallyCard.vue'
-import { api, ApiError, type ClaimableView } from '@/lib/api'
+import { api, ApiError, type ClaimableView, errorMessage } from '@/lib/api'
 import { useSession } from '@/stores/session'
 
 /**
@@ -47,7 +47,7 @@ onMounted(async () => {
   } catch (failure) {
     // A 401 has already bounced to sign-in via the global handler, keeping this URL as `next`.
     if (!(failure instanceof ApiError && failure.status === 401)) {
-      error.value = failure instanceof Error ? failure.message : String(failure)
+      error.value = errorMessage(failure)
     }
   }
 })
@@ -60,7 +60,7 @@ async function claim() {
     await api.claim(props.tripId, token.value, chosen.value)
     await router.push({ name: 'trip', params: { tripId: props.tripId } })
   } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
+    error.value = errorMessage(failure)
   } finally {
     busy.value = false
   }

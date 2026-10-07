@@ -50,9 +50,8 @@ const props = withDefaults(
     cardMemberCount: number
     owedMinor: number
     currencyCode?: string
-    symbol?: string
   }>(),
-  { currencyCode: 'AUD', symbol: '$' },
+  { currencyCode: 'AUD' },
 )
 
 const { t } = useI18n()
@@ -102,9 +101,8 @@ const sentenceParts = computed(() => {
     <AmountText
       :amount-minor="Math.abs(owedMinor)"
       :currency-code="currencyCode"
-      :symbol="symbol"
       size="sm"
-      :tone="owedMinor === 0 ? 'settled' : owedMinor > 0 ? 'owed' : 'owe'"
+      :tone="toneOf(owedMinor)"
     />
   </div>
 </template>

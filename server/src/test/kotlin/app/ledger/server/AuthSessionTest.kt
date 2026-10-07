@@ -3,6 +3,7 @@ package app.ledger.server
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.web.server.LocalServerPort
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
 import kotlin.test.assertEquals
@@ -61,6 +62,35 @@ class AuthSessionTest : PostgresTest() {
         val me = client.get("/api/me")
         assertEquals(HttpStatus.OK, me.statusCode)
         assertTrue(me.body!!.contains("\"displayName\":\"Bob\""), "unexpected /api/me body: ${me.body}")
+    }
+
+    @Test
+    fun `the session cookie is out of reach of page scripts`() {
+        val client = client()
+        client.get("/api/me")
+
+        val setCookies = signIn(client, "Hattie").headers[HttpHeaders.SET_COOKIE].orEmpty()
+        val session = setCookies.single { it.startsWith("${SessionAwareClient.SESSION_COOKIE}=") }
+
+        assertTrue(
+            session.split(";").any { it.trim().equals("HttpOnly", ignoreCase = true) },
+            "session cookie without HttpOnly: $session",
+        )
+    }
+
+    @Test
+    fun `a blank sign-in token is refused as unauthenticated`() {
+        // 401, not a 400 from bean validation: the identity provider is the one judge of a token,
+        // and the SPA answers 401 with the sign-in screen.
+        listOf("", "   ").forEach { blank ->
+            val client = client()
+            client.get("/api/me")
+
+            val response = signIn(client, blank)
+
+            assertEquals(HttpStatus.UNAUTHORIZED, response.statusCode, "idToken \"$blank\"")
+            assertNull(client.cookie(SessionAwareClient.SESSION_COOKIE), "a refused sign-in opened a session")
+        }
     }
 
     @Test

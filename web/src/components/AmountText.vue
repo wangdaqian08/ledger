@@ -13,14 +13,12 @@ const props = withDefaults(
   defineProps<{
     amountMinor: number
     currencyCode?: string
-    symbol?: string
     size?: 'xs' | 'sm' | 'md' | 'lg' | 'hero'
     tone?: 'neutral' | 'owed' | 'owe' | 'settled' | 'onDark'
     showSign?: boolean
   }>(),
   {
     currencyCode: 'AUD',
-    symbol: '$',
     size: 'md',
     tone: 'neutral',
     showSign: false,
@@ -30,7 +28,6 @@ const props = withDefaults(
 const text = computed(() =>
   formatMinor(props.amountMinor, {
     currencyCode: props.currencyCode,
-    symbol: props.symbol,
     showSign: props.showSign,
   }),
 )

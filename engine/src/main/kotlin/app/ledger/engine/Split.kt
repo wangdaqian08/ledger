@@ -4,14 +4,6 @@ package app.ledger.engine
 @JvmInline
 value class MemberId(val value: String)
 
-/**
- * Divides [totalMinor] equally between [members], in minor currency units.
- *
- * The parts always sum to exactly [totalMinor] — never a cent more or less.
- */
-fun splitEqually(totalMinor: Long, members: List<MemberId>, salt: Long = 0): Map<MemberId, Long> =
-    shares(totalMinor, members, SplitRule.Equal, salt)
-
 /** How an item's total is divided between the people on it. */
 sealed interface SplitRule {
     /** Everyone on the item pays the same. */
@@ -82,7 +74,7 @@ private class Part(val member: MemberId, val base: Long, val fraction: Long, val
  *
  * Ties break on position rotated by [salt], so across a trip's items the spare cent lands
  * on different people rather than always the first name on the list. With every weight at
- * 1 every fraction ties, which makes this reduce exactly to [splitEqually].
+ * 1 every fraction ties, which makes this reduce exactly to [SplitRule.Equal].
  */
 private fun splitByWeight(
     totalMinor: Long,
@@ -92,7 +84,7 @@ private fun splitByWeight(
 ): Map<MemberId, Long> {
     val totalWeight = weights.values.sumOf { it.toLong() }
     val count = members.size
-    val offset = (salt % count).toInt()
+    val offset = salt.mod(count)
 
     // Refusing beats silently wrapping: past this, totalMinor * weight no longer fits in a Long
     // and every number that falls out of the wreckage still looks plausible. The web port draws
@@ -108,7 +100,7 @@ private fun splitByWeight(
             member = member,
             base = numerator / totalWeight,
             fraction = numerator % totalWeight,
-            rotated = ((index - offset) % count + count) % count,
+            rotated = (index - offset).mod(count),
         )
     }
 

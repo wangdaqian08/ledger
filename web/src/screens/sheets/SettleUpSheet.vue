@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AmountKeypadField from '@/components/AmountKeypadField.vue'
 import AmountText from '@/components/AmountText.vue'
 import BalanceRow from '@/components/BalanceRow.vue'
 import FamilyBalanceCard from '@/components/FamilyBalanceCard.vue'
 import FamilyBuilder from '@/components/FamilyBuilder.vue'
+import PayForm from '@/components/PayForm.vue'
 import PayIdLine from '@/components/PayIdLine.vue'
 import SheetPanel from '@/components/SheetPanel.vue'
 import TallyButton from '@/components/TallyButton.vue'
@@ -13,6 +13,7 @@ import TallyIcon from '@/components/TallyIcon.vue'
 import TextField from '@/components/TextField.vue'
 import {
   api,
+  errorMessage,
   type BreakdownView,
   type FamiliesView,
   type FamilyMemberView,
@@ -23,6 +24,7 @@ import {
   type SettlementRow,
   type TransferView,
 } from '@/lib/api'
+import { toneOf } from '@/lib/money'
 
 /**
  * Screen 7 — Settle up. One row per person; Pay files a trip-level settlement that stays
@@ -61,13 +63,8 @@ const props = withDefaults(
     open: boolean
     tripId: string
     myMemberId: string
-    youAreCreator: boolean
     rows: SettlementRow[]
-    /** A person to jump straight into paying on open. Nothing passes one today: the trip screen's
-     *  who-owes card that did is gone, and its Settle up button opens on nobody. */
-    focusMemberId?: string | null
     currencyCode: string
-    symbol: string
     members: MemberView[]
     /** The server's verdict that the viewer's overall net is 0 — never re-derived from the rows. */
     allSquare?: boolean
@@ -76,7 +73,7 @@ const props = withDefaults(
     /** "How it adds up", as the server derived it. Absent from an older server: no section then. */
     breakdown?: BreakdownView | null
   }>(),
-  { focusMemberId: null, allSquare: false, transfers: () => [], breakdown: null },
+  { allSquare: false, transfers: () => [], breakdown: null },
 )
 const emit = defineEmits<{ close: []; changed: [] }>()
 
@@ -117,12 +114,6 @@ watch(
     familiesError.value = ''
     familyTicks.value = {}
     breakdownOpen.value = false
-    // Opened from a specific row's Pay: unfold that person's amount form straight away — unless
-    // the viewer is square overall, where the rows cancel out and there is nothing to pay.
-    if (props.focusMemberId && !props.allSquare) {
-      const row = props.rows.find((r) => r.memberId === props.focusMemberId)
-      if (row) startPay(row)
-    }
   },
 )
 
@@ -130,7 +121,6 @@ watch(
 // approved — the latter kept as a muted, undoable record rather than vanishing (§7a). Who may act on
 // each is decided by the server (claim.viewerCanDecide / viewerCanUndo), never re-derived here.
 const pendingOf = (row: SettlementRow) => row.pending.filter((p) => p.status === 'PENDING')
-const settledOf = (row: SettlementRow) => row.settled
 
 // A settlement you filed that they declined — the one place its reason reaches you, since a
 // trip-level claim has no bill sheet. Shown only while nothing fresh is pending to this person
@@ -143,10 +133,10 @@ const declinedOf = (row: SettlementRow): PaybackView[] => {
   return latest ? [latest] : []
 }
 
-function startPay(row: SettlementRow) {
-  paying.value = row.memberId
-  // Positive owedMinor is "you owe them" — the amount the Pay button pre-fills.
-  amountMinor.value = Math.max(0, row.owedMinor)
+/** Unfold the pay form to `toMemberId`, pre-filled with `amount`. */
+function startPay(toMemberId: string, amount: number) {
+  paying.value = toMemberId
+  amountMinor.value = amount
   error.value = ''
 }
 
@@ -165,7 +155,7 @@ async function act(action: () => Promise<unknown>, tag: string | null = null) {
     await action()
     emit('changed')
   } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : String(failure)
+    error.value = errorMessage(failure)
   } finally {
     busy.value = false
     pendingTag.value = null
@@ -207,6 +197,12 @@ async function rejectClaim(paybackId: string) {
 type Mode = 'person' | 'family' | 'transfers'
 const mode = ref<Mode>('person')
 
+const modes = computed(() => [
+  { mode: 'person' as const, testId: 'mode-by-person', label: t('settle.byPerson') },
+  { mode: 'family' as const, testId: 'mode-by-family', label: t('settle.byFamily') },
+  { mode: 'transfers' as const, testId: 'mode-min-transfer', label: t('settle.byMinTransfer') },
+])
+
 function setMode(next: Mode) {
   if (mode.value === next) return
   mode.value = next
@@ -245,15 +241,8 @@ function pendingOnTransfer(transfer: TransferView): { claim: PaybackView; sentBy
   return claim ? { claim, sentByYou: mine } : null
 }
 
-function startTransferPay(transfer: TransferView) {
-  paying.value = transfer.toMemberId
-  amountMinor.value = transfer.amountMinor
-  error.value = ''
-}
-
 // ---- Family mode (§7b): an ephemeral, viewer-built partition of the whole trip. ----
 
-const familyMode = computed(() => mode.value === 'family')
 /** Committed explicit Families, in build order — member ids only, never persisted. */
 const builtFamilies = ref<string[][]>([])
 /** The tab the builder was opened from, if any. Both tabs build into the one partition, but a
@@ -300,7 +289,7 @@ function isBuilt(entry: FamilyView): boolean {
 
 /** Bumped on every call, with the value at call-start captured as `seq` below: a response is
  *  applied only if no newer call has started since. `refreshFamilies` has four callers —
- *  `onFamilyBuilt`, `disband`, and both `watch`es below — and nothing otherwise stops an older
+ *  `onFamilyBuilt`, `disband`, `undoLastFamily` and the `watch` below — and nothing otherwise stops an older
  *  call's response from landing after a newer call's and overwriting it with stale data (two
  *  Undo taps in a row, or a `disband` racing a `props.rows` change from elsewhere on the sheet).
  *  Guarding here protects every caller generically, rather than each caller re-inventing it. */
@@ -334,7 +323,7 @@ async function refreshFamilies(preview?: string[][]): Promise<boolean> {
     return true
   } catch (failure) {
     if (seq === familiesRequestSeq) {
-      familiesError.value = failure instanceof Error ? failure.message : String(failure)
+      familiesError.value = errorMessage(failure)
     }
     return false
   }
@@ -346,16 +335,10 @@ const familyPlanMode = computed(() => mode.value === 'transfers' && builtFamilie
 // Both views of the partition are a pure read with no side effect to announce, so they are
 // deliberately never routed through act() — act() emits 'changed', which would trigger a full trip
 // refetch on every toggle.
-watch(mode, () => {
-  if (familyMode.value || familyPlanMode.value) refreshFamilies()
-})
 // Balances can move under the sheet (Pay, approve, undo) while either view stays open.
-watch(
-  () => props.rows,
-  () => {
-    if (familyMode.value || familyPlanMode.value) refreshFamilies()
-  },
-)
+watch([mode, () => props.rows], () => {
+  if (mode.value === 'family' || familyPlanMode.value) refreshFamilies()
+})
 
 async function onFamilyBuilt(memberIds: string[]) {
   // Snapshot what was just ticked *before* anything that might remount the builder (see
@@ -440,12 +423,6 @@ const familyLineKey = (transfer: FamilyTransferView) =>
 /** Whether the viewer is in the paying party — a settlement is always filed by somebody paying. */
 const youPayOn = (transfer: FamilyTransferView) => transfer.from.some((m) => m.id === props.myMemberId)
 
-function startFamilyTransferPay(transfer: FamilyTransferView) {
-  paying.value = transfer.payToMemberId
-  amountMinor.value = transfer.amountMinor
-  error.value = ''
-}
-
 // ---- How it adds up: the server's breakdown, rendered as sent. ----
 
 /** Folded by default, and folded again on every reopen with the rest of the sheet's state. */
@@ -458,11 +435,29 @@ const showSettled = computed(
     !!props.breakdown &&
     (props.breakdown.totals.settledMinor !== 0 || props.breakdown.rows.some((r) => r.settledMinor !== 0)),
 )
+/** Each person's line, then the totals line exactly as the server sent it — never summed here. */
+const breakdownLines = computed(() =>
+  props.breakdown
+    ? [
+        ...props.breakdown.rows.map((row) => ({
+          key: row.memberId,
+          name: row.isYou ? t('common.you') : row.displayName,
+          title: row.displayName,
+          total: false,
+          figures: row,
+        })),
+        {
+          key: 'total',
+          name: t('breakdown.total'),
+          title: undefined,
+          total: true,
+          figures: props.breakdown.totals,
+        },
+      ]
+    : [],
+)
 /** Paid, share, [settled], balance: the numbers line's column count, which the grid is cut to. */
 const breakdownColumns = computed(() => (showSettled.value ? 4 : 3))
-
-/** A balance's colour, from its sign alone — the same three tones as every other balance here. */
-const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'owed' : 'owe')
 </script>
 
 <template>
@@ -470,34 +465,16 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
     <div class="settle">
       <div class="settle__mode" role="group">
         <button
+          v-for="option in modes"
+          :key="option.mode"
           type="button"
           class="settle__mode-btn"
-          data-testid="mode-by-person"
-          :class="{ 'settle__mode-btn--on': mode === 'person' }"
-          :aria-pressed="mode === 'person'"
-          @click="setMode('person')"
+          :data-testid="option.testId"
+          :class="{ 'settle__mode-btn--on': mode === option.mode }"
+          :aria-pressed="mode === option.mode"
+          @click="setMode(option.mode)"
         >
-          {{ t('settle.byPerson') }}
-        </button>
-        <button
-          type="button"
-          class="settle__mode-btn"
-          data-testid="mode-by-family"
-          :class="{ 'settle__mode-btn--on': mode === 'family' }"
-          :aria-pressed="mode === 'family'"
-          @click="setMode('family')"
-        >
-          {{ t('settle.byFamily') }}
-        </button>
-        <button
-          type="button"
-          class="settle__mode-btn"
-          data-testid="mode-min-transfer"
-          :class="{ 'settle__mode-btn--on': mode === 'transfers' }"
-          :aria-pressed="mode === 'transfers'"
-          @click="setMode('transfers')"
-        >
-          {{ t('settle.byMinTransfer') }}
+          {{ option.label }}
         </button>
       </div>
 
@@ -514,11 +491,10 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
             :muted="squareOverall || row.owedMinor === 0"
             :actions="!squareOverall"
             :currency-code="currencyCode"
-            :symbol="symbol"
             :pending="pendingOf(row).length > 0"
             :reminded="reminded === row.memberId"
             :divider="index < orderedRows.length - 1"
-            @pay="startPay(row)"
+            @pay="startPay(row.memberId, Math.max(0, row.owedMinor))"
             @remind="remind(row)"
           />
 
@@ -537,12 +513,7 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                 }}
               </span>
               <!-- U1: the amount that is actually waiting, shown — not just that something is. -->
-              <AmountText
-                :amount-minor="claim.amountMinor"
-                size="sm"
-                :currency-code="currencyCode"
-                :symbol="symbol"
-              />
+              <AmountText :amount-minor="claim.amountMinor" size="sm" :currency-code="currencyCode" />
             </div>
 
             <div class="settle__pending-actions">
@@ -602,7 +573,7 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
           <!-- Approved settlements: already reflected in the balance above, kept as a muted, undoable
              record so a mistaken confirmation is not a one-way door (§7a). -->
           <div
-            v-for="claim in settledOf(row)"
+            v-for="claim in row.settled"
             :key="claim.id"
             class="settle__settled"
             data-testid="settled-claim"
@@ -621,7 +592,6 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                 size="sm"
                 tone="settled"
                 :currency-code="currencyCode"
-                :symbol="symbol"
               />
             </div>
             <div v-if="claim.viewerCanUndo" class="settle__pending-actions">
@@ -648,17 +618,17 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                 size="sm"
                 tone="owe"
                 :currency-code="currencyCode"
-                :symbol="symbol"
               />
             </div>
             <p v-if="claim.rejectReason" class="settle__declined-reason">"{{ claim.rejectReason }}"</p>
           </div>
 
-          <form
+          <PayForm
             v-if="paying === row.memberId"
-            class="settle__pay"
-            data-testid="pay-form"
-            @submit.prevent="pay"
+            v-model="amountMinor"
+            :currency-code="currencyCode"
+            :loading="pendingTag === 'pay'"
+            @pay="pay"
           >
             <!-- Where the money goes, right where the amount is entered. -->
             <PayIdLine
@@ -666,24 +636,7 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
               :recently-changed="memberById(row.memberId)?.payIdChangedRecently ?? false"
               :owner-name="row.displayName"
             />
-            <AmountKeypadField
-              v-model="amountMinor"
-              test-id="pay-amount"
-              :currency-code="currencyCode"
-              :symbol="symbol"
-            />
-            <TallyButton
-              type="submit"
-              variant="primary"
-              size="sm"
-              data-testid="pay-send"
-              :loading="pendingTag === 'pay'"
-              :disabled="amountMinor <= 0"
-              @click="pay"
-            >
-              {{ t('settle.pay') }}
-            </TallyButton>
-          </form>
+          </PayForm>
         </div>
 
         <p v-if="error" class="settle__error" role="alert">{{ error }}</p>
@@ -736,11 +689,7 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                 <div class="settle__transfer-head">
                   <span class="settle__transfer-index">{{ index + 1 }}</span>
                   <span class="settle__transfer-text">{{ familyTransferSentence(transfer) }}</span>
-                  <AmountText
-                    :amount-minor="transfer.amountMinor"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
+                  <AmountText :amount-minor="transfer.amountMinor" :currency-code="currencyCode" />
                 </div>
 
                 <!-- Whoever the server picked to receive this line's payment. -->
@@ -770,47 +719,25 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                             : t('settle.familySentForConfirmation', { name: memberName(claim.fromMemberId) })
                         }}
                       </span>
-                      <AmountText
-                        :amount-minor="claim.amountMinor"
-                        size="sm"
-                        :currency-code="currencyCode"
-                        :symbol="symbol"
-                      />
+                      <AmountText :amount-minor="claim.amountMinor" size="sm" :currency-code="currencyCode" />
                     </div>
                   </div>
                 </template>
 
                 <template v-else-if="youPayOn(transfer)">
-                  <form
+                  <PayForm
                     v-if="paying === transfer.payToMemberId"
-                    class="settle__pay"
-                    data-testid="pay-form"
-                    @submit.prevent="pay"
-                  >
-                    <AmountKeypadField
-                      v-model="amountMinor"
-                      test-id="pay-amount"
-                      :currency-code="currencyCode"
-                      :symbol="symbol"
-                    />
-                    <TallyButton
-                      type="submit"
-                      variant="primary"
-                      size="sm"
-                      data-testid="pay-send"
-                      :loading="pendingTag === 'pay'"
-                      :disabled="amountMinor <= 0"
-                      @click="pay"
-                    >
-                      {{ t('settle.pay') }}
-                    </TallyButton>
-                  </form>
+                    v-model="amountMinor"
+                    :currency-code="currencyCode"
+                    :loading="pendingTag === 'pay'"
+                    @pay="pay"
+                  />
                   <TallyButton
                     v-else
                     class="settle__transfer-pay"
                     size="sm"
                     data-testid="transfer-pay"
-                    @click="startFamilyTransferPay(transfer)"
+                    @click="startPay(transfer.payToMemberId, transfer.amountMinor)"
                   >
                     {{ t('settle.pay') }}
                   </TallyButton>
@@ -827,11 +754,7 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                 <div class="settle__transfer-head">
                   <span class="settle__transfer-index">{{ index + 1 }}</span>
                   <span class="settle__transfer-text">{{ transferSentence(transfer) }}</span>
-                  <AmountText
-                    :amount-minor="transfer.amountMinor"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
+                  <AmountText :amount-minor="transfer.amountMinor" :currency-code="currencyCode" />
                 </div>
 
                 <PayIdLine
@@ -861,42 +784,24 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                       :amount-minor="pendingOnTransfer(transfer)!.claim.amountMinor"
                       size="sm"
                       :currency-code="currencyCode"
-                      :symbol="symbol"
                     />
                   </div>
                 </div>
 
                 <template v-else-if="transfer.fromMemberId === myMemberId">
-                  <form
+                  <PayForm
                     v-if="paying === transfer.toMemberId"
-                    class="settle__pay"
-                    data-testid="pay-form"
-                    @submit.prevent="pay"
-                  >
-                    <AmountKeypadField
-                      v-model="amountMinor"
-                      test-id="pay-amount"
-                      :currency-code="currencyCode"
-                      :symbol="symbol"
-                    />
-                    <TallyButton
-                      type="submit"
-                      variant="primary"
-                      size="sm"
-                      data-testid="pay-send"
-                      :loading="pendingTag === 'pay'"
-                      :disabled="amountMinor <= 0"
-                      @click="pay"
-                    >
-                      {{ t('settle.pay') }}
-                    </TallyButton>
-                  </form>
+                    v-model="amountMinor"
+                    :currency-code="currencyCode"
+                    :loading="pendingTag === 'pay'"
+                    @pay="pay"
+                  />
                   <TallyButton
                     v-else
                     class="settle__transfer-pay"
                     size="sm"
                     data-testid="transfer-pay"
-                    @click="startTransferPay(transfer)"
+                    @click="startPay(transfer.toMemberId, transfer.amountMinor)"
                   >
                     {{ t('settle.pay') }}
                   </TallyButton>
@@ -948,7 +853,6 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
               :counterparts="entry.counterparts"
               :removable="isBuilt(entry)"
               :currency-code="currencyCode"
-              :symbol="symbol"
               @remove="disband(entry)"
             />
           </div>
@@ -1012,106 +916,53 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
                 <span class="sums__transfers" role="columnheader">{{ t('breakdown.transfers') }}</span>
               </div>
 
+              <!-- The people, then the server's totals line — its totals, never these rows summed. -->
               <div
-                v-for="row in breakdown.rows"
-                :key="row.memberId"
+                v-for="line in breakdownLines"
+                :key="line.key"
                 class="sums__line"
+                :class="{ 'sums__line--total': line.total }"
                 role="row"
-                data-testid="breakdown-row"
+                :data-testid="line.total ? 'breakdown-total' : 'breakdown-row'"
               >
-                <span
-                  class="sums__name"
-                  role="rowheader"
-                  :title="row.displayName"
-                  data-testid="breakdown-name"
-                  >{{ row.isYou ? t('common.you') : row.displayName }}</span
-                >
+                <span class="sums__name" role="rowheader" :title="line.title" data-testid="breakdown-name">{{
+                  line.name
+                }}</span>
                 <span class="sums__num" role="cell" data-testid="breakdown-paid">
                   <AmountText
-                    :amount-minor="row.paidMinor"
+                    :amount-minor="line.figures.paidMinor"
                     size="xs"
                     :currency-code="currencyCode"
-                    :symbol="symbol"
                   />
                 </span>
                 <span class="sums__num" role="cell" data-testid="breakdown-share">
                   <AmountText
-                    :amount-minor="row.shareMinor"
+                    :amount-minor="line.figures.shareMinor"
                     size="xs"
                     :currency-code="currencyCode"
-                    :symbol="symbol"
                   />
                 </span>
                 <span v-if="showSettled" class="sums__num" role="cell" data-testid="breakdown-settled">
                   <AmountText
-                    :amount-minor="row.settledMinor"
+                    :amount-minor="line.figures.settledMinor"
                     size="xs"
-                    :show-sign="row.settledMinor !== 0"
+                    :show-sign="line.figures.settledMinor !== 0"
                     :currency-code="currencyCode"
-                    :symbol="symbol"
                   />
                 </span>
                 <span class="sums__num" role="cell" data-testid="breakdown-balance">
                   <AmountText
-                    :amount-minor="row.netMinor"
+                    :amount-minor="line.figures.netMinor"
                     size="xs"
-                    :tone="balanceTone(row.netMinor)"
-                    :show-sign="row.netMinor !== 0"
+                    :tone="toneOf(line.figures.netMinor)"
+                    :show-sign="line.figures.netMinor !== 0"
                     :currency-code="currencyCode"
-                    :symbol="symbol"
                   />
                 </span>
                 <span class="sums__transfers" role="cell" data-testid="breakdown-transfers">{{
                   t('breakdown.transferPair', {
-                    byPerson: row.transfersByPerson,
-                    fewest: row.transfersFewest,
-                  })
-                }}</span>
-              </div>
-
-              <div class="sums__line sums__line--total" role="row" data-testid="breakdown-total">
-                <span class="sums__name" role="rowheader" data-testid="breakdown-name">{{
-                  t('breakdown.total')
-                }}</span>
-                <span class="sums__num" role="cell" data-testid="breakdown-paid">
-                  <AmountText
-                    :amount-minor="breakdown.totals.paidMinor"
-                    size="xs"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                </span>
-                <span class="sums__num" role="cell" data-testid="breakdown-share">
-                  <AmountText
-                    :amount-minor="breakdown.totals.shareMinor"
-                    size="xs"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                </span>
-                <span v-if="showSettled" class="sums__num" role="cell" data-testid="breakdown-settled">
-                  <AmountText
-                    :amount-minor="breakdown.totals.settledMinor"
-                    size="xs"
-                    :show-sign="breakdown.totals.settledMinor !== 0"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                </span>
-                <span class="sums__num" role="cell" data-testid="breakdown-balance">
-                  <AmountText
-                    :amount-minor="breakdown.totals.netMinor"
-                    size="xs"
-                    :tone="balanceTone(breakdown.totals.netMinor)"
-                    :show-sign="breakdown.totals.netMinor !== 0"
-                    :currency-code="currencyCode"
-                    :symbol="symbol"
-                  />
-                </span>
-                <span class="sums__transfers" role="cell" data-testid="breakdown-transfers">{{
-                  t('breakdown.transferPair', {
-                    byPerson: breakdown.totals.transfersByPerson,
-                    fewest: breakdown.totals.transfersFewest,
+                    byPerson: line.figures.transfersByPerson,
+                    fewest: line.figures.transfersFewest,
                   })
                 }}</span>
               </div>
@@ -1350,14 +1201,6 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
   overflow-wrap: anywhere;
 }
 
-.settle__pay {
-  /* A column, because the amount is a tappable box with a keypad that unfolds beneath it —
-     an inline row once pushed its own button 92px past a 390px viewport. */
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
 .settle__error {
   color: var(--coral);
   font-size: var(--text-caption);
@@ -1385,7 +1228,6 @@ const balanceTone = (minor: number) => (minor === 0 ? 'settled' : minor > 0 ? 'o
   background: none;
   cursor: pointer;
   text-align: left;
-  overflow: hidden;
 }
 
 /* The same uppercase micro-label as the comment fold, so it reads as a section, not a stray control. */

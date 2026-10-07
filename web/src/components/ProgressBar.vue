@@ -12,11 +12,10 @@ const props = withDefaults(
   defineProps<{
     coveredMinor: number
     ofMinor: number
-    tone?: 'action' | 'mint'
-    height?: number
+    tone?: 'mint'
     label?: string
   }>(),
-  { tone: 'mint', height: 14, label: undefined },
+  { tone: 'mint', label: undefined },
 )
 
 const percent = computed(() => {
@@ -33,7 +32,6 @@ const percent = computed(() => {
     </div>
     <div
       class="bar"
-      :style="{ height: `${height}px` }"
       role="progressbar"
       :aria-valuenow="coveredMinor"
       :aria-valuemin="0"
@@ -55,6 +53,7 @@ const percent = computed(() => {
 }
 
 .bar {
+  height: 14px;
   background: var(--bg-sunk);
   border: 2px solid var(--ink);
   border-radius: var(--radius-pill);

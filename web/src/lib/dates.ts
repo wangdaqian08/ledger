@@ -13,3 +13,13 @@ export function todayLocal(): string {
   const day = String(now.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
+
+/** A `YYYY-MM-DD` calendar day as local midnight — for rendering only, never arithmetic. Parsed by
+ *  hand because `new Date('2026-08-07')` reads it as UTC, the day before anywhere west of it. */
+export function parseLocalDate(isoDate: string): Date {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  return new Date(y!, m! - 1, d)
+}
+
+/** "Aug 7, 2026" in the reader's locale: the one long-form date the app shows. */
+export const LONG_DATE: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' }

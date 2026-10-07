@@ -1,5 +1,6 @@
 package app.ledger.server.payback
 
+import app.ledger.engine.PaybackStatus
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
@@ -13,9 +14,6 @@ import org.springframework.data.repository.query.Param
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
-
-/** PENDING moves no number anywhere. Only APPROVED counts towards anybody's balance. */
-enum class PaybackStatusName { PENDING, APPROVED, REJECTED }
 
 /**
  * Money handed back from one member to another.
@@ -50,7 +48,7 @@ class PaybackEntity(
     var note: String? = null,
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    var status: PaybackStatusName,
+    var status: PaybackStatus,
     @Column(name = "created_by_user_id", nullable = false, updatable = false)
     val createdByUserId: UUID,
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -75,9 +73,5 @@ interface PaybackRepository : JpaRepository<PaybackEntity, UUID> {
         @Param("tripId") tripId: UUID,
     )
 
-    fun findAllByTripIdOrderByCreatedAt(tripId: UUID): List<PaybackEntity>
-
     fun findAllByTripIdInOrderByCreatedAt(tripIds: Collection<UUID>): List<PaybackEntity>
-
-    fun findAllByItemIdOrderByCreatedAt(itemId: UUID): List<PaybackEntity>
 }

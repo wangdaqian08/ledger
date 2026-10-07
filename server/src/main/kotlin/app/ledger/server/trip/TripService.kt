@@ -28,7 +28,6 @@ class TripService(
     private val snapshots: TripSnapshots,
     private val access: TripAccess,
     private val clock: Clock,
-    private val properties: TripProperties,
 ) {
     /** Anyone signed in. Creating a trip makes you its first member, already claimed. */
     @Transactional
@@ -77,13 +76,11 @@ class TripService(
      */
     @Transactional(readOnly = true)
     fun listFor(actor: UUID): TripsView {
-        val deleted = trips.findAllDeletedForCreator(actor).map { it.toDeletedView(properties.restoreWindow) }
+        val deleted = trips.findAllDeletedForCreator(actor).map { it.toDeletedView(TripPurge.RESTORE_WINDOW) }
         val visible = trips.findAllForUser(actor)
-        if (visible.isEmpty()) return TripsView(emptyList(), emptyList(), 0, deleted)
-
         val loaded = snapshots.loadAll(visible.map { it.id })
         val accounts = accountsBehind(loaded.values)
-        val views = visible.mapNotNull { trip -> loaded[trip.id]?.let { trip.toView(it, actor, accounts, directory) } }
+        val views = visible.map { trip -> trip.toView(loaded.getValue(trip.id), actor, accounts, directory) }
 
         return TripsView(
             trips = views,
@@ -228,7 +225,7 @@ class TripService(
     /**
      * Trip creator only, at any point in a trip's life. It leaves every member's list at once and
      * 404s from here by link, by invite and by API — but every row stays exactly where it is, so
-     * [restore] can bring the whole trip back for the next [TripProperties.restoreWindow], after
+     * [restore] can bring the whole trip back for the next [TripPurge.RESTORE_WINDOW], after
      * which [TripPurge] destroys it.
      *
      * Nothing here checks whether money is outstanding. That is deliberate: refusing would trap a
@@ -297,7 +294,7 @@ class TripService(
         if (inviteTokens.verify(token) != tripId) {
             throw InvalidInviteToken("This invite link is for a different trip")
         }
-        val trip = liveTrip(tripId)
+        val trip = access.liveTrip(tripId)
         return ClaimableView(
             tripName = trip.name,
             you = members.findByTripIdAndUserId(tripId, actor)?.let {
@@ -321,7 +318,7 @@ class TripService(
             throw InvalidInviteToken("This invite link is for a different trip")
         }
 
-        val trip = liveTrip(tripId)
+        val trip = access.liveTrip(tripId)
         val member = members
             .findById(command.memberId)
             .filter { it.tripId == tripId }
@@ -369,17 +366,6 @@ class TripService(
 
     /** Round-robin over the eight person hues, and never reassigned once given. */
     private fun nextHue(tripId: UUID): Short = ((members.countByTripId(tripId) % 8) + 1).toShort()
-
-    /**
-     * A trip that still exists, for the two paths a share link authorises rather than membership.
-     * A deleted trip answers 404 here exactly as it does everywhere else — a link handed out
-     * before the delete must not be a way back into it.
-     */
-    private fun liveTrip(tripId: UUID): TripEntity {
-        val trip = trips.findById(tripId).orElseThrow { noSuchTrip() }
-        if (trip.deletedAt != null) throw noSuchTrip()
-        return trip
-    }
 
     private fun noSuchTrip() = ResponseStatusException(HttpStatus.NOT_FOUND, "No such trip")
 
