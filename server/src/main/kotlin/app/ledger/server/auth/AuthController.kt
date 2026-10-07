@@ -17,6 +17,10 @@ import org.springframework.security.web.csrf.CsrfTokenRepository
 import org.springframework.security.web.csrf.CsrfTokenRequestHandler
 import org.springframework.session.FindByIndexNameSessionRepository
 import org.springframework.session.Session
+import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
@@ -55,7 +59,7 @@ class AuthController(
         httpRequest.getSession(false)?.invalidate()
 
         val authentication = UsernamePasswordAuthenticationToken(
-            LedgerPrincipal(user.id, user.id),
+            LedgerPrincipal(user.id),
             null,
             listOf(SimpleGrantedAuthority("ROLE_USER")),
         )

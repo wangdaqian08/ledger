@@ -8,6 +8,7 @@ import TallyButton from './TallyButton.vue'
 import TallyCard from './TallyCard.vue'
 import type { FamilyCounterpartView, FamilyMemberView } from '@/lib/api'
 import { familyDisplayName, familyGrammaticalCount } from '@/lib/family'
+import { toneOf } from '@/lib/money'
 
 /**
  * One Family's card in the Settle-up partition view (§7b): its own net across the whole trip, and

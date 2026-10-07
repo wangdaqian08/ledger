@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import AmountText from './AmountText.vue'
 import PersonAvatar from './PersonAvatar.vue'
 import TallyButton from './TallyButton.vue'
+import { toneOf } from '@/lib/money'
 
 /**
  * One Settle-up row: your position with one person, and the one action it affords.
