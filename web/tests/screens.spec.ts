@@ -1760,7 +1760,7 @@ describe('ClaimPaybackSheet', () => {
       props: {
         open: false,
         itemId: 'i-1',
-        recipient: 'you',
+        recipient: you,
         prefillMinor: 2_500,
         fromMemberId: bob.id,
         currencyCode: 'AUD',
@@ -1789,7 +1789,7 @@ describe('ClaimPaybackSheet', () => {
       props: {
         open: false,
         itemId: 'i-1',
-        recipient: 'you',
+        recipient: you,
         prefillMinor: 2_500,
         fromMemberId: bob.id,
         currencyCode: 'AUD',

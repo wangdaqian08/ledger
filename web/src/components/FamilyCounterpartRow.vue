@@ -5,6 +5,7 @@ import AmountText from './AmountText.vue'
 import AvatarStack from './AvatarStack.vue'
 import { familyDisplayName, familyGrammaticalCount } from '@/lib/family'
 import type { FamilyMemberView } from '@/lib/api'
+import {toneOf} from "@/lib/money";
 
 /**
  * One Family's bilateral position with one *other* Family in the partition (§7b) — never an

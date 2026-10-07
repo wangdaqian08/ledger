@@ -345,8 +345,6 @@ fun partitionIntoFamilies(
     val families = (explicitFamilies + singletons).map(::Family)
     require(families.size >= 2) { "a partition needs at least two families" }
 
-    fun netOf(family: Family) = family.members.sumOf(settlement::net)
-
     fun owesBetweenFamilies(a: Family, b: Family) =
         a.members.sumOf { x -> b.members.sumOf { y -> owesBetween(trip, x, y) } }
 
